@@ -10,6 +10,7 @@ import { StorySelector } from '@/components/panels/StorySelector';
 import { PropertyPanel } from '@/components/panels/PropertyPanel';
 import { ValidationPanel } from '@/components/panels/ValidationPanel';
 import { Editor2D } from '@/features/editor2d/Editor2D';
+import { TransformDialog } from '@/features/editor2d/TransformDialog';
 import { Viewer3D } from '@/features/viewer3d/Viewer3D';
 import { ExportDialog } from '@/features/project/ExportDialog';
 import { MasterDataDialog } from '@/features/project/MasterDataDialog';
@@ -26,6 +27,7 @@ export function App() {
   const [showMasters, setShowMasters] = useState(false);
   const [showAi, setShowAi] = useState(false);
   const [showHelp, setShowHelp] = useState(false);
+  const [showTransform, setShowTransform] = useState(false);
 
   useKeyboardShortcuts();
 
@@ -51,6 +53,7 @@ export function App() {
         onMasters={() => setShowMasters(true)}
         onAiAssist={() => setShowAi(true)}
         onHelp={() => setShowHelp(true)}
+        onTransform={() => setShowTransform(true)}
       />
       <div className="app-body">
         <div className="left-panel">
@@ -89,6 +92,7 @@ export function App() {
       {showMasters && <MasterDataDialog onClose={() => setShowMasters(false)} />}
       {showAi && <AiAssistPanel onClose={() => setShowAi(false)} />}
       {showHelp && <HelpDialog onClose={() => setShowHelp(false)} />}
+      {showTransform && <TransformDialog onClose={() => setShowTransform(false)} />}
     </div>
   );
 }

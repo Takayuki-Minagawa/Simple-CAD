@@ -1,0 +1,355 @@
+import { v4 as uuidv4 } from 'uuid';
+import type { Point2D } from '@/domain/geometry/types';
+import { dot2D, midpoint2D, normalize2D, perpendicular2D, sub2D } from '@/domain/geometry/point';
+import type { Annotation, Dimension, Member, Opening, ProjectData } from './types';
+
+export interface SelectionBounds {
+  min: Point2D;
+  max: Point2D;
+  width: number;
+  height: number;
+  center: Point2D;
+}
+
+export type TransformAnchor = 'min' | 'center' | 'max';
+
+export interface CopySelectionOptions {
+  dx: number;
+  dy: number;
+  count?: number;
+}
+
+export interface StretchSelectionOptions {
+  targetWidth: number;
+  targetHeight: number;
+  anchorX: TransformAnchor;
+  anchorY: TransformAnchor;
+}
+
+function deepClone<T>(value: T): T {
+  return JSON.parse(JSON.stringify(value)) as T;
+}
+
+function translatePoint(point: Point2D, dx: number, dy: number): Point2D {
+  return { x: point.x + dx, y: point.y + dy };
+}
+
+function scalePoint(point: Point2D, origin: Point2D, sx: number, sy: number): Point2D {
+  return {
+    x: origin.x + (point.x - origin.x) * sx,
+    y: origin.y + (point.y - origin.y) * sy,
+  };
+}
+
+function isPointListEmpty(points: Point2D[]): boolean {
+  return points.length === 0;
+}
+
+function getMemberPoints(member: Member): Point2D[] {
+  if (member.type === 'slab') {
+    return member.polygon.map((point) => ({ x: point.x, y: point.y }));
+  }
+
+  return [
+    { x: member.start.x, y: member.start.y },
+    { x: member.end.x, y: member.end.y },
+  ];
+}
+
+function getDimensionPoints(dimension: Dimension): Point2D[] {
+  return [dimension.start, dimension.end];
+}
+
+function getAnnotationPoint(annotation: Annotation): Point2D[] {
+  return [{ x: annotation.x, y: annotation.y }];
+}
+
+function getSelectionPoints(data: ProjectData, ids: string[]): Point2D[] {
+  const selectedIds = new Set(ids);
+  const points: Point2D[] = [];
+
+  for (const member of data.members) {
+    if (selectedIds.has(member.id)) {
+      points.push(...getMemberPoints(member));
+    }
+  }
+
+  for (const annotation of data.annotations) {
+    if (selectedIds.has(annotation.id)) {
+      points.push(...getAnnotationPoint(annotation));
+    }
+  }
+
+  for (const dimension of data.dimensions) {
+    if (selectedIds.has(dimension.id)) {
+      points.push(...getDimensionPoints(dimension));
+    }
+  }
+
+  return points;
+}
+
+export function getSelectionBounds(data: ProjectData, ids: string[]): SelectionBounds | null {
+  const points = getSelectionPoints(data, ids);
+  if (isPointListEmpty(points)) return null;
+
+  let minX = points[0].x;
+  let minY = points[0].y;
+  let maxX = points[0].x;
+  let maxY = points[0].y;
+
+  for (const point of points.slice(1)) {
+    minX = Math.min(minX, point.x);
+    minY = Math.min(minY, point.y);
+    maxX = Math.max(maxX, point.x);
+    maxY = Math.max(maxY, point.y);
+  }
+
+  return {
+    min: { x: minX, y: minY },
+    max: { x: maxX, y: maxY },
+    width: maxX - minX,
+    height: maxY - minY,
+    center: { x: (minX + maxX) / 2, y: (minY + maxY) / 2 },
+  };
+}
+
+function getLinearMemberLength(member: Member): number | null {
+  if (member.type === 'slab') return null;
+  return Math.hypot(member.end.x - member.start.x, member.end.y - member.start.y);
+}
+
+function transformMember(member: Member, transformPoint: (point: Point2D) => Point2D) {
+  if (member.type === 'slab') {
+    member.polygon = member.polygon.map((point) => transformPoint(point));
+    return;
+  }
+
+  const start = transformPoint({ x: member.start.x, y: member.start.y });
+  const end = transformPoint({ x: member.end.x, y: member.end.y });
+
+  member.start.x = start.x;
+  member.start.y = start.y;
+  member.end.x = end.x;
+  member.end.y = end.y;
+}
+
+function transformAnnotation(annotation: Annotation, transformPoint: (point: Point2D) => Point2D) {
+  const next = transformPoint({ x: annotation.x, y: annotation.y });
+  annotation.x = next.x;
+  annotation.y = next.y;
+}
+
+function transformDimension(dimension: Dimension, transformPoint: (point: Point2D) => Point2D) {
+  const start = transformPoint(dimension.start);
+  const end = transformPoint(dimension.end);
+  let nextOffset = dimension.offset;
+
+  const originalDir = normalize2D(sub2D(dimension.end, dimension.start));
+  if (originalDir.x !== 0 || originalDir.y !== 0) {
+    const originalPerp = perpendicular2D(originalDir);
+    const originalMid = midpoint2D(dimension.start, dimension.end);
+    const controlPoint = {
+      x: originalMid.x + originalPerp.x * dimension.offset,
+      y: originalMid.y + originalPerp.y * dimension.offset,
+    };
+    const transformedControl = transformPoint(controlPoint);
+    const nextDir = normalize2D(sub2D(end, start));
+    if (nextDir.x !== 0 || nextDir.y !== 0) {
+      const nextPerp = perpendicular2D(nextDir);
+      const nextMid = midpoint2D(start, end);
+      nextOffset = dot2D(sub2D(transformedControl, nextMid), nextPerp);
+    }
+  }
+
+  dimension.start = start;
+  dimension.end = end;
+  dimension.offset = Number.isFinite(nextOffset) ? nextOffset : dimension.offset;
+}
+
+function transformOpening(
+  opening: Opening,
+  transformPoint: (point: Point2D) => Point2D,
+  widthScale = 1,
+) {
+  const next = transformPoint({ x: opening.position.x, y: opening.position.y });
+  opening.position.x = next.x;
+  opening.position.y = next.y;
+  if (Number.isFinite(widthScale) && widthScale > 0) {
+    opening.width *= widthScale;
+  }
+}
+
+function applyPointTransformToSelection(
+  data: ProjectData,
+  ids: string[],
+  transformPoint: (point: Point2D) => Point2D,
+) {
+  const selectedIds = new Set(ids);
+  const selectedMembers = data.members.filter((member) => selectedIds.has(member.id));
+  const selectedMemberMap = new Map(selectedMembers.map((member) => [member.id, member]));
+  const originalMemberLengths = new Map(
+    selectedMembers
+      .map((member) => [member.id, getLinearMemberLength(member)] as const)
+      .filter((entry): entry is [string, number] => typeof entry[1] === 'number'),
+  );
+
+  for (const member of selectedMembers) {
+    transformMember(member, transformPoint);
+  }
+
+  for (const opening of data.openings) {
+    if (!selectedMemberMap.has(opening.memberId)) continue;
+    const member = selectedMemberMap.get(opening.memberId)!;
+    const originalLength = originalMemberLengths.get(opening.memberId);
+    const nextLength = getLinearMemberLength(member);
+    const widthScale =
+      typeof originalLength === 'number' &&
+      originalLength > 0 &&
+      typeof nextLength === 'number' &&
+      nextLength > 0
+        ? nextLength / originalLength
+        : 1;
+    transformOpening(opening, transformPoint, widthScale);
+  }
+
+  for (const annotation of data.annotations) {
+    if (selectedIds.has(annotation.id)) {
+      transformAnnotation(annotation, transformPoint);
+    }
+  }
+
+  for (const dimension of data.dimensions) {
+    if (selectedIds.has(dimension.id)) {
+      transformDimension(dimension, transformPoint);
+    }
+  }
+}
+
+function getTargetRange(min: number, max: number, targetSize: number, anchor: TransformAnchor) {
+  if (anchor === 'min') {
+    return { min, max: min + targetSize };
+  }
+  if (anchor === 'max') {
+    return { min: max - targetSize, max };
+  }
+
+  const center = (min + max) / 2;
+  return {
+    min: center - targetSize / 2,
+    max: center + targetSize / 2,
+  };
+}
+
+function stretchAxis(
+  value: number,
+  min: number,
+  max: number,
+  targetSize: number,
+  anchor: TransformAnchor,
+) {
+  const currentSize = max - min;
+  if (currentSize === 0) return value;
+
+  const targetRange = getTargetRange(min, max, targetSize, anchor);
+  const ratio = (value - min) / currentSize;
+  return targetRange.min + (targetRange.max - targetRange.min) * ratio;
+}
+
+export function translateSelection(data: ProjectData, ids: string[], dx: number, dy: number) {
+  applyPointTransformToSelection(data, ids, (point) => translatePoint(point, dx, dy));
+}
+
+export function duplicateSelection(
+  data: ProjectData,
+  ids: string[],
+  options: CopySelectionOptions,
+): string[] {
+  const selectedIds = new Set(ids);
+  const selectedMembers = data.members.filter((member) => selectedIds.has(member.id));
+  const selectedAnnotations = data.annotations.filter((annotation) => selectedIds.has(annotation.id));
+  const selectedDimensions = data.dimensions.filter((dimension) => selectedIds.has(dimension.id));
+  const openingsByMember = new Map<string, Opening[]>();
+  const copyCount = Math.max(1, Math.floor(options.count ?? 1));
+  const createdIds: string[] = [];
+
+  for (const opening of data.openings) {
+    if (!selectedIds.has(opening.memberId)) continue;
+    const list = openingsByMember.get(opening.memberId) ?? [];
+    list.push(opening);
+    openingsByMember.set(opening.memberId, list);
+  }
+
+  for (let index = 1; index <= copyCount; index++) {
+    const pointTransform = (point: Point2D) =>
+      translatePoint(point, options.dx * index, options.dy * index);
+    const memberIdMap = new Map<string, string>();
+
+    for (const member of selectedMembers) {
+      const clone = deepClone(member);
+      clone.id = uuidv4();
+      transformMember(clone, pointTransform);
+      memberIdMap.set(member.id, clone.id);
+      data.members.push(clone);
+      createdIds.push(clone.id);
+    }
+
+    for (const annotation of selectedAnnotations) {
+      const clone = deepClone(annotation);
+      clone.id = uuidv4();
+      transformAnnotation(clone, pointTransform);
+      data.annotations.push(clone);
+      createdIds.push(clone.id);
+    }
+
+    for (const dimension of selectedDimensions) {
+      const clone = deepClone(dimension);
+      clone.id = uuidv4();
+      transformDimension(clone, pointTransform);
+      data.dimensions.push(clone);
+      createdIds.push(clone.id);
+    }
+
+    for (const [memberId, openings] of openingsByMember) {
+      const clonedMemberId = memberIdMap.get(memberId);
+      if (!clonedMemberId) continue;
+      for (const opening of openings) {
+        const clone = deepClone(opening);
+        clone.id = uuidv4();
+        clone.memberId = clonedMemberId;
+        transformOpening(clone, pointTransform);
+        data.openings.push(clone);
+      }
+    }
+  }
+
+  return createdIds;
+}
+
+export function scaleSelection(
+  data: ProjectData,
+  ids: string[],
+  origin: Point2D,
+  scaleX: number,
+  scaleY: number,
+) {
+  applyPointTransformToSelection(data, ids, (point) =>
+    scalePoint(point, origin, scaleX, scaleY),
+  );
+}
+
+export function stretchSelection(
+  data: ProjectData,
+  ids: string[],
+  options: StretchSelectionOptions,
+): SelectionBounds | null {
+  const bounds = getSelectionBounds(data, ids);
+  if (!bounds) return null;
+
+  applyPointTransformToSelection(data, ids, (point) => ({
+    x: stretchAxis(point.x, bounds.min.x, bounds.max.x, options.targetWidth, options.anchorX),
+    y: stretchAxis(point.y, bounds.min.y, bounds.max.y, options.targetHeight, options.anchorY),
+  }));
+
+  return bounds;
+}

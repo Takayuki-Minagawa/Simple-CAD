@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { immer } from 'zustand/middleware/immer';
 import { temporal } from 'zundo';
 import { v4 as uuidv4 } from 'uuid';
+import type { Point2D } from '@/domain/geometry/types';
 import type {
   ProjectData,
   Member,
@@ -15,6 +16,13 @@ import type {
   Sheet,
   PlanView,
 } from '@/domain/structural/types';
+import {
+  duplicateSelection,
+  scaleSelection,
+  stretchSelection,
+  translateSelection,
+  type StretchSelectionOptions,
+} from '@/domain/structural/editTransform';
 
 export interface ProjectState {
   data: ProjectData | null;
@@ -33,6 +41,10 @@ export interface ProjectState {
   deleteMember: (id: string) => void;
   moveMember: (id: string, dx: number, dy: number) => void;
   duplicateMember: (id: string) => string | null;
+  translateEntities: (ids: string[], dx: number, dy: number) => void;
+  duplicateEntities: (ids: string[], dx: number, dy: number, count?: number) => string[];
+  scaleEntities: (ids: string[], origin: Point2D, scaleX: number, scaleY: number) => void;
+  stretchEntities: (ids: string[], options: StretchSelectionOptions) => void;
 
   // Annotation operations
   addAnnotation: (annotation: Annotation) => void;
@@ -218,19 +230,7 @@ export const useProjectStore = create<ProjectState>()(
       moveMember: (id, dx, dy) =>
         set((state) => {
           if (!state.data) return;
-          const member = state.data.members.find((m) => m.id === id);
-          if (!member) return;
-          if (member.type === 'slab') {
-            for (const p of member.polygon) {
-              p.x += dx;
-              p.y += dy;
-            }
-          } else {
-            member.start.x += dx;
-            member.start.y += dy;
-            member.end.x += dx;
-            member.end.y += dy;
-          }
+          translateSelection(state.data, [id], dx, dy);
           state.isDirty = true;
         }),
 
@@ -238,16 +238,43 @@ export const useProjectStore = create<ProjectState>()(
         let newId: string | null = null;
         set((state) => {
           if (!state.data) return;
-          const member = state.data.members.find((m) => m.id === id);
-          if (!member) return;
-          newId = uuidv4();
-          const clone = JSON.parse(JSON.stringify(member)) as Member;
-          (clone as Member).id = newId;
-          state.data.members.push(clone);
+          const createdIds = duplicateSelection(state.data, [id], { dx: 0, dy: 0, count: 1 });
+          newId = createdIds[0] ?? null;
           state.isDirty = true;
         });
         return newId;
       },
+
+      translateEntities: (ids, dx, dy) =>
+        set((state) => {
+          if (!state.data || ids.length === 0) return;
+          translateSelection(state.data, ids, dx, dy);
+          state.isDirty = true;
+        }),
+
+      duplicateEntities: (ids, dx, dy, count = 1) => {
+        let createdIds: string[] = [];
+        set((state) => {
+          if (!state.data || ids.length === 0) return;
+          createdIds = duplicateSelection(state.data, ids, { dx, dy, count });
+          state.isDirty = true;
+        });
+        return createdIds;
+      },
+
+      scaleEntities: (ids, origin, scaleX, scaleY) =>
+        set((state) => {
+          if (!state.data || ids.length === 0) return;
+          scaleSelection(state.data, ids, origin, scaleX, scaleY);
+          state.isDirty = true;
+        }),
+
+      stretchEntities: (ids, options) =>
+        set((state) => {
+          if (!state.data || ids.length === 0) return;
+          stretchSelection(state.data, ids, options);
+          state.isDirty = true;
+        }),
 
       // ── Annotations ──
 
