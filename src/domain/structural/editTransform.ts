@@ -67,7 +67,10 @@ function getDimensionPoints(dimension: Dimension): Point2D[] {
   return [dimension.start, dimension.end];
 }
 
-function getAnnotationPoint(annotation: Annotation): Point2D[] {
+function getAnnotationPoints(annotation: Annotation): Point2D[] {
+  if (annotation.points && annotation.points.length > 0) {
+    return annotation.points.map((p) => ({ x: p.x, y: p.y }));
+  }
   return [{ x: annotation.x, y: annotation.y }];
 }
 
@@ -83,7 +86,7 @@ function getSelectionPoints(data: ProjectData, ids: string[]): Point2D[] {
 
   for (const annotation of data.annotations) {
     if (selectedIds.has(annotation.id)) {
-      points.push(...getAnnotationPoint(annotation));
+      points.push(...getAnnotationPoints(annotation));
     }
   }
 
@@ -145,6 +148,9 @@ function transformAnnotation(annotation: Annotation, transformPoint: (point: Poi
   const next = transformPoint({ x: annotation.x, y: annotation.y });
   annotation.x = next.x;
   annotation.y = next.y;
+  if (annotation.points && annotation.points.length > 0) {
+    annotation.points = annotation.points.map((p) => transformPoint(p));
+  }
 }
 
 function transformDimension(dimension: Dimension, transformPoint: (point: Point2D) => Point2D) {
@@ -373,49 +379,36 @@ export function offsetSelection(
 
   for (const member of [...data.members]) {
     if (!selectedIds.has(member.id)) continue;
+    if (member.type === 'slab') continue;
 
-    if (member.type === 'slab') continue; // skip slabs
+    const isZeroLength =
+      member.start.x === member.end.x && member.start.y === member.end.y;
 
-    const dir = normalize2D(sub2D(
-      { x: member.end.x, y: member.end.y },
-      { x: member.start.x, y: member.start.y },
-    ));
-    const perp = perpendicular2D(dir);
-    const dx = perp.x * distance;
-    const dy = perp.y * distance;
-
-    const clone = deepClone(member);
-    clone.id = uuidv4();
-    clone.start.x += dx;
-    clone.start.y += dy;
-    clone.end.x += dx;
-    clone.end.y += dy;
-    data.members.push(clone);
-    createdIds.push(clone.id);
-  }
-
-  // Offset columns in X direction
-  for (const member of [...data.members]) {
-    if (!selectedIds.has(member.id)) continue;
-    if (member.type !== 'column') continue;
-    // Already handled above for columns (they have start/end) but the
-    // perpendicular of a zero-length vector is {0,0}. Handle as X offset:
-    if (member.start.x === member.end.x && member.start.y === member.end.y) {
+    if (isZeroLength) {
+      // Zero-length members (e.g. point columns): offset in X direction
       const clone = deepClone(member);
       clone.id = uuidv4();
       clone.start.x += distance;
       clone.end.x += distance;
       data.members.push(clone);
-      // Remove the duplicate created above (from the first loop)
-      const dupIdx = createdIds.length - 1;
-      const dupId = createdIds[dupIdx];
-      if (dupId) {
-        const idx = data.members.findIndex((m) => m.id === dupId);
-        if (idx >= 0 && data.members[idx].type === 'column') {
-          data.members.splice(idx, 1);
-          createdIds.splice(dupIdx, 1);
-        }
-      }
+      createdIds.push(clone.id);
+    } else {
+      // Normal linear members: offset perpendicular
+      const dir = normalize2D(sub2D(
+        { x: member.end.x, y: member.end.y },
+        { x: member.start.x, y: member.start.y },
+      ));
+      const perp = perpendicular2D(dir);
+      const dx = perp.x * distance;
+      const dy = perp.y * distance;
+
+      const clone = deepClone(member);
+      clone.id = uuidv4();
+      clone.start.x += dx;
+      clone.start.y += dy;
+      clone.end.x += dx;
+      clone.end.y += dy;
+      data.members.push(clone);
       createdIds.push(clone.id);
     }
   }
@@ -551,13 +544,16 @@ export function getEntityBoundsList(data: ProjectData, storyId: string | null): 
 
   for (const annotation of data.annotations) {
     if (storyId && annotation.story !== storyId) continue;
-    result.push({
-      id: annotation.id,
-      minX: annotation.x,
-      minY: annotation.y,
-      maxX: annotation.x,
-      maxY: annotation.y,
-    });
+    const aPts = getAnnotationPoints(annotation);
+    if (aPts.length === 0) continue;
+    let aMinX = aPts[0].x, aMinY = aPts[0].y, aMaxX = aPts[0].x, aMaxY = aPts[0].y;
+    for (const p of aPts.slice(1)) {
+      aMinX = Math.min(aMinX, p.x);
+      aMinY = Math.min(aMinY, p.y);
+      aMaxX = Math.max(aMaxX, p.x);
+      aMaxY = Math.max(aMaxY, p.y);
+    }
+    result.push({ id: annotation.id, minX: aMinX, minY: aMinY, maxX: aMaxX, maxY: aMaxY });
   }
 
   for (const dimension of data.dimensions) {

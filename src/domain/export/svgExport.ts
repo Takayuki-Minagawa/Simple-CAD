@@ -117,6 +117,40 @@ export function exportSvg(data: ProjectData, sheetId: string): string {
   }
 
   svgLines.push(`</g>`);
+
+  // Render additional viewports if defined
+  if (sheet.viewports && sheet.viewports.length > 0) {
+    for (const vp of sheet.viewports) {
+      const vpView = data.views.find((v) => v.id === vp.viewId && v.type === 'plan');
+      if (!vpView || !('story' in vpView)) continue;
+      const vpStoryId = vpView.story;
+      const vpCenter = 'center' in vpView ? vpView.center : { x: 4000, y: 3000 };
+      const vpScaleNum = parseScale(vp.scale);
+      const vpScale = 1 / vpScaleNum;
+      const vpMembers = data.members.filter((m) => m.story === vpStoryId);
+      const vpAnnotations = data.annotations.filter((a) => a.story === vpStoryId);
+      const vpDimensions = data.dimensions.filter((d) => d.story === vpStoryId);
+
+      const vpOffX = vp.x + vp.width / 2 - vpCenter.x * vpScale;
+      const vpOffY = vp.y + vp.height / 2 + vpCenter.y * vpScale;
+
+      const clipId = `vp-clip-${vp.id}`;
+      svgLines.push(`<defs><clipPath id="${clipId}"><rect x="${vp.x}" y="${vp.y}" width="${vp.width}" height="${vp.height}"/></clipPath></defs>`);
+      svgLines.push(`<rect x="${vp.x}" y="${vp.y}" width="${vp.width}" height="${vp.height}" fill="none" stroke="#999" stroke-width="0.3" stroke-dasharray="2 2"/>`);
+      svgLines.push(`<g clip-path="url(#${clipId})">`);
+      svgLines.push(`<g transform="translate(${vpOffX}, ${vpOffY}) scale(${vpScale}, ${-vpScale})">`);
+      for (const m of vpMembers) svgLines.push(renderMemberSvg(m, data.sections));
+      for (const d of vpDimensions) svgLines.push(renderDimensionSvg(d));
+      for (const a of vpAnnotations) {
+        const fs = a.fontSize ?? 300;
+        const fillColor = a.color ?? '#34495e';
+        svgLines.push(`  <text x="${a.x}" y="${a.y}" font-size="${fs}" fill="${escapeXml(fillColor)}" transform="translate(0,0) scale(1,-1) translate(0,${-2 * a.y})">${escapeXml(a.text)}</text>`);
+      }
+      svgLines.push(`</g>`);
+      svgLines.push(`</g>`);
+    }
+  }
+
   svgLines.push(`</svg>`);
 
   return svgLines.join('\n');
