@@ -110,6 +110,12 @@ export interface Translations {
   aiPastePlaceholder: string;
   aiImport: string;
   aiClose: string;
+  aiGuideShow: string;
+  aiGuideHide: string;
+  aiGuideTitle: string;
+  aiGuideSteps: string;
+  aiGuideTipsTitle: string;
+  aiGuideTips: string;
 
   // 3D viewer
   viewOrtho: string;

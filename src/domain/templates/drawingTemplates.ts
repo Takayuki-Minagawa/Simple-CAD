@@ -1,4 +1,3 @@
-import { v4 as uuidv4 } from 'uuid';
 import type { ProjectData } from '@/domain/structural/types';
 
 export interface DrawingTemplate {
@@ -13,7 +12,7 @@ function createA1StructureTemplate(): ProjectData {
   const viewId = `VIEW-${storyId}-PLAN`;
   return {
     schemaVersion: '1.0.0',
-    project: { id: uuidv4(), name: 'Structure Project', unit: 'mm' },
+    project: { id: 'proj-001', name: 'Structure Project', unit: 'mm' },
     stories: [
       { id: '1F', name: '1F', elevation: 0, height: 3000 },
       { id: '2F', name: '2F', elevation: 3000, height: 3000 },
@@ -70,7 +69,7 @@ function createA3DetailTemplate(): ProjectData {
   const viewId = `VIEW-${storyId}-PLAN`;
   return {
     schemaVersion: '1.0.0',
-    project: { id: uuidv4(), name: 'Detail Drawing', unit: 'mm' },
+    project: { id: 'proj-001', name: 'Detail Drawing', unit: 'mm' },
     stories: [{ id: storyId, name: storyId, elevation: 0, height: 3000 }],
     grids: [],
     materials: [{ id: 'MAT-RC-24', name: 'RC Fc24', type: 'concrete' }],
@@ -119,7 +118,7 @@ function createBlankA1Template(): ProjectData {
   const viewId = `VIEW-${storyId}-PLAN`;
   return {
     schemaVersion: '1.0.0',
-    project: { id: uuidv4(), name: 'New Project', unit: 'mm' },
+    project: { id: 'proj-001', name: 'New Project', unit: 'mm' },
     stories: [{ id: storyId, name: storyId, elevation: 0, height: 3000 }],
     grids: [],
     materials: [{ id: 'MAT-RC-24', name: 'RC Fc24', type: 'concrete' }],

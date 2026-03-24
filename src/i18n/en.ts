@@ -96,6 +96,19 @@ export const en: Translations = {
   aiPastePlaceholder: 'Paste AI-generated JSON here...',
   aiImport: 'Import',
   aiClose: 'Close',
+  aiGuideShow: 'Show guide',
+  aiGuideHide: 'Hide guide',
+  aiGuideTitle: 'How to use (3 steps)',
+  aiGuideSteps:
+    '① Click "Copy Prompt" → paste into ChatGPT or Claude\n' +
+    '② Describe the building you want in natural language\n' +
+    '   e.g. "1F 8m×6m RC, columns 600×600, beams 300×600"\n' +
+    '③ Paste the JSON returned by the AI and click "Import"',
+  aiGuideTipsTitle: 'Tips',
+  aiGuideTips:
+    '• Use "Copy Current JSON" to share your project with the AI for modifications\n' +
+    '• If errors appear, share the red error text with the AI to fix the JSON\n' +
+    '• After importing, verify in 2D/3D views and fine-tune in the Properties panel',
 
   viewOrtho: 'Ortho',
   viewPersp: 'Persp',
@@ -133,7 +146,17 @@ export const en: Translations = {
     'All data is managed as JSON. The schema conforms to JSON Schema 2020-12, and automatic validation is performed on load. Member types: column, beam, wall, slab. Unit is fixed to mm.',
   helpSectionAi: 'AI Integration',
   helpAiText:
-    'Copy the prompt template from the "AI" button and paste it into ChatGPT, Claude, or other LLMs to auto-generate JSON data. You can also paste generated JSON directly to import it.',
+    'Click "Tools → AI" in the toolbar to open the AI Assist panel.\n\n' +
+    '■ How to use (3 steps)\n' +
+    '1. Click "Copy Prompt" to copy the prompt template, then paste it into an external AI such as ChatGPT or Claude.\n' +
+    '2. Describe the building you want to create in natural language.\n' +
+    '   e.g. "1F 8m×6m RC, columns 600×600, beams 300×600, slab thickness 180"\n' +
+    '3. Paste the JSON returned by the AI into the text area and click "Import".\n\n' +
+    '■ Additional features\n' +
+    '• "Copy Current JSON": Share your current project with the AI to request modifications.\n' +
+    '• Error display: If import fails, share the red error text with the AI to fix the JSON.\n' +
+    '• After importing, verify in 2D/3D views and fine-tune in the Properties panel.\n\n' +
+    'Note: No AI engine is built into this app. It works via copy & paste with external AI services.',
 
   transformOffset: 'Offset',
   transformMirror: 'Mirror',

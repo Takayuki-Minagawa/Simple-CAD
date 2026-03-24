@@ -36,10 +36,25 @@ export function AiAssistPanel({ onClose }: Props) {
     onClose();
   };
 
+  const [showGuide, setShowGuide] = useState(false);
+
   return (
     <div style={{ position: 'fixed', inset: 0, background: 'var(--bg-modal-overlay)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }} onClick={onClose}>
-      <div style={{ background: 'var(--bg-modal)', borderRadius: 8, padding: 24, width: 520, maxHeight: '80vh', overflow: 'auto', boxShadow: '0 8px 32px rgba(0,0,0,0.2)', color: 'var(--text-primary)' }} onClick={(e) => e.stopPropagation()}>
-        <h3 style={{ margin: '0 0 12px', fontSize: 16 }}>{t.aiTitle}</h3>
+      <div style={{ background: 'var(--bg-modal)', borderRadius: 8, padding: 24, width: 560, maxHeight: '80vh', overflow: 'auto', boxShadow: '0 8px 32px rgba(0,0,0,0.2)', color: 'var(--text-primary)' }} onClick={(e) => e.stopPropagation()}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+          <h3 style={{ margin: 0, fontSize: 16 }}>{t.aiTitle}</h3>
+          <button className="toolbar-btn" style={{ background: 'none', color: 'var(--accent)', fontSize: 12, textDecoration: 'underline', border: 'none', cursor: 'pointer', padding: '2px 4px' }} onClick={() => setShowGuide(!showGuide)}>{showGuide ? t.aiGuideHide : t.aiGuideShow}</button>
+        </div>
+
+        {showGuide && (
+          <div style={{ background: 'var(--code-bg)', borderRadius: 6, padding: 14, marginBottom: 16, fontSize: 12, lineHeight: 1.7, color: 'var(--text-secondary)' }}>
+            <div style={{ fontWeight: 600, marginBottom: 6, color: 'var(--text-primary)' }}>{t.aiGuideTitle}</div>
+            <div style={{ whiteSpace: 'pre-wrap' }}>{t.aiGuideSteps}</div>
+            <div style={{ fontWeight: 600, marginTop: 10, marginBottom: 4, color: 'var(--text-primary)' }}>{t.aiGuideTipsTitle}</div>
+            <div style={{ whiteSpace: 'pre-wrap' }}>{t.aiGuideTips}</div>
+          </div>
+        )}
+
         <div style={{ marginBottom: 16 }}>
           <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)' }}>{t.aiPromptLabel}</label>
           <pre style={{ background: 'var(--code-bg)', color: 'var(--text-primary)', padding: 8, borderRadius: 4, fontSize: 11, maxHeight: 120, overflow: 'auto', marginTop: 4 }}>{PROMPT_TEMPLATE}</pre>

@@ -1,6 +1,6 @@
-import { v4 as uuidv4 } from 'uuid';
 import type { Point2D } from '@/domain/geometry/types';
 import { dot2D, midpoint2D, normalize2D, perpendicular2D, sub2D } from '@/domain/geometry/point';
+import { collectAllIds, generateId, prefixFor } from '@/domain/idGenerator';
 import type { Annotation, Dimension, Member, Opening, ProjectData } from './types';
 
 export interface ArraySelectionOptions {
@@ -285,6 +285,7 @@ export function duplicateSelection(
   const openingsByMember = new Map<string, Opening[]>();
   const copyCount = Math.max(1, Math.floor(options.count ?? 1));
   const createdIds: string[] = [];
+  const usedIds = collectAllIds(data);
 
   for (const opening of data.openings) {
     if (!selectedIds.has(opening.memberId)) continue;
@@ -300,7 +301,7 @@ export function duplicateSelection(
 
     for (const member of selectedMembers) {
       const clone = deepClone(member);
-      clone.id = uuidv4();
+      clone.id = generateId(prefixFor(member.type), usedIds);
       transformMember(clone, pointTransform);
       memberIdMap.set(member.id, clone.id);
       data.members.push(clone);
@@ -309,7 +310,7 @@ export function duplicateSelection(
 
     for (const annotation of selectedAnnotations) {
       const clone = deepClone(annotation);
-      clone.id = uuidv4();
+      clone.id = generateId(annotation.type === 'spline' ? 'spl' : 'ann', usedIds);
       transformAnnotation(clone, pointTransform);
       data.annotations.push(clone);
       createdIds.push(clone.id);
@@ -317,7 +318,7 @@ export function duplicateSelection(
 
     for (const dimension of selectedDimensions) {
       const clone = deepClone(dimension);
-      clone.id = uuidv4();
+      clone.id = generateId('dim', usedIds);
       transformDimension(clone, pointTransform);
       data.dimensions.push(clone);
       createdIds.push(clone.id);
@@ -328,7 +329,7 @@ export function duplicateSelection(
       if (!clonedMemberId) continue;
       for (const opening of openings) {
         const clone = deepClone(opening);
-        clone.id = uuidv4();
+        clone.id = generateId('opn', usedIds);
         clone.memberId = clonedMemberId;
         transformOpening(clone, pointTransform);
         data.openings.push(clone);
@@ -376,6 +377,7 @@ export function offsetSelection(
 ): string[] {
   const selectedIds = new Set(ids);
   const createdIds: string[] = [];
+  const usedIds = collectAllIds(data);
 
   for (const member of [...data.members]) {
     if (!selectedIds.has(member.id)) continue;
@@ -387,7 +389,7 @@ export function offsetSelection(
     if (isZeroLength) {
       // Zero-length members (e.g. point columns): offset in X direction
       const clone = deepClone(member);
-      clone.id = uuidv4();
+      clone.id = generateId(prefixFor(member.type), usedIds);
       clone.start.x += distance;
       clone.end.x += distance;
       data.members.push(clone);
@@ -403,7 +405,7 @@ export function offsetSelection(
       const dy = perp.y * distance;
 
       const clone = deepClone(member);
-      clone.id = uuidv4();
+      clone.id = generateId(prefixFor(member.type), usedIds);
       clone.start.x += dx;
       clone.start.y += dy;
       clone.end.x += dx;
@@ -448,11 +450,12 @@ export function mirrorSelection(
   const selectedIds = new Set(ids);
   const createdIds: string[] = [];
   const memberIdMap = new Map<string, string>();
+  const usedIds = collectAllIds(data);
 
   for (const member of [...data.members]) {
     if (!selectedIds.has(member.id)) continue;
     const clone = deepClone(member);
-    clone.id = uuidv4();
+    clone.id = generateId(prefixFor(member.type), usedIds);
     transformMember(clone, mirrorTransform);
     memberIdMap.set(member.id, clone.id);
     data.members.push(clone);
@@ -462,7 +465,7 @@ export function mirrorSelection(
   for (const annotation of [...data.annotations]) {
     if (!selectedIds.has(annotation.id)) continue;
     const clone = deepClone(annotation);
-    clone.id = uuidv4();
+    clone.id = generateId(annotation.type === 'spline' ? 'spl' : 'ann', usedIds);
     transformAnnotation(clone, mirrorTransform);
     data.annotations.push(clone);
     createdIds.push(clone.id);
@@ -471,7 +474,7 @@ export function mirrorSelection(
   for (const dimension of [...data.dimensions]) {
     if (!selectedIds.has(dimension.id)) continue;
     const clone = deepClone(dimension);
-    clone.id = uuidv4();
+    clone.id = generateId('dim', usedIds);
     transformDimension(clone, mirrorTransform);
     data.dimensions.push(clone);
     createdIds.push(clone.id);
@@ -482,7 +485,7 @@ export function mirrorSelection(
     const clonedMemberId = memberIdMap.get(opening.memberId);
     if (!clonedMemberId) continue;
     const clone = deepClone(opening);
-    clone.id = uuidv4();
+    clone.id = generateId('opn', usedIds);
     clone.memberId = clonedMemberId;
     transformOpening(clone, mirrorTransform);
     data.openings.push(clone);

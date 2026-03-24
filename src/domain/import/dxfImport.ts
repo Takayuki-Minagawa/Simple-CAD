@@ -1,6 +1,6 @@
 import type { Point2D } from '@/domain/geometry/types';
 import type { Annotation, Dimension, Member, Material, Section } from '@/domain/structural/types';
-import { v4 as uuidv4 } from 'uuid';
+import { generateId } from '@/domain/idGenerator';
 
 interface DxfEntity {
   type: string;
@@ -173,13 +173,14 @@ function convertLineToMember(
   entity: DxfEntity,
   story: string,
   sections: SectionRegistry,
+  usedIds: Set<string>,
 ): Member | null {
   if (!entity.startPoint || !entity.endPoint) return null;
 
   const wallSection = sections.getWallSection(DEFAULT_WALL_THICKNESS);
 
   return {
-    id: uuidv4(),
+    id: generateId('wall', usedIds),
     type: 'wall',
     story,
     sectionId: wallSection.id,
@@ -203,6 +204,7 @@ function convertCircleToMember(
   entity: DxfEntity,
   story: string,
   sections: SectionRegistry,
+  usedIds: Set<string>,
 ): Member | null {
   if (!entity.center || !entity.radius) return null;
 
@@ -210,7 +212,7 @@ function convertCircleToMember(
   const colSection = sections.getColumnSection(diameter, diameter);
 
   return {
-    id: uuidv4(),
+    id: generateId('col', usedIds),
     type: 'column',
     story,
     sectionId: colSection.id,
@@ -224,6 +226,7 @@ function convertPolylineToMembers(
   entity: DxfEntity,
   story: string,
   sections: SectionRegistry,
+  usedIds: Set<string>,
 ): Member[] {
   const verts = entity.vertices;
   if (!verts || verts.length < 2) return [];
@@ -242,7 +245,7 @@ function convertPolylineToMembers(
         const colSection = sections.getColumnSection(w, d);
         return [
           {
-            id: uuidv4(),
+            id: generateId('col', usedIds),
             type: 'column',
             story,
             sectionId: colSection.id,
@@ -284,7 +287,7 @@ function convertPolylineToMembers(
 
         return [
           {
-            id: uuidv4(),
+            id: generateId('beam', usedIds),
             type: 'beam',
             story,
             sectionId: beamSection.id,
@@ -302,7 +305,7 @@ function convertPolylineToMembers(
     const slabSection = sections.getSlabSection(DEFAULT_SLAB_THICKNESS);
     return [
       {
-        id: uuidv4(),
+        id: generateId('slab', usedIds),
         type: 'slab',
         story,
         sectionId: slabSection.id,
@@ -318,7 +321,7 @@ function convertPolylineToMembers(
   const members: Member[] = [];
   for (let i = 0; i < points2D.length - 1; i++) {
     members.push({
-      id: uuidv4(),
+      id: generateId('wall', usedIds),
       type: 'wall',
       story,
       sectionId: wallSection.id,
@@ -334,7 +337,7 @@ function convertPolylineToMembers(
 
 // ── DIMENSION entity conversion ──────────────────────────────
 
-function convertDimensionEntity(entity: DxfEntity, story: string): Dimension | null {
+function convertDimensionEntity(entity: DxfEntity, story: string, usedIds: Set<string>): Dimension | null {
   if (!entity.dimExt1 || !entity.dimExt2) return null;
 
   // Compute signed offset by projecting dimLineOrigin onto the perpendicular of the measured segment
@@ -355,7 +358,7 @@ function convertDimensionEntity(entity: DxfEntity, story: string): Dimension | n
   }
 
   return {
-    id: uuidv4(),
+    id: generateId('dim', usedIds),
     story,
     start: { x: entity.dimExt1.x, y: entity.dimExt1.y },
     end: { x: entity.dimExt2.x, y: entity.dimExt2.y },
@@ -389,6 +392,7 @@ export function importDxf(
 
   const convertGeometry = options.convertGeometry ?? false;
   const sections = new SectionRegistry();
+  const usedIds = new Set<string>();
 
   try {
     const entities = parseDxfEntities(content);
@@ -398,7 +402,7 @@ export function importDxf(
         case 'LINE':
           primitiveCount++;
           if (convertGeometry) {
-            const member = convertLineToMember(entity, defaultStory, sections);
+            const member = convertLineToMember(entity, defaultStory, sections, usedIds);
             if (member) members.push(member);
           }
           break;
@@ -406,14 +410,14 @@ export function importDxf(
         case 'POLYLINE':
           primitiveCount++;
           if (convertGeometry) {
-            const polyMembers = convertPolylineToMembers(entity, defaultStory, sections);
+            const polyMembers = convertPolylineToMembers(entity, defaultStory, sections, usedIds);
             members.push(...polyMembers);
           }
           break;
         case 'CIRCLE':
           primitiveCount++;
           if (convertGeometry) {
-            const colMember = convertCircleToMember(entity, defaultStory, sections);
+            const colMember = convertCircleToMember(entity, defaultStory, sections, usedIds);
             if (colMember) members.push(colMember);
           }
           break;
@@ -426,7 +430,7 @@ export function importDxf(
         case 'DIMENSION':
           primitiveCount++;
           if (convertGeometry) {
-            const dim = convertDimensionEntity(entity, defaultStory);
+            const dim = convertDimensionEntity(entity, defaultStory, usedIds);
             if (dim) dimensions.push(dim);
           }
           break;
@@ -434,7 +438,7 @@ export function importDxf(
         case 'MTEXT':
           if (entity.startPoint && entity.text) {
             annotations.push({
-              id: uuidv4(),
+              id: generateId('ann', usedIds),
               type: 'text',
               story: defaultStory,
               x: entity.startPoint.x,

@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { immer } from 'zustand/middleware/immer';
 import { temporal } from 'zundo';
-import { v4 as uuidv4 } from 'uuid';
+import { collectAllIds, generateId } from '@/domain/idGenerator';
 import type { Point2D } from '@/domain/geometry/types';
 import type {
   ProjectData,
@@ -189,7 +189,7 @@ function createEmptyProject(): ProjectData {
   const defaultView = createDefaultPlanView(defaultStoryId);
   return {
     schemaVersion: '1.0.0',
-    project: { id: uuidv4(), name: 'New Project', unit: 'mm' },
+    project: { id: 'proj-001', name: 'New Project', unit: 'mm' },
     stories: [{ id: defaultStoryId, name: defaultStoryId, elevation: 0, height: 3000 }],
     grids: [],
     materials: [{ id: 'MAT-RC-24', name: 'RC Fc24', type: 'concrete' }],
@@ -710,7 +710,7 @@ export const useProjectStore = create<ProjectState>()(
         set((state) => {
           if (!state.data || ids.length === 0) return;
           if (!state.data.groups) state.data.groups = [];
-          groupId = uuidv4();
+          groupId = generateId('grp', collectAllIds(state.data));
           const group: Group = { id: groupId, name, memberIds: [...ids] };
           state.data.groups.push(group);
           state.isDirty = true;

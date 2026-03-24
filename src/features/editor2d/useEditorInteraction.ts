@@ -1,6 +1,6 @@
 import { useState, useCallback } from 'react';
-import { v4 as uuidv4 } from 'uuid';
 import { useProjectStore, useEditorStore } from '@/app/store';
+import { collectAllIds, generateId } from '@/domain/idGenerator';
 import type { EditorTool } from '@/app/store';
 import { useI18n } from '@/i18n';
 import type { Annotation, Dimension, ColumnMember, BeamMember, WallMember, SlabMember, ConstructionLine } from '@/domain/structural/types';
@@ -87,6 +87,8 @@ export function useEditorInteraction() {
       const story = store.data.stories.find((s) => s.id === activeStory);
       if (!story) return;
 
+      const usedIds = collectAllIds(store.data);
+
       const defaultSection = (type: string) => {
         const map: Record<string, string> = {
           column: 'rc_column_rect',
@@ -102,7 +104,7 @@ export function useEditorInteraction() {
       switch (tool) {
         case 'column': {
           const member: ColumnMember = {
-            id: uuidv4(),
+            id: generateId('col', usedIds),
             type: 'column',
             story: activeStory,
             sectionId: defaultSection('column'),
@@ -120,7 +122,7 @@ export function useEditorInteraction() {
             const pts = [...prev.points, pos];
             if (pts.length >= 2) {
               const member: BeamMember = {
-                id: uuidv4(),
+                id: generateId('beam', usedIds),
                 type: 'beam',
                 story: activeStory,
                 sectionId: defaultSection('beam'),
@@ -144,7 +146,7 @@ export function useEditorInteraction() {
               const sec = store.data!.sections.find((s) => s.id === defaultSection('wall'));
               const thickness = sec && 'thickness' in sec ? sec.thickness : 200;
               const member: WallMember = {
-                id: uuidv4(),
+                id: generateId('wall', usedIds),
                 type: 'wall',
                 story: activeStory,
                 sectionId: defaultSection('wall'),
@@ -176,7 +178,7 @@ export function useEditorInteraction() {
             const pts = [...prev.points, pos];
             if (pts.length >= 2) {
               const dim: Dimension = {
-                id: uuidv4(),
+                id: generateId('dim', usedIds),
                 story: activeStory,
                 start: { x: pts[0].x, y: pts[0].y },
                 end: { x: pts[1].x, y: pts[1].y },
@@ -194,7 +196,7 @@ export function useEditorInteraction() {
           const text = prompt(useI18n.getState().t.promptAnnotationText);
           if (!text) break;
           const ann: Annotation = {
-            id: uuidv4(),
+            id: generateId('ann', usedIds),
             type: 'text',
             story: activeStory,
             x: pos.x,
@@ -214,7 +216,7 @@ export function useEditorInteraction() {
               const len = Math.sqrt(dx * dx + dy * dy);
               if (len > 0) {
                 const cl: ConstructionLine = {
-                  id: uuidv4(),
+                  id: generateId('xl', usedIds),
                   story: activeStory,
                   type: 'xline',
                   origin: { x: pts[0].x, y: pts[0].y },
@@ -341,9 +343,10 @@ export function useEditorInteraction() {
           const story = store.data.stories.find((s) => s.id === activeStory);
           if (!story) return prev;
 
+          const usedIds = collectAllIds(store.data);
           const defaultSection = store.data.sections.find((s) => s.kind === 'rc_slab')?.id ?? store.data.sections[0]?.id ?? '';
           const member: SlabMember = {
-            id: uuidv4(),
+            id: generateId('slab', usedIds),
             type: 'slab',
             story: activeStory,
             sectionId: defaultSection,
@@ -364,8 +367,9 @@ export function useEditorInteraction() {
           const { activeStory } = useEditorStore.getState();
           if (!store.data || !activeStory) return prev;
 
+          const usedIds2 = collectAllIds(store.data);
           const ann: Annotation = {
-            id: uuidv4(),
+            id: generateId('spl', usedIds2),
             type: 'spline',
             story: activeStory,
             x: prev.points[0].x,
