@@ -64,6 +64,13 @@ export interface Translations {
   propText: string;
   propLength: string;
   propOffset: string;
+  propColor: string;
+  propLineWeight: string;
+  propLineType: string;
+  propTextAlign: string;
+  propFillColor: string;
+  propFillOpacity: string;
+  propRotation: string;
 
   // Status bar
   statusZoom: string;

@@ -1,7 +1,10 @@
 import { useProjectStore, useEditorStore } from '@/app/store';
 import { useI18n } from '@/i18n';
-import type { Member, Annotation, Dimension } from '@/domain/structural/types';
+import type { Member, Annotation, Dimension, LineType, TextAlign } from '@/domain/structural/types';
 import { useState, useEffect } from 'react';
+
+const LINE_TYPE_OPTIONS: LineType[] = ['solid', 'dashed', 'dotted', 'chain', 'dashdot'];
+const TEXT_ALIGN_OPTIONS: TextAlign[] = ['left', 'center', 'right'];
 
 export function PropertyPanel() {
   const data = useProjectStore((s) => s.data);
@@ -75,6 +78,27 @@ function MemberProps({ member }: { member: Member }) {
             <CoordRow label="End Y" value={member.end.y} onChange={(v) => updateMember(member.id, { end: { ...member.end, y: v } } as Partial<Member>)} />
           </>
         )}
+        {/* Style properties */}
+        <div className="prop-row">
+          <span className="prop-label">{t.propColor}</span>
+          <input type="color" value={member.color ?? '#000000'} onChange={(e) => updateMember(member.id, { color: e.target.value } as Partial<Member>)} />
+        </div>
+        <CoordRow label={t.propLineWeight} value={member.lineWeight ?? 20} onChange={(v) => updateMember(member.id, { lineWeight: v } as Partial<Member>)} />
+        <div className="prop-row">
+          <span className="prop-label">{t.propLineType}</span>
+          <select className="prop-select" value={member.lineType ?? 'solid'} onChange={(e) => updateMember(member.id, { lineType: e.target.value as LineType } as Partial<Member>)}>
+            {LINE_TYPE_OPTIONS.map((lt) => <option key={lt} value={lt}>{lt}</option>)}
+          </select>
+        </div>
+        {member.type === 'slab' && (
+          <>
+            <div className="prop-row">
+              <span className="prop-label">{t.propFillColor}</span>
+              <input type="color" value={member.fillColor ?? '#9b59b6'} onChange={(e) => updateMember(member.id, { fillColor: e.target.value } as Partial<Member>)} />
+            </div>
+            <CoordRow label={t.propFillOpacity} value={member.fillOpacity ?? 0.1} onChange={(v) => updateMember(member.id, { fillOpacity: Math.max(0, Math.min(1, v)) } as Partial<Member>)} />
+          </>
+        )}
       </div>
     </div>
   );
@@ -91,16 +115,34 @@ function AnnotationProps({ annotation }: { annotation: Annotation }) {
         <div className="prop-row"><span className="prop-label">{t.propId}</span><span>{annotation.id}</span></div>
         <div className="prop-row">
           <span className="prop-label">{t.propText}</span>
-          <input className="prop-input" value={annotation.text} onChange={(e) => updateAnnotation(annotation.id, { text: e.target.value })} />
+          <textarea
+            className="prop-input"
+            value={annotation.text}
+            onChange={(e) => updateAnnotation(annotation.id, { text: e.target.value })}
+            rows={3}
+            style={{ resize: 'vertical', fontFamily: 'inherit', fontSize: 'inherit' }}
+          />
         </div>
         <CoordRow label="X" value={annotation.x} onChange={(v) => updateAnnotation(annotation.id, { x: v })} />
         <CoordRow label="Y" value={annotation.y} onChange={(v) => updateAnnotation(annotation.id, { y: v })} />
+        <div className="prop-row">
+          <span className="prop-label">{t.propColor}</span>
+          <input type="color" value={annotation.color ?? '#000000'} onChange={(e) => updateAnnotation(annotation.id, { color: e.target.value })} />
+        </div>
+        <div className="prop-row">
+          <span className="prop-label">{t.propTextAlign}</span>
+          <select className="prop-select" value={annotation.textAlign ?? 'left'} onChange={(e) => updateAnnotation(annotation.id, { textAlign: e.target.value as TextAlign })}>
+            {TEXT_ALIGN_OPTIONS.map((ta) => <option key={ta} value={ta}>{ta}</option>)}
+          </select>
+        </div>
+        <CoordRow label={t.propRotation} value={annotation.rotation ?? 0} onChange={(v) => updateAnnotation(annotation.id, { rotation: v })} />
       </div>
     </div>
   );
 }
 
 function DimensionProps({ dimension }: { dimension: Dimension }) {
+  const updateDimension = useProjectStore((s) => s.updateDimension);
   const { t } = useI18n();
 
   return (
@@ -112,7 +154,18 @@ function DimensionProps({ dimension }: { dimension: Dimension }) {
           <span className="prop-label">{t.propLength}</span>
           <span>{Math.sqrt((dimension.end.x - dimension.start.x) ** 2 + (dimension.end.y - dimension.start.y) ** 2).toFixed(0)} mm</span>
         </div>
-        <div className="prop-row"><span className="prop-label">{t.propOffset}</span><span>{dimension.offset}</span></div>
+        <CoordRow label={t.propOffset} value={dimension.offset} onChange={(v) => updateDimension(dimension.id, { offset: v })} />
+        <div className="prop-row">
+          <span className="prop-label">{t.propColor}</span>
+          <input type="color" value={dimension.color ?? '#000000'} onChange={(e) => updateDimension(dimension.id, { color: e.target.value })} />
+        </div>
+        <CoordRow label={t.propLineWeight} value={dimension.lineWeight ?? 15} onChange={(v) => updateDimension(dimension.id, { lineWeight: v })} />
+        <div className="prop-row">
+          <span className="prop-label">{t.propLineType}</span>
+          <select className="prop-select" value={dimension.lineType ?? 'solid'} onChange={(e) => updateDimension(dimension.id, { lineType: e.target.value as LineType })}>
+            {LINE_TYPE_OPTIONS.map((lt) => <option key={lt} value={lt}>{lt}</option>)}
+          </select>
+        </div>
       </div>
     </div>
   );

@@ -70,6 +70,14 @@
     }
   },
   "$defs": {
+    "LineType": {
+      "type": "string",
+      "enum": ["solid", "dashed", "dotted", "chain", "dashdot"]
+    },
+    "TextAlign": {
+      "type": "string",
+      "enum": ["left", "center", "right"]
+    },
     "Point2D": {
       "type": "object",
       "required": ["x", "y"],
@@ -205,7 +213,10 @@
         "start": { "$ref": "#/$defs/Point3D" },
         "end": { "$ref": "#/$defs/Point3D" },
         "rotation": { "type": "number" },
-        "tags": { "type": "array", "items": { "type": "string" } }
+        "tags": { "type": "array", "items": { "type": "string" } },
+        "color": { "type": "string" },
+        "lineWeight": { "type": "number", "exclusiveMinimum": 0 },
+        "lineType": { "$ref": "#/$defs/LineType" }
       }
     },
     "BeamMember": {
@@ -221,7 +232,10 @@
         "start": { "$ref": "#/$defs/Point3D" },
         "end": { "$ref": "#/$defs/Point3D" },
         "rotation": { "type": "number" },
-        "tags": { "type": "array", "items": { "type": "string" } }
+        "tags": { "type": "array", "items": { "type": "string" } },
+        "color": { "type": "string" },
+        "lineWeight": { "type": "number", "exclusiveMinimum": 0 },
+        "lineType": { "$ref": "#/$defs/LineType" }
       }
     },
     "WallMember": {
@@ -242,7 +256,10 @@
         "height": { "type": "number", "exclusiveMinimum": 0 },
         "thickness": { "type": "number", "exclusiveMinimum": 0 },
         "rotation": { "type": "number" },
-        "tags": { "type": "array", "items": { "type": "string" } }
+        "tags": { "type": "array", "items": { "type": "string" } },
+        "color": { "type": "string" },
+        "lineWeight": { "type": "number", "exclusiveMinimum": 0 },
+        "lineType": { "$ref": "#/$defs/LineType" }
       }
     },
     "SlabMember": {
@@ -262,7 +279,12 @@
         },
         "level": { "type": "number" },
         "rotation": { "type": "number" },
-        "tags": { "type": "array", "items": { "type": "string" } }
+        "tags": { "type": "array", "items": { "type": "string" } },
+        "color": { "type": "string" },
+        "lineWeight": { "type": "number", "exclusiveMinimum": 0 },
+        "lineType": { "$ref": "#/$defs/LineType" },
+        "fillColor": { "type": "string" },
+        "fillOpacity": { "type": "number", "minimum": 0, "maximum": 1 }
       }
     },
     "Opening": {
@@ -290,7 +312,9 @@
         "y": { "type": "number" },
         "text": { "type": "string" },
         "fontSize": { "type": "number", "exclusiveMinimum": 0 },
-        "rotation": { "type": "number" }
+        "rotation": { "type": "number" },
+        "color": { "type": "string" },
+        "textAlign": { "$ref": "#/$defs/TextAlign" }
       }
     },
     "Dimension": {
@@ -303,7 +327,10 @@
         "start": { "$ref": "#/$defs/Point2D" },
         "end": { "$ref": "#/$defs/Point2D" },
         "offset": { "type": "number" },
-        "text": { "type": "string" }
+        "text": { "type": "string" },
+        "color": { "type": "string" },
+        "lineWeight": { "type": "number", "exclusiveMinimum": 0 },
+        "lineType": { "$ref": "#/$defs/LineType" }
       }
     },
     "View": {

@@ -56,6 +56,9 @@ interface EditorState {
   // Layer visibility
   layerVisibility: Record<string, boolean>;
 
+  // Layer lock
+  layerLocked: Record<string, boolean>;
+
   // 3D options
   wireframe: boolean;
   orthographic: boolean;
@@ -73,6 +76,7 @@ interface EditorState {
   setZoom: (zoom: number) => void;
   setCursorWorld: (pos: { x: number; y: number } | null) => void;
   toggleLayerVisibility: (layer: string) => void;
+  setLayerLocked: (layer: string, locked: boolean) => void;
   setWireframe: (on: boolean) => void;
   setOrthographic: (on: boolean) => void;
 }
@@ -95,6 +99,7 @@ export const useEditorStore = create<EditorState>()((set) => ({
   zoom: 0.05,
   cursorWorld: null,
   layerVisibility: { ...defaultLayerVisibility },
+  layerLocked: {},
   wireframe: false,
   orthographic: true,
 
@@ -119,6 +124,13 @@ export const useEditorStore = create<EditorState>()((set) => ({
       layerVisibility: {
         ...state.layerVisibility,
         [layer]: !state.layerVisibility[layer],
+      },
+    })),
+  setLayerLocked: (layer, locked) =>
+    set((state) => ({
+      layerLocked: {
+        ...state.layerLocked,
+        [layer]: locked,
       },
     })),
   setWireframe: (on) => set({ wireframe: on }),

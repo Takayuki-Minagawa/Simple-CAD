@@ -55,6 +55,13 @@ export const en: Translations = {
   propText: 'Text',
   propLength: 'Length',
   propOffset: 'Offset',
+  propColor: 'Color',
+  propLineWeight: 'Line Weight',
+  propLineType: 'Line Type',
+  propTextAlign: 'Align',
+  propFillColor: 'Fill Color',
+  propFillOpacity: 'Fill Opacity',
+  propRotation: 'Rotation',
 
   statusZoom: 'Zoom',
   statusSnap: 'Snap',

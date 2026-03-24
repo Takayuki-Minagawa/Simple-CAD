@@ -1,5 +1,6 @@
-import type { ProjectData, Member, Section, Sheet, TitleBlockTemplate } from '@/domain/structural/types';
+import type { ProjectData, Member, Section, Sheet, TitleBlockTemplate, TextAlign } from '@/domain/structural/types';
 import { sub2D, normalize2D, perpendicular2D, distance2D } from '@/domain/geometry/point';
+import { lineTypeToDashArray } from '@/domain/rendering/lineStyle';
 
 const PAPER_SIZES: Record<string, { width: number; height: number }> = {
   A0: { width: 1189, height: 841 },
@@ -8,6 +9,14 @@ const PAPER_SIZES: Record<string, { width: number; height: number }> = {
   A3: { width: 420, height: 297 },
   A4: { width: 297, height: 210 },
 };
+
+function textAlignToAnchor(align: TextAlign | undefined): string {
+  switch (align) {
+    case 'center': return 'middle';
+    case 'right': return 'end';
+    default: return 'start';
+  }
+}
 
 export function exportSvg(data: ProjectData, sheetId: string): string {
   const sheet = data.sheets.find((s) => s.id === sheetId);
@@ -74,7 +83,23 @@ export function exportSvg(data: ProjectData, sheetId: string): string {
   // Annotations
   for (const a of annotations) {
     const fs = a.fontSize ?? 300;
-    svgLines.push(`  <text class="layer-annotation" x="${a.x}" y="${a.y}" font-size="${fs}" fill="#34495e" transform="translate(0,0) scale(1,-1) translate(0,${-2 * a.y})">${escapeXml(a.text)}</text>`);
+    const fillColor = a.color ?? '#34495e';
+    const anchor = textAlignToAnchor(a.textAlign);
+    const rotation = a.rotation ?? 0;
+    const rotateAttr = rotation !== 0 ? ` rotate(${-rotation}, ${a.x}, ${-a.y})` : '';
+    const transform = `translate(0,0) scale(1,-1) translate(0,${-2 * a.y})${rotateAttr}`;
+    const lines = a.text.split('\n');
+
+    if (lines.length <= 1) {
+      svgLines.push(`  <text class="layer-annotation" x="${a.x}" y="${a.y}" font-size="${fs}" fill="${escapeXml(fillColor)}" text-anchor="${anchor}" transform="${transform}">${escapeXml(a.text)}</text>`);
+    } else {
+      svgLines.push(`  <text class="layer-annotation" x="${a.x}" y="${a.y}" font-size="${fs}" fill="${escapeXml(fillColor)}" text-anchor="${anchor}" transform="${transform}">`);
+      for (let i = 0; i < lines.length; i++) {
+        const dy = i === 0 ? 0 : fs * 1.2;
+        svgLines.push(`    <tspan x="${a.x}" dy="${dy}">${escapeXml(lines[i])}</tspan>`);
+      }
+      svgLines.push(`  </text>`);
+    }
   }
 
   svgLines.push(`</g>`);
@@ -85,12 +110,16 @@ export function exportSvg(data: ProjectData, sheetId: string): string {
 
 function renderMemberSvg(m: Member, sections: Section[]): string {
   const sec = sections.find((s) => s.id === m.sectionId);
+  const lw = m.lineWeight ?? 20;
+  const dash = lineTypeToDashArray(m.lineType);
+  const dashAttr = dash ? ` stroke-dasharray="${dash}"` : '';
 
   switch (m.type) {
     case 'column': {
       const w = sec && 'width' in sec ? sec.width : 600;
       const d = sec && 'depth' in sec ? sec.depth : 600;
-      return `  <rect class="layer-member-column" x="${m.start.x - w / 2}" y="${m.start.y - d / 2}" width="${w}" height="${d}" fill="rgba(231,76,60,0.3)" stroke="#e74c3c" stroke-width="20"/>`;
+      const strokeColor = m.color ?? '#e74c3c';
+      return `  <rect class="layer-member-column" x="${m.start.x - w / 2}" y="${m.start.y - d / 2}" width="${w}" height="${d}" fill="rgba(231,76,60,0.3)" stroke="${strokeColor}" stroke-width="${lw}"${dashAttr}/>`;
     }
     case 'beam': {
       const w = sec && 'width' in sec ? sec.width : 300;
@@ -101,7 +130,8 @@ function renderMemberSvg(m: Member, sections: Section[]): string {
       const nx = (-dy / len) * (w / 2);
       const ny = (dx / len) * (w / 2);
       const pts = `${m.start.x + nx},${m.start.y + ny} ${m.end.x + nx},${m.end.y + ny} ${m.end.x - nx},${m.end.y - ny} ${m.start.x - nx},${m.start.y - ny}`;
-      return `  <polygon class="layer-member-beam" points="${pts}" fill="rgba(243,156,18,0.2)" stroke="#f39c12" stroke-width="20"/>`;
+      const strokeColor = m.color ?? '#f39c12';
+      return `  <polygon class="layer-member-beam" points="${pts}" fill="rgba(243,156,18,0.2)" stroke="${strokeColor}" stroke-width="${lw}"${dashAttr}/>`;
     }
     case 'wall': {
       const t = sec && 'thickness' in sec ? sec.thickness : m.thickness;
@@ -112,16 +142,21 @@ function renderMemberSvg(m: Member, sections: Section[]): string {
       const nx = (-dy / len) * (t / 2);
       const ny = (dx / len) * (t / 2);
       const pts = `${m.start.x + nx},${m.start.y + ny} ${m.end.x + nx},${m.end.y + ny} ${m.end.x - nx},${m.end.y - ny} ${m.start.x - nx},${m.start.y - ny}`;
-      return `  <polygon class="layer-member-wall" points="${pts}" fill="rgba(0,188,212,0.2)" stroke="#00bcd4" stroke-width="20"/>`;
+      const strokeColor = m.color ?? '#00bcd4';
+      return `  <polygon class="layer-member-wall" points="${pts}" fill="rgba(0,188,212,0.2)" stroke="${strokeColor}" stroke-width="${lw}"${dashAttr}/>`;
     }
     case 'slab': {
       const pts = m.polygon.map((p) => `${p.x},${p.y}`).join(' ');
-      return `  <polygon class="layer-member-slab" points="${pts}" fill="rgba(155,89,182,0.1)" stroke="#9b59b6" stroke-width="20" stroke-dasharray="200 100"/>`;
+      const strokeColor = m.color ?? '#9b59b6';
+      const slabDash = dash ?? '200 100';
+      const fillColor = m.fillColor ?? 'rgba(155,89,182,0.1)';
+      const opacityAttr = m.fillOpacity !== undefined ? ` fill-opacity="${m.fillOpacity}"` : '';
+      return `  <polygon class="layer-member-slab" points="${pts}" fill="${fillColor}"${opacityAttr} stroke="${strokeColor}" stroke-width="${lw}" stroke-dasharray="${slabDash}"/>`;
     }
   }
 }
 
-function renderDimensionSvg(d: { start: { x: number; y: number }; end: { x: number; y: number }; offset: number; text?: string }): string {
+function renderDimensionSvg(d: { start: { x: number; y: number }; end: { x: number; y: number }; offset: number; text?: string; color?: string; lineWeight?: number; lineType?: import('@/domain/structural/types').LineType }): string {
   const dir = normalize2D(sub2D(d.end, d.start));
   const perp = perpendicular2D(dir);
   const s = { x: d.start.x + perp.x * d.offset, y: d.start.y + perp.y * d.offset };
@@ -129,13 +164,24 @@ function renderDimensionSvg(d: { start: { x: number; y: number }; end: { x: numb
   const length = distance2D(d.start, d.end);
   const text = d.text ?? length.toFixed(0);
   const mid = { x: (s.x + e.x) / 2, y: (s.y + e.y) / 2 };
+  const color = d.color ?? '#7f8c8d';
+  const lw = d.lineWeight ?? 15;
+  const dash = lineTypeToDashArray(d.lineType);
+  const dashAttr = dash ? ` stroke-dasharray="${dash}"` : '';
+
+  const textSize = 250;
+  const arrowLen = textSize * 0.4;
+  const arrowHalf = arrowLen * 0.35;
+
+  const startArrow = `${s.x},${s.y} ${s.x + dir.x * arrowLen + perp.x * arrowHalf},${s.y + dir.y * arrowLen + perp.y * arrowHalf} ${s.x + dir.x * arrowLen - perp.x * arrowHalf},${s.y + dir.y * arrowLen - perp.y * arrowHalf}`;
+  const endArrow = `${e.x},${e.y} ${e.x - dir.x * arrowLen + perp.x * arrowHalf},${e.y - dir.y * arrowLen + perp.y * arrowHalf} ${e.x - dir.x * arrowLen - perp.x * arrowHalf},${e.y - dir.y * arrowLen - perp.y * arrowHalf}`;
 
   return [
     `  <g class="layer-dimension">`,
-    `    <line x1="${s.x}" y1="${s.y}" x2="${e.x}" y2="${e.y}" stroke="#7f8c8d" stroke-width="15"/>`,
-    `    <circle cx="${s.x}" cy="${s.y}" r="50" fill="#7f8c8d"/>`,
-    `    <circle cx="${e.x}" cy="${e.y}" r="50" fill="#7f8c8d"/>`,
-    `    <text x="${mid.x}" y="${mid.y}" text-anchor="middle" dominant-baseline="central" font-size="250" fill="#7f8c8d" transform="translate(0,0) scale(1,-1) translate(0,${-2 * mid.y})">${text}</text>`,
+    `    <line x1="${s.x}" y1="${s.y}" x2="${e.x}" y2="${e.y}" stroke="${color}" stroke-width="${lw}"${dashAttr}/>`,
+    `    <polygon points="${startArrow}" fill="${color}"/>`,
+    `    <polygon points="${endArrow}" fill="${color}"/>`,
+    `    <text x="${mid.x}" y="${mid.y}" text-anchor="middle" dominant-baseline="central" font-size="${textSize}" fill="${color}" transform="translate(0,0) scale(1,-1) translate(0,${-2 * mid.y})">${text}</text>`,
     `  </g>`,
   ].join('\n');
 }

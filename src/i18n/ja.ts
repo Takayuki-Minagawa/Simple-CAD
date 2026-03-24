@@ -55,6 +55,13 @@ export const ja: Translations = {
   propText: 'テキスト',
   propLength: '長さ',
   propOffset: 'オフセット',
+  propColor: '色',
+  propLineWeight: '線幅',
+  propLineType: '線種',
+  propTextAlign: '配置',
+  propFillColor: '塗り色',
+  propFillOpacity: '塗り透過',
+  propRotation: '回転',
 
   statusZoom: 'ズーム',
   statusSnap: 'スナップ',

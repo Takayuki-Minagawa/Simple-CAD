@@ -1,5 +1,10 @@
 import type { Point2D, Point3D } from '@/domain/geometry/types';
 
+// ── Drawing style types ─────────────────────────────────────
+
+export type LineType = 'solid' | 'dashed' | 'dotted' | 'chain' | 'dashdot';
+export type TextAlign = 'left' | 'center' | 'right';
+
 // ── Project Root ─────────────────────────────────────────────
 
 export interface ProjectData {
@@ -89,6 +94,9 @@ interface MemberBase {
   materialId: string;
   rotation?: number;
   tags?: string[];
+  color?: string;
+  lineWeight?: number;
+  lineType?: LineType;
 }
 
 export interface ColumnMember extends MemberBase {
@@ -115,6 +123,8 @@ export interface SlabMember extends MemberBase {
   type: 'slab';
   polygon: Point2D[];
   level: number;
+  fillColor?: string;
+  fillOpacity?: number;
 }
 
 export type Member = ColumnMember | BeamMember | WallMember | SlabMember;
@@ -143,6 +153,8 @@ export interface Annotation {
   text: string;
   fontSize?: number;
   rotation?: number;
+  color?: string;
+  textAlign?: TextAlign;
 }
 
 // ── Dimension ────────────────────────────────────────────────
@@ -154,6 +166,9 @@ export interface Dimension {
   end: Point2D;
   offset: number;
   text?: string;
+  color?: string;
+  lineWeight?: number;
+  lineType?: LineType;
 }
 
 // ── View ─────────────────────────────────────────────────────
