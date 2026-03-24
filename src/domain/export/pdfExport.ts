@@ -11,34 +11,43 @@ const PAPER_SIZES: Record<string, { width: number; height: number }> = {
   A4: { width: 297, height: 210 },
 };
 
-export async function exportPdf(data: ProjectData, sheetId: string): Promise<Blob> {
-  const sheet = data.sheets.find((s) => s.id === sheetId);
-  if (!sheet) throw new Error(`Sheet "${sheetId}" not found`);
+export async function exportPdf(data: ProjectData, sheetIds: string | string[]): Promise<Blob> {
+  const targetSheetIds = Array.isArray(sheetIds) ? sheetIds : [sheetIds];
+  if (targetSheetIds.length === 0) throw new Error('No sheets selected');
 
-  const paper = PAPER_SIZES[sheet.paperSize] ?? PAPER_SIZES.A3;
-  const isLandscape = paper.width > paper.height;
+  const sheets = targetSheetIds.map((sheetId) => {
+    const sheet = data.sheets.find((item) => item.id === sheetId);
+    if (!sheet) throw new Error(`Sheet "${sheetId}" not found`);
+    return sheet;
+  });
 
+  const firstPaper = PAPER_SIZES[sheets[0].paperSize] ?? PAPER_SIZES.A3;
   const pdf = new jsPDF({
-    orientation: isLandscape ? 'landscape' : 'portrait',
+    orientation: firstPaper.width > firstPaper.height ? 'landscape' : 'portrait',
     unit: 'mm',
-    format: [paper.width, paper.height],
+    format: [firstPaper.width, firstPaper.height],
   });
 
-  // Generate SVG
-  const svgString = exportSvg(data, sheetId);
+  for (let index = 0; index < sheets.length; index++) {
+    const sheet = sheets[index];
+    const paper = PAPER_SIZES[sheet.paperSize] ?? PAPER_SIZES.A3;
+    const orientation = paper.width > paper.height ? 'landscape' : 'portrait';
+    if (index > 0) {
+      pdf.addPage([paper.width, paper.height], orientation);
+    }
 
-  // Parse SVG to DOM element
-  const parser = new DOMParser();
-  const svgDoc = parser.parseFromString(svgString, 'image/svg+xml');
-  const svgElement = svgDoc.documentElement;
+    const svgString = exportSvg(data, sheet.id);
+    const parser = new DOMParser();
+    const svgDoc = parser.parseFromString(svgString, 'image/svg+xml');
+    const svgElement = svgDoc.documentElement;
 
-  // Render SVG to PDF
-  await (pdf as unknown as { svg: (el: Element, opts: Record<string, unknown>) => Promise<void> }).svg(svgElement, {
-    x: 0,
-    y: 0,
-    width: paper.width,
-    height: paper.height,
-  });
+    await (pdf as unknown as { svg: (el: Element, opts: Record<string, unknown>) => Promise<void> }).svg(svgElement, {
+      x: 0,
+      y: 0,
+      width: paper.width,
+      height: paper.height,
+    });
+  }
 
   return pdf.output('blob');
 }

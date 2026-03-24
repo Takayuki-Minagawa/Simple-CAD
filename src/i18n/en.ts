@@ -102,10 +102,10 @@ export const en: Translations = {
   helpClose: 'Close',
   helpSectionOverview: 'Overview',
   helpOverviewText:
-    'Structural Web CAD is a static web application specialized for structural engineering design. It runs entirely in the browser with no server required. You can create/edit 2D plan drawings, view 3D confirmation models with Three.js, and export to SVG / PDF / DXF.',
+    'Structural Web CAD is a static web application specialized for structural engineering design. It runs entirely in the browser with no server required. You can create/edit 2D plan drawings, inspect 3D models with clip sections, export to SVG / PDF / DXF, and import DXF annotations.',
   helpSectionGettingStarted: 'Getting Started',
   helpGettingStartedText:
-    '1. Click "Sample" in the toolbar to load demo data\n2. Switch floors using the Story panel on the left\n3. Use drawing tools to add structural members\n4. Use the "Select" tool to select objects and edit properties in the right panel\n5. Toggle between "2D / 3D" views\n6. Click "Export" to output SVG / PDF / DXF',
+    '1. Click "Sample" in the toolbar to load demo data\n2. Switch floors in the Story panel and duplicate the active story when you need another level\n3. Use drawing tools to add structural members\n4. Open "Masters" to edit materials, sections, sheets, and title blocks\n5. Toggle between "2D / 3D" views and use the clip slider in 3D when needed\n6. Click "Export" to output SVG / PDF / DXF',
   helpSectionTools: 'Drawing Tools',
   helpToolsText:
     '- Column: Click to place a column\n- Beam: Click 2 points to place a beam\n- Wall: Click 2 points to place a wall\n- Slab: Click multiple points → double-click to close\n- Dim: Click 2 points to place a dimension line\n- Text: Click to place an annotation',
@@ -114,7 +114,7 @@ export const en: Translations = {
     'V: Select  |  H: Pan  |  C: Column  |  B: Beam  |  W: Wall  |  S: Slab\nD: Dimension  |  T: Text  |  Escape: Cancel\nCtrl+Z: Undo  |  Ctrl+Shift+Z: Redo\nCtrl+D: Duplicate  |  Delete: Delete\nMouse wheel: Zoom  |  Middle button drag: Pan',
   helpSectionExport: 'Export',
   helpExportText:
-    'Open the export dialog from the "Export" button in the toolbar. Choose SVG / PDF / DXF format. SVG/PDF exports by sheet, DXF exports by story.',
+    'Open the export dialog from the "Export" button in the toolbar. Choose SVG / PDF / DXF format. PDF can export all sheets into a single multi-page file. SVG/PDF export by sheet, DXF exports by story.',
   helpSectionJson: 'JSON Data Format',
   helpJsonText:
     'All data is managed as JSON. The schema conforms to JSON Schema 2020-12, and automatic validation is performed on load. Member types: column, beam, wall, slab. Unit is fixed to mm.',

@@ -12,6 +12,7 @@ import { ValidationPanel } from '@/components/panels/ValidationPanel';
 import { Editor2D } from '@/features/editor2d/Editor2D';
 import { Viewer3D } from '@/features/viewer3d/Viewer3D';
 import { ExportDialog } from '@/features/project/ExportDialog';
+import { MasterDataDialog } from '@/features/project/MasterDataDialog';
 import { AiAssistPanel } from '@/features/aiAssist/AiAssistPanel';
 import { HelpDialog } from '@/features/help/HelpDialog';
 
@@ -22,6 +23,7 @@ export function App() {
   const { activeStory, setActiveStory } = useEditorStore();
   const { t } = useI18n();
   const [showExport, setShowExport] = useState(false);
+  const [showMasters, setShowMasters] = useState(false);
   const [showAi, setShowAi] = useState(false);
   const [showHelp, setShowHelp] = useState(false);
 
@@ -46,6 +48,7 @@ export function App() {
     <div className="app-layout">
       <MainToolbar
         onExport={() => setShowExport(true)}
+        onMasters={() => setShowMasters(true)}
         onAiAssist={() => setShowAi(true)}
         onHelp={() => setShowHelp(true)}
       />
@@ -83,6 +86,7 @@ export function App() {
       <StatusBar />
 
       {showExport && <ExportDialog onClose={() => setShowExport(false)} />}
+      {showMasters && <MasterDataDialog onClose={() => setShowMasters(false)} />}
       {showAi && <AiAssistPanel onClose={() => setShowAi(false)} />}
       {showHelp && <HelpDialog onClose={() => setShowHelp(false)} />}
     </div>
