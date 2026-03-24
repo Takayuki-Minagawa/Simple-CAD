@@ -22,7 +22,7 @@
   background: var(--bg-toolbar);
   color: var(--text-on-dark);
   border-bottom: 1px solid #444;
-  overflow-x: auto;
+  overflow: visible;
   white-space: nowrap;
 }
 
