@@ -82,6 +82,14 @@ export function exportSvg(data: ProjectData, sheetId: string): string {
 
   // Annotations
   for (const a of annotations) {
+    // Spline annotation
+    if (a.type === 'spline' && a.points && a.points.length >= 2) {
+      const pathD = catmullRomToSvgPath(a.points);
+      const strokeColor = a.color ?? '#34495e';
+      svgLines.push(`  <path class="layer-annotation" d="${pathD}" fill="none" stroke="${escapeXml(strokeColor)}" stroke-width="20"/>`);
+      continue;
+    }
+
     const fs = a.fontSize ?? 300;
     const fillColor = a.color ?? '#34495e';
     const anchor = textAlignToAnchor(a.textAlign);
@@ -90,10 +98,16 @@ export function exportSvg(data: ProjectData, sheetId: string): string {
     const transform = `translate(0,0) scale(1,-1) translate(0,${-2 * a.y})${rotateAttr}`;
     const lines = a.text.split('\n');
 
+    const fwAttr = a.fontWeight === 'bold' ? ' font-weight="bold"' : '';
+    const fsAttr = a.fontStyle === 'italic' ? ' font-style="italic"' : '';
+    const tdAttr = a.textDecoration === 'underline' ? ' text-decoration="underline"' : '';
+    const ffAttr = a.fontFamily ? ` font-family="${escapeXml(a.fontFamily)}"` : '';
+    const styleAttrs = `${fwAttr}${fsAttr}${tdAttr}${ffAttr}`;
+
     if (lines.length <= 1) {
-      svgLines.push(`  <text class="layer-annotation" x="${a.x}" y="${a.y}" font-size="${fs}" fill="${escapeXml(fillColor)}" text-anchor="${anchor}" transform="${transform}">${escapeXml(a.text)}</text>`);
+      svgLines.push(`  <text class="layer-annotation" x="${a.x}" y="${a.y}" font-size="${fs}" fill="${escapeXml(fillColor)}" text-anchor="${anchor}" transform="${transform}"${styleAttrs}>${escapeXml(a.text)}</text>`);
     } else {
-      svgLines.push(`  <text class="layer-annotation" x="${a.x}" y="${a.y}" font-size="${fs}" fill="${escapeXml(fillColor)}" text-anchor="${anchor}" transform="${transform}">`);
+      svgLines.push(`  <text class="layer-annotation" x="${a.x}" y="${a.y}" font-size="${fs}" fill="${escapeXml(fillColor)}" text-anchor="${anchor}" transform="${transform}"${styleAttrs}>`);
       for (let i = 0; i < lines.length; i++) {
         const dy = i === 0 ? 0 : fs * 1.2;
         svgLines.push(`    <tspan x="${a.x}" dy="${dy}">${escapeXml(lines[i])}</tspan>`);
@@ -103,6 +117,40 @@ export function exportSvg(data: ProjectData, sheetId: string): string {
   }
 
   svgLines.push(`</g>`);
+
+  // Render additional viewports if defined
+  if (sheet.viewports && sheet.viewports.length > 0) {
+    for (const vp of sheet.viewports) {
+      const vpView = data.views.find((v) => v.id === vp.viewId && v.type === 'plan');
+      if (!vpView || !('story' in vpView)) continue;
+      const vpStoryId = vpView.story;
+      const vpCenter = 'center' in vpView ? vpView.center : { x: 4000, y: 3000 };
+      const vpScaleNum = parseScale(vp.scale);
+      const vpScale = 1 / vpScaleNum;
+      const vpMembers = data.members.filter((m) => m.story === vpStoryId);
+      const vpAnnotations = data.annotations.filter((a) => a.story === vpStoryId);
+      const vpDimensions = data.dimensions.filter((d) => d.story === vpStoryId);
+
+      const vpOffX = vp.x + vp.width / 2 - vpCenter.x * vpScale;
+      const vpOffY = vp.y + vp.height / 2 + vpCenter.y * vpScale;
+
+      const clipId = `vp-clip-${vp.id}`;
+      svgLines.push(`<defs><clipPath id="${clipId}"><rect x="${vp.x}" y="${vp.y}" width="${vp.width}" height="${vp.height}"/></clipPath></defs>`);
+      svgLines.push(`<rect x="${vp.x}" y="${vp.y}" width="${vp.width}" height="${vp.height}" fill="none" stroke="#999" stroke-width="0.3" stroke-dasharray="2 2"/>`);
+      svgLines.push(`<g clip-path="url(#${clipId})">`);
+      svgLines.push(`<g transform="translate(${vpOffX}, ${vpOffY}) scale(${vpScale}, ${-vpScale})">`);
+      for (const m of vpMembers) svgLines.push(renderMemberSvg(m, data.sections));
+      for (const d of vpDimensions) svgLines.push(renderDimensionSvg(d));
+      for (const a of vpAnnotations) {
+        const fs = a.fontSize ?? 300;
+        const fillColor = a.color ?? '#34495e';
+        svgLines.push(`  <text x="${a.x}" y="${a.y}" font-size="${fs}" fill="${escapeXml(fillColor)}" transform="translate(0,0) scale(1,-1) translate(0,${-2 * a.y})">${escapeXml(a.text)}</text>`);
+      }
+      svgLines.push(`</g>`);
+      svgLines.push(`</g>`);
+    }
+  }
+
   svgLines.push(`</svg>`);
 
   return svgLines.join('\n');
@@ -260,6 +308,26 @@ function renderTitleBlockSvg(sheet: Sheet, projectName: string, paperWidth: numb
         `</g>`,
       ].filter(Boolean).join('\n');
   }
+}
+
+function catmullRomToSvgPath(pts: { x: number; y: number }[]): string {
+  if (pts.length < 2) return '';
+  if (pts.length === 2) {
+    return `M ${pts[0].x},${pts[0].y} L ${pts[1].x},${pts[1].y}`;
+  }
+  const d: string[] = [`M ${pts[0].x},${pts[0].y}`];
+  for (let i = 0; i < pts.length - 1; i++) {
+    const p0 = pts[Math.max(0, i - 1)];
+    const p1 = pts[i];
+    const p2 = pts[i + 1];
+    const p3 = pts[Math.min(pts.length - 1, i + 2)];
+    const cp1x = p1.x + (p2.x - p0.x) / 6;
+    const cp1y = p1.y + (p2.y - p0.y) / 6;
+    const cp2x = p2.x - (p3.x - p1.x) / 6;
+    const cp2y = p2.y - (p3.y - p1.y) / 6;
+    d.push(`C ${cp1x},${cp1y} ${cp2x},${cp2y} ${p2.x},${p2.y}`);
+  }
+  return d.join(' ');
 }
 
 function escapeXml(s: string): string {

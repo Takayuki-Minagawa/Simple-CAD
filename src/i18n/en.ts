@@ -129,10 +129,97 @@ export const en: Translations = {
   helpAiText:
     'Copy the prompt template from the "AI" button and paste it into ChatGPT, Claude, or other LLMs to auto-generate JSON data. You can also paste generated JSON directly to import it.',
 
+  transformOffset: 'Offset',
+  transformMirror: 'Mirror',
+  transformArray: 'Array',
+  transformOffsetDistance: 'Distance',
+  transformMirrorAxis: 'Axis',
+  transformMirrorCopy: 'Copy',
+  transformAxisHorizontal: 'Horizontal',
+  transformAxisVertical: 'Vertical',
+  transformAxisCustom: 'Custom Angle',
+  transformAxisAngle: 'Angle',
+  transformArrayRows: 'Rows',
+  transformArrayColumns: 'Columns',
+  transformArrayRowSpacing: 'Row Spacing',
+  transformArrayColSpacing: 'Column Spacing',
+
+  coordInputPlaceholder: 'x,y or @dx,dy or @dist<angle',
+  coordInputLabel: 'Coordinate',
+
+  zoomExtents: 'Zoom Extents',
+  zoomSelection: 'Zoom Selection',
+
+  selectionWindow: 'Window',
+  selectionCrossing: 'Crossing',
+
   memberColumn: 'column',
   memberBeam: 'beam',
   memberWall: 'wall',
   memberSlab: 'slab',
   memberAnnotation: 'annotation',
   memberDimension: 'dimension',
+
+  // Trim/Extend
+  toolTrim: 'Trim',
+  toolExtend: 'Extend',
+  toolFillet: 'Fillet',
+  trimPrompt: 'Click near the end of a member to trim',
+  extendPrompt: 'Click a member to extend, then click the target member',
+  filletPrompt: 'Click two walls to clean their intersection',
+
+  // Measurement
+  propArea: 'Area',
+  propPerimeter: 'Perimeter',
+
+  // Vertex editing
+  propVertices: 'Vertices',
+  vertexAdd: 'Add',
+  vertexRemove: 'Remove',
+
+  // Grouping
+  groupCreate: 'Group',
+  groupUngroup: 'Ungroup',
+  groupName: 'Group',
+  groupPromptName: 'Enter group name:',
+
+  // Print Preview
+  printPreview: 'Preview',
+  printPreviewTitle: 'Print Preview',
+  printPreviewClose: 'Close',
+  printPreviewEmpty: 'No preview available',
+
+  // Snap additions
+  snapPerpendicular: 'Perpendicular',
+  snapNearest: 'Nearest',
+
+  // Construction Lines
+  toolXline: 'XLine',
+  layerConstruction: 'Construction',
+
+  // Spline
+  toolSpline: 'Spline',
+
+  // Text Formatting
+  propFontWeight: 'Bold',
+  propFontStyle: 'Italic',
+  propTextDecoration: 'Underline',
+  propFontFamily: 'Font',
+
+  // External References
+  xrefTitle: 'External References',
+  xrefImport: 'Import Xref',
+  xrefRemove: 'Remove',
+
+  // Viewports
+  viewportTitle: 'Viewports',
+  viewportAdd: 'Add Viewport',
+  viewportRemove: 'Remove',
+
+  // Drawing Templates
+  templatePickerTitle: 'Select Template',
+  templateA1Structure: 'A1 Structure (1:100)',
+  templateA3Detail: 'A3 Detail (1:50)',
+  templateBlankA1: 'Blank A1',
+  templateSelectPrompt: 'Choose a template for the new project:',
 };

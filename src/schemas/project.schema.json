@@ -67,6 +67,18 @@
     "issues": {
       "type": "array",
       "items": { "$ref": "#/$defs/Issue" }
+    },
+    "groups": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/Group" }
+    },
+    "constructionLines": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/ConstructionLine" }
+    },
+    "externalRefs": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/ExternalRef" }
     }
   },
   "$defs": {
@@ -306,7 +318,7 @@
       "additionalProperties": false,
       "properties": {
         "id": { "type": "string", "minLength": 1 },
-        "type": { "type": "string", "enum": ["text", "label", "leader"] },
+        "type": { "type": "string", "enum": ["text", "label", "leader", "spline"] },
         "story": { "type": "string", "minLength": 1 },
         "x": { "type": "number" },
         "y": { "type": "number" },
@@ -314,7 +326,16 @@
         "fontSize": { "type": "number", "exclusiveMinimum": 0 },
         "rotation": { "type": "number" },
         "color": { "type": "string" },
-        "textAlign": { "$ref": "#/$defs/TextAlign" }
+        "textAlign": { "$ref": "#/$defs/TextAlign" },
+        "fontWeight": { "type": "string", "enum": ["normal", "bold"] },
+        "fontStyle": { "type": "string", "enum": ["normal", "italic"] },
+        "textDecoration": { "type": "string", "enum": ["none", "underline"] },
+        "fontFamily": { "type": "string" },
+        "points": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/Point2D" },
+          "minItems": 2
+        }
       }
     },
     "Dimension": {
@@ -363,6 +384,21 @@
         "story": { "type": "string", "minLength": 1 }
       }
     },
+    "Viewport": {
+      "type": "object",
+      "required": ["id", "sheetId", "viewId", "x", "y", "width", "height", "scale"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "sheetId": { "type": "string", "minLength": 1 },
+        "viewId": { "type": "string", "minLength": 1 },
+        "x": { "type": "number" },
+        "y": { "type": "number" },
+        "width": { "type": "number", "exclusiveMinimum": 0 },
+        "height": { "type": "number", "exclusiveMinimum": 0 },
+        "scale": { "type": "string", "pattern": "^1:\\d+$" }
+      }
+    },
     "Sheet": {
       "type": "object",
       "required": ["id", "name", "paperSize", "scale", "viewIds"],
@@ -383,7 +419,11 @@
           "type": "string",
           "enum": ["standard", "compact", "minimal"]
         },
-        "titleBlock": { "$ref": "#/$defs/SheetTitleBlock" }
+        "titleBlock": { "$ref": "#/$defs/SheetTitleBlock" },
+        "viewports": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/Viewport" }
+        }
       }
     },
     "SheetTitleBlock": {
@@ -399,6 +439,31 @@
         "note": { "type": "string" }
       }
     },
+    "ConstructionLine": {
+      "type": "object",
+      "required": ["id", "story", "type", "origin", "direction"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "story": { "type": "string", "minLength": 1 },
+        "type": { "type": "string", "enum": ["xline", "ray"] },
+        "origin": { "$ref": "#/$defs/Point2D" },
+        "direction": { "$ref": "#/$defs/Point2D" }
+      }
+    },
+    "ExternalRef": {
+      "type": "object",
+      "required": ["id", "name", "data", "offsetX", "offsetY", "visible"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "name": { "type": "string" },
+        "data": { "$ref": "#" },
+        "offsetX": { "type": "number" },
+        "offsetY": { "type": "number" },
+        "visible": { "type": "boolean" }
+      }
+    },
     "Issue": {
       "type": "object",
       "required": ["level", "message"],
@@ -407,6 +472,19 @@
         "level": { "type": "string", "enum": ["error", "warning", "info"] },
         "message": { "type": "string" },
         "memberId": { "type": "string" }
+      }
+    },
+    "Group": {
+      "type": "object",
+      "required": ["id", "name", "memberIds"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "name": { "type": "string" },
+        "memberIds": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        }
       }
     }
   }

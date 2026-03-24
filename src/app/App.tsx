@@ -16,6 +16,7 @@ import { ExportDialog } from '@/features/project/ExportDialog';
 import { MasterDataDialog } from '@/features/project/MasterDataDialog';
 import { AiAssistPanel } from '@/features/aiAssist/AiAssistPanel';
 import { HelpDialog } from '@/features/help/HelpDialog';
+import { PrintPreviewDialog } from '@/features/project/PrintPreviewDialog';
 
 export function App() {
   const viewMode = useEditorStore((s) => s.viewMode);
@@ -28,6 +29,7 @@ export function App() {
   const [showAi, setShowAi] = useState(false);
   const [showHelp, setShowHelp] = useState(false);
   const [showTransform, setShowTransform] = useState(false);
+  const [showPrintPreview, setShowPrintPreview] = useState(false);
 
   useKeyboardShortcuts();
 
@@ -54,6 +56,7 @@ export function App() {
         onAiAssist={() => setShowAi(true)}
         onHelp={() => setShowHelp(true)}
         onTransform={() => setShowTransform(true)}
+        onPrintPreview={() => setShowPrintPreview(true)}
       />
       <div className="app-body">
         <div className="left-panel">
@@ -93,6 +96,7 @@ export function App() {
       {showAi && <AiAssistPanel onClose={() => setShowAi(false)} />}
       {showHelp && <HelpDialog onClose={() => setShowHelp(false)} />}
       {showTransform && <TransformDialog onClose={() => setShowTransform(false)} />}
+      {showPrintPreview && <PrintPreviewDialog onClose={() => setShowPrintPreview(false)} />}
     </div>
   );
 }

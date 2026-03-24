@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
 import { useEditorStore, useProjectStore } from '@/app/store';
 import { useI18n } from '@/i18n';
-import type { Material, Section, Sheet, Story, TitleBlockTemplate } from '@/domain/structural/types';
+import type { Material, Section, Sheet, Story, TitleBlockTemplate, Viewport } from '@/domain/structural/types';
 
 interface Props {
   onClose: () => void;
@@ -46,6 +46,12 @@ interface Labels {
   noSheets: string;
   addMaterial: string;
   addSection: string;
+  viewports: string;
+  addViewport: string;
+  removeViewport: string;
+  viewId: string;
+  x: string;
+  y: string;
 }
 
 const TEMPLATE_OPTIONS: TitleBlockTemplate[] = ['standard', 'compact', 'minimal'];
@@ -91,6 +97,12 @@ function getLabels(locale: 'ja' | 'en'): Labels {
       noSheets: 'シートがありません。アクティブ階から追加してください。',
       addMaterial: '材料追加',
       addSection: '断面追加',
+      viewports: 'ビューポート',
+      addViewport: 'ビューポート追加',
+      removeViewport: '削除',
+      viewId: 'ビューID',
+      x: 'X',
+      y: 'Y',
     };
   }
 
@@ -130,6 +142,12 @@ function getLabels(locale: 'ja' | 'en'): Labels {
     noSheets: 'No sheets yet. Add one from the active story.',
     addMaterial: 'Add Material',
     addSection: 'Add Section',
+    viewports: 'Viewports',
+    addViewport: 'Add Viewport',
+    removeViewport: 'Remove',
+    viewId: 'View ID',
+    x: 'X',
+    y: 'Y',
   };
 }
 
@@ -177,6 +195,9 @@ export function MasterDataDialog({ onClose }: Props) {
     updateSection,
     deleteSection,
     updateSheet,
+    addViewport,
+    removeViewport,
+    updateViewport,
   } = useProjectStore();
   const { activeStory, setActiveStory } = useEditorStore();
   const { locale } = useI18n();
@@ -411,6 +432,50 @@ export function MasterDataDialog({ onClose }: Props) {
                       value={sheet.titleBlock?.note ?? ''}
                       onChange={(value) => updateSheetTitleBlock(sheet, { note: value })}
                     />
+                  </div>
+
+                  {/* Viewports */}
+                  <div style={{ borderTop: '1px dashed var(--border-color)', paddingTop: 8, marginTop: 4 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+                      <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)' }}>{labels.viewports}</span>
+                      <button
+                        className="toolbar-btn"
+                        style={{ fontSize: 11 }}
+                        onClick={() => {
+                          const firstViewId = data.views[0]?.id ?? '';
+                          if (!firstViewId) return;
+                          const vp: Viewport = {
+                            id: `VP-${sheet.id}-${(sheet.viewports?.length ?? 0) + 1}`,
+                            sheetId: sheet.id,
+                            viewId: firstViewId,
+                            x: 30,
+                            y: 30,
+                            width: 200,
+                            height: 150,
+                            scale: sheet.scale,
+                          };
+                          addViewport(vp);
+                        }}
+                      >
+                        {labels.addViewport}
+                      </button>
+                    </div>
+                    {(sheet.viewports ?? []).map((vp) => (
+                      <div key={vp.id} style={{ display: 'grid', gridTemplateColumns: '100px 1fr 60px 60px 70px 70px auto', gap: 6, alignItems: 'end', marginBottom: 4 }}>
+                        <ReadonlyField label={labels.id} value={vp.id} />
+                        <SelectField
+                          label={labels.viewId}
+                          value={vp.viewId}
+                          options={data.views.map((v) => v.id)}
+                          onChange={(value) => updateViewport(vp.id, { viewId: value })}
+                        />
+                        <NumberField label={labels.x} value={vp.x} onChange={(value) => updateViewport(vp.id, { x: value })} />
+                        <NumberField label={labels.y} value={vp.y} onChange={(value) => updateViewport(vp.id, { y: value })} />
+                        <NumberField label={labels.width} value={vp.width} onChange={(value) => updateViewport(vp.id, { width: value })} />
+                        <NumberField label={labels.height} value={vp.height} onChange={(value) => updateViewport(vp.id, { height: value })} />
+                        <DeleteButton label={labels.removeViewport} onClick={() => removeViewport(vp.id)} />
+                      </div>
+                    ))}
                   </div>
                 </div>
               ))}

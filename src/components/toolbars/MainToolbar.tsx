@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { useEditorStore, useProjectStore } from '@/app/store';
 import type { EditorTool } from '@/app/store';
 import { useI18n } from '@/i18n';
@@ -9,6 +10,8 @@ import { importIfc } from '@/domain/integration/ifc';
 import { importStructuralAnalysisJson, STRUCTURAL_ANALYSIS_SCHEMA } from '@/domain/integration/structuralAnalysisJson';
 import sampleProject from '@/samples/sample-project.json';
 import type { ProjectData } from '@/domain/structural/types';
+import { getAllEntityBounds, getSelectionBounds } from '@/domain/structural/editTransform';
+import { drawingTemplates } from '@/domain/templates/drawingTemplates';
 
 interface Props {
   onExport: () => void;
@@ -16,10 +19,11 @@ interface Props {
   onAiAssist: () => void;
   onHelp: () => void;
   onTransform: () => void;
+  onPrintPreview: () => void;
 }
 
-export function MainToolbar({ onExport, onMasters, onAiAssist, onHelp, onTransform }: Props) {
-  const { data, isDirty, fileHandle, loadProject, newProject, setFileHandle, markClean, addAnnotations } =
+export function MainToolbar({ onExport, onMasters, onAiAssist, onHelp, onTransform, onPrintPreview }: Props) {
+  const { data, isDirty, fileHandle, loadProject, newProject, setFileHandle, markClean, addAnnotations, addExternalRef } =
     useProjectStore();
   const { viewMode, setViewMode, activeTool, setActiveTool, setSelectedIds, selectedIds, theme, toggleTheme, activeStory } =
     useEditorStore();
@@ -28,10 +32,52 @@ export function MainToolbar({ onExport, onMasters, onAiAssist, onHelp, onTransfo
   const importDxfLabel = locale === 'ja' ? 'DXF取込' : 'DXF Import';
   const importIfcLabel = locale === 'ja' ? 'IFC取込' : 'IFC Import';
   const transformLabel = locale === 'ja' ? '変形' : 'Transform';
+  const xrefLabel = locale === 'ja' ? '外部参照' : 'Xref';
+
+  const [showTemplatePicker, setShowTemplatePicker] = useState(false);
 
   const handleNew = () => {
     if (isDirty && !confirm(t.confirmUnsaved)) return;
-    newProject();
+    setShowTemplatePicker(true);
+  };
+
+  const handleTemplateSelect = (templateKey: string | null) => {
+    setShowTemplatePicker(false);
+    if (templateKey === null) {
+      // Blank project (default)
+      newProject();
+      return;
+    }
+    const template = drawingTemplates.find((t) => t.key === templateKey);
+    if (template) {
+      const projectData = template.create();
+      loadProject(projectData);
+    } else {
+      newProject();
+    }
+  };
+
+  const handleImportXref = async () => {
+    if (!data) return;
+    try {
+      const result = await openJsonFile();
+      const imported = importProjectJson(result.content);
+      if (!imported.ok) {
+        alert(imported.errors.map((e) => e.message).join('\n'));
+        return;
+      }
+      const ref = {
+        id: `xref-${Date.now()}`,
+        name: imported.data.project.name || 'Xref',
+        data: imported.data,
+        offsetX: 0,
+        offsetY: 0,
+        visible: true,
+      };
+      addExternalRef(ref);
+    } catch {
+      // User cancelled
+    }
   };
 
   const handleOpen = async () => {
@@ -148,6 +194,7 @@ export function MainToolbar({ onExport, onMasters, onAiAssist, onHelp, onTransfo
         <button className="toolbar-btn" onClick={handleSample}>{t.fileSample}</button>
         <button className="toolbar-btn" onClick={handleImportIfc}>{importIfcLabel}</button>
         <button className="toolbar-btn" onClick={handleImportDxf} disabled={!data}>{importDxfLabel}</button>
+        <button className="toolbar-btn" onClick={handleImportXref} disabled={!data}>{xrefLabel}</button>
       </div>
 
       <div className="toolbar-group">
@@ -170,15 +217,56 @@ export function MainToolbar({ onExport, onMasters, onAiAssist, onHelp, onTransfo
         {toolBtn('slab', t.toolSlab)}
         {toolBtn('dimension', t.toolDimension)}
         {toolBtn('annotation', t.toolAnnotation)}
+        {toolBtn('trim', t.toolTrim)}
+        {toolBtn('extend', t.toolExtend)}
+        {toolBtn('xline', t.toolXline)}
+        {toolBtn('spline', t.toolSpline)}
       </div>
 
       <div className="toolbar-group">
         <button className={`toolbar-btn ${viewMode === '2d' ? 'active' : ''}`} onClick={() => setViewMode('2d')}>{t.view2d}</button>
         <button className={`toolbar-btn ${viewMode === '3d' ? 'active' : ''}`} onClick={() => setViewMode('3d')}>{t.view3d}</button>
+        <button
+          className="toolbar-btn"
+          disabled={!data}
+          title={t.zoomExtents}
+          onClick={() => {
+            if (!data) return;
+            const el = document.querySelector('svg');
+            if (!el) return;
+            const rect = el.getBoundingClientRect();
+            const allBounds = getAllEntityBounds(data, activeStory);
+            if (!allBounds) return;
+            useEditorStore.getState().zoomToFit(allBounds, rect.width, rect.height);
+          }}
+        >
+          {t.zoomExtents}
+        </button>
+        <button
+          className="toolbar-btn"
+          disabled={selectedIds.length === 0 || !data}
+          title={t.zoomSelection}
+          onClick={() => {
+            if (!data) return;
+            const el = document.querySelector('svg');
+            if (!el) return;
+            const rect = el.getBoundingClientRect();
+            const bounds = getSelectionBounds(data, selectedIds);
+            if (!bounds) return;
+            useEditorStore.getState().zoomToFit(
+              { minX: bounds.min.x, minY: bounds.min.y, maxX: bounds.max.x, maxY: bounds.max.y },
+              rect.width,
+              rect.height,
+            );
+          }}
+        >
+          {t.zoomSelection}
+        </button>
       </div>
 
       <div className="toolbar-group">
         <button className="toolbar-btn" onClick={onExport} disabled={!data}>{t.fileExport}</button>
+        <button className="toolbar-btn" onClick={onPrintPreview} disabled={!data}>{t.printPreview}</button>
         <button className="toolbar-btn" onClick={onMasters} disabled={!data}>{mastersLabel}</button>
         <button className="toolbar-btn" onClick={onAiAssist}>{t.btnAi}</button>
         <button className="toolbar-btn" onClick={onHelp}>{t.btnHelp}</button>
@@ -192,6 +280,57 @@ export function MainToolbar({ onExport, onMasters, onAiAssist, onHelp, onTransfo
           {locale === 'ja' ? 'EN' : 'JA'}
         </button>
       </div>
+
+      {/* Template Picker Dialog */}
+      {showTemplatePicker && (
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'var(--bg-modal-overlay)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 1000,
+          }}
+          onClick={() => setShowTemplatePicker(false)}
+        >
+          <div
+            style={{
+              background: 'var(--bg-modal)',
+              borderRadius: 8,
+              padding: 24,
+              minWidth: 340,
+              maxWidth: 'min(500px, calc(100vw - 32px))',
+              boxShadow: '0 8px 32px rgba(0,0,0,0.2)',
+              color: 'var(--text-primary)',
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 style={{ margin: '0 0 12px 0', fontSize: 16 }}>{t.templatePickerTitle}</h3>
+            <p style={{ fontSize: 12, color: 'var(--text-secondary)', margin: '0 0 16px 0' }}>{t.templateSelectPrompt}</p>
+            <div style={{ display: 'grid', gap: 8 }}>
+              {drawingTemplates.map((tmpl) => (
+                <button
+                  key={tmpl.key}
+                  className="toolbar-btn"
+                  style={{ textAlign: 'left', padding: '10px 14px', fontSize: 13 }}
+                  onClick={() => handleTemplateSelect(tmpl.key)}
+                >
+                  {locale === 'ja' ? tmpl.labelJa : tmpl.labelEn}
+                </button>
+              ))}
+              <button
+                className="toolbar-btn"
+                style={{ textAlign: 'left', padding: '10px 14px', fontSize: 13 }}
+                onClick={() => handleTemplateSelect(null)}
+              >
+                {locale === 'ja' ? '空白プロジェクト' : 'Blank Project'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

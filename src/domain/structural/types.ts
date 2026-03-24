@@ -7,6 +7,12 @@ export type TextAlign = 'left' | 'center' | 'right';
 
 // ── Project Root ─────────────────────────────────────────────
 
+export interface Group {
+  id: string;
+  name: string;
+  memberIds: string[];
+}
+
 export interface ProjectData {
   schemaVersion: string;
   project: ProjectMeta;
@@ -21,6 +27,9 @@ export interface ProjectData {
   sheets: Sheet[];
   views: View[];
   issues?: Issue[];
+  groups?: Group[];
+  constructionLines?: ConstructionLine[];
+  externalRefs?: ExternalRef[];
 }
 
 export interface ProjectMeta {
@@ -146,7 +155,7 @@ export interface Opening {
 
 export interface Annotation {
   id: string;
-  type: 'text' | 'label' | 'leader';
+  type: 'text' | 'label' | 'leader' | 'spline';
   story: string;
   x: number;
   y: number;
@@ -155,6 +164,11 @@ export interface Annotation {
   rotation?: number;
   color?: string;
   textAlign?: TextAlign;
+  fontWeight?: 'normal' | 'bold';
+  fontStyle?: 'normal' | 'italic';
+  textDecoration?: 'none' | 'underline';
+  fontFamily?: string;
+  points?: Point2D[];
 }
 
 // ── Dimension ────────────────────────────────────────────────
@@ -214,6 +228,41 @@ export interface Sheet {
   viewIds: string[];
   titleBlockTemplate?: TitleBlockTemplate;
   titleBlock?: SheetTitleBlock;
+  viewports?: Viewport[];
+}
+
+// ── Construction Line ────────────────────────────────────
+
+export interface ConstructionLine {
+  id: string;
+  story: string;
+  type: 'xline' | 'ray';
+  origin: Point2D;
+  direction: Point2D;
+}
+
+// ── External Reference ──────────────────────────────────
+
+export interface ExternalRef {
+  id: string;
+  name: string;
+  data: ProjectData;
+  offsetX: number;
+  offsetY: number;
+  visible: boolean;
+}
+
+// ── Viewport ────────────────────────────────────────────
+
+export interface Viewport {
+  id: string;
+  sheetId: string;
+  viewId: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  scale: string;
 }
 
 // ── Issue ────────────────────────────────────────────────────

@@ -140,6 +140,34 @@ export interface Translations {
   helpSectionAi: string;
   helpAiText: string;
 
+  // Transform modes
+  transformOffset: string;
+  transformMirror: string;
+  transformArray: string;
+  transformOffsetDistance: string;
+  transformMirrorAxis: string;
+  transformMirrorCopy: string;
+  transformAxisHorizontal: string;
+  transformAxisVertical: string;
+  transformAxisCustom: string;
+  transformAxisAngle: string;
+  transformArrayRows: string;
+  transformArrayColumns: string;
+  transformArrayRowSpacing: string;
+  transformArrayColSpacing: string;
+
+  // Coordinate input
+  coordInputPlaceholder: string;
+  coordInputLabel: string;
+
+  // Zoom
+  zoomExtents: string;
+  zoomSelection: string;
+
+  // Rectangle selection
+  selectionWindow: string;
+  selectionCrossing: string;
+
   // member type labels
   memberColumn: string;
   memberBeam: string;
@@ -147,4 +175,67 @@ export interface Translations {
   memberSlab: string;
   memberAnnotation: string;
   memberDimension: string;
+
+  // Trim/Extend
+  toolTrim: string;
+  toolExtend: string;
+  toolFillet: string;
+  trimPrompt: string;
+  extendPrompt: string;
+  filletPrompt: string;
+
+  // Measurement
+  propArea: string;
+  propPerimeter: string;
+
+  // Vertex editing
+  propVertices: string;
+  vertexAdd: string;
+  vertexRemove: string;
+
+  // Grouping
+  groupCreate: string;
+  groupUngroup: string;
+  groupName: string;
+  groupPromptName: string;
+
+  // Print Preview
+  printPreview: string;
+  printPreviewTitle: string;
+  printPreviewClose: string;
+  printPreviewEmpty: string;
+
+  // Snap additions
+  snapPerpendicular: string;
+  snapNearest: string;
+
+  // Construction Lines
+  toolXline: string;
+  layerConstruction: string;
+
+  // Spline
+  toolSpline: string;
+
+  // Text Formatting
+  propFontWeight: string;
+  propFontStyle: string;
+  propTextDecoration: string;
+  propFontFamily: string;
+
+  // External References
+  xrefTitle: string;
+  xrefImport: string;
+  xrefRemove: string;
+
+  // Viewports
+  viewportTitle: string;
+  viewportAdd: string;
+  viewportRemove: string;
+
+  // Drawing Templates
+  templatePickerTitle: string;
+  templateA1Structure: string;
+  templateA3Detail: string;
+  templateBlankA1: string;
+  templateSelectPrompt: string;
 }

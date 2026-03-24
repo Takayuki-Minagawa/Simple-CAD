@@ -36,6 +36,25 @@ export function useKeyboardShortcuts() {
               }
             }
             return;
+          case 'g':
+            e.preventDefault();
+            {
+              const ids = useEditorStore.getState().selectedIds;
+              if (ids.length === 0) return;
+              if (e.shiftKey) {
+                // Ungroup: find group containing first selected id
+                const data = useProjectStore.getState().data;
+                if (data?.groups) {
+                  const group = data.groups.find((g) => g.memberIds.includes(ids[0]));
+                  if (group) useProjectStore.getState().ungroupSelection(group.id);
+                }
+              } else {
+                // Group
+                const name = prompt('Group name:') || 'Group';
+                useProjectStore.getState().createGroup(ids, name);
+              }
+            }
+            return;
         }
       }
 

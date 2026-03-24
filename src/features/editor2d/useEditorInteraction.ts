@@ -3,11 +3,12 @@ import { v4 as uuidv4 } from 'uuid';
 import { useProjectStore, useEditorStore } from '@/app/store';
 import type { EditorTool } from '@/app/store';
 import { useI18n } from '@/i18n';
-import type { Annotation, Dimension, ColumnMember, BeamMember, WallMember, SlabMember } from '@/domain/structural/types';
+import type { Annotation, Dimension, ColumnMember, BeamMember, WallMember, SlabMember, ConstructionLine } from '@/domain/structural/types';
 import type { Point2D } from '@/domain/geometry/types';
 import { findSnap, buildSnapCandidatesFromMembers } from '@/domain/geometry/snap';
 import type { SnapResult } from '@/domain/geometry/snap';
 import { snapPointToGrid } from '@/domain/geometry/transform';
+import { getEntityBoundsList, selectByRectangle } from '@/domain/structural/editTransform';
 
 export interface DrawState {
   /** Points collected so far for multi-click tools */
@@ -18,11 +19,23 @@ export interface DrawState {
   snapResult: SnapResult | null;
 }
 
+export interface RectSelectState {
+  /** Start point in world coords */
+  start: Point2D | null;
+  /** Current end point in world coords */
+  end: Point2D | null;
+}
+
 export function useEditorInteraction() {
   const [drawState, setDrawState] = useState<DrawState>({
     points: [],
     previewPos: null,
     snapResult: null,
+  });
+
+  const [rectSelect, setRectSelect] = useState<RectSelectState>({
+    start: null,
+    end: null,
   });
 
   const getSnapPos = useCallback(
@@ -191,6 +204,38 @@ export function useEditorInteraction() {
           store.addAnnotation(ann);
           break;
         }
+
+        case 'xline': {
+          setDrawState((prev) => {
+            const pts = [...prev.points, pos];
+            if (pts.length >= 2) {
+              const dx = pts[1].x - pts[0].x;
+              const dy = pts[1].y - pts[0].y;
+              const len = Math.sqrt(dx * dx + dy * dy);
+              if (len > 0) {
+                const cl: ConstructionLine = {
+                  id: uuidv4(),
+                  story: activeStory,
+                  type: 'xline',
+                  origin: { x: pts[0].x, y: pts[0].y },
+                  direction: { x: dx / len, y: dy / len },
+                };
+                store.addConstructionLine(cl);
+              }
+              return { points: [], previewPos: null, snapResult: null };
+            }
+            return { ...prev, points: pts };
+          });
+          break;
+        }
+
+        case 'spline': {
+          setDrawState((prev) => {
+            const pts = [...prev.points, pos];
+            return { ...prev, points: pts };
+          });
+          break;
+        }
       }
     },
     [],
@@ -219,11 +264,61 @@ export function useEditorInteraction() {
           if (dimension && layerLocked['dimension']) return;
         }
 
+        // Group selection: if member belongs to a group, select all group members
+        if (data) {
+          const memberForGroup = data.members.find((m) => m.id === id);
+          if (memberForGroup && data.groups && !(e.shiftKey || e.ctrlKey || e.metaKey)) {
+            const group = data.groups.find((g) => g.memberIds.includes(id));
+            if (group) {
+              setSelectedIds(group.memberIds.filter((mid) => data.members.some((m) => m.id === mid)));
+              return;
+            }
+          }
+        }
+
         if (e.shiftKey || e.ctrlKey || e.metaKey) {
           toggleSelection(id);
         } else {
           setSelectedIds([id]);
         }
+        return;
+      }
+
+      // Trim tool: click on a member to trim it at nearest intersection
+      if (activeTool === 'trim') {
+        const target = (e.target as SVGElement).closest('[data-id]');
+        if (!target) return;
+        const id = target.getAttribute('data-id')!;
+        const store = useProjectStore.getState();
+        if (!store.data) return;
+        const member = store.data.members.find((m) => m.id === id);
+        if (!member || member.type === 'slab') return;
+        // Determine which side to keep based on click proximity to start/end
+        const distToStart = Math.hypot(worldPos.x - member.start.x, worldPos.y - member.start.y);
+        const distToEnd = Math.hypot(worldPos.x - member.end.x, worldPos.y - member.end.y);
+        const side = distToEnd < distToStart ? 'start' : 'end';
+        store.trimMember(id, worldPos, side);
+        return;
+      }
+
+      // Extend tool: first click selects member, second click selects target
+      if (activeTool === 'extend') {
+        const target = (e.target as SVGElement).closest('[data-id]');
+        if (!target) return;
+        const id = target.getAttribute('data-id')!;
+        setDrawState((prev) => {
+          if (prev.points.length === 0) {
+            // First click: store the member to extend (abuse points array for state)
+            return { ...prev, points: [{ x: 0, y: 0 }], previewPos: null, snapResult: null, _extendMemberId: id } as DrawState & { _extendMemberId: string };
+          } else {
+            // Second click: extend the stored member to the clicked target
+            const storedId = (prev as DrawState & { _extendMemberId?: string })._extendMemberId;
+            if (storedId) {
+              useProjectStore.getState().extendMember(storedId, id);
+            }
+            return { points: [], previewPos: null, snapResult: null };
+          }
+        });
         return;
       }
 
@@ -260,6 +355,28 @@ export function useEditorInteraction() {
           return { points: [], previewPos: null, snapResult: null };
         });
       }
+
+      // Close spline on double-click
+      if (activeTool === 'spline') {
+        setDrawState((prev) => {
+          if (prev.points.length < 2) return prev;
+          const store = useProjectStore.getState();
+          const { activeStory } = useEditorStore.getState();
+          if (!store.data || !activeStory) return prev;
+
+          const ann: Annotation = {
+            id: uuidv4(),
+            type: 'spline',
+            story: activeStory,
+            x: prev.points[0].x,
+            y: prev.points[0].y,
+            text: '',
+            points: prev.points.map((p) => ({ x: p.x, y: p.y })),
+          };
+          store.addAnnotation(ann);
+          return { points: [], previewPos: null, snapResult: null };
+        });
+      }
     },
     [],
   );
@@ -272,8 +389,70 @@ export function useEditorInteraction() {
         previewPos: pos,
         snapResult: snap,
       }));
+      // Update rect select end if dragging
+      setRectSelect((prev) => {
+        if (prev.start) {
+          return { ...prev, end: worldPos };
+        }
+        return prev;
+      });
     },
     [getSnapPos],
+  );
+
+  const handleMouseDown = useCallback(
+    (worldPos: Point2D, e: React.MouseEvent) => {
+      const { activeTool } = useEditorStore.getState();
+      if (activeTool === 'select' && e.button === 0) {
+        // Start rect select only if clicking on empty area (not on an entity)
+        const target = (e.target as SVGElement).closest('[data-id]');
+        if (!target) {
+          setRectSelect({ start: worldPos, end: worldPos });
+        }
+      }
+    },
+    [],
+  );
+
+  const handleMouseUp = useCallback(
+    (_worldPos: Point2D, _e: React.MouseEvent) => {
+      setRectSelect((prev) => {
+        if (prev.start && prev.end) {
+          const minX = Math.min(prev.start.x, prev.end.x);
+          const maxX = Math.max(prev.start.x, prev.end.x);
+          const minY = Math.min(prev.start.y, prev.end.y);
+          const maxY = Math.max(prev.start.y, prev.end.y);
+          const width = maxX - minX;
+          const height = maxY - minY;
+
+          // Only process if drag was big enough (avoid accidental micro-drags)
+          if (width > 50 || height > 50) {
+            const data = useProjectStore.getState().data;
+            const { activeStory } = useEditorStore.getState();
+            if (data) {
+              const entities = getEntityBoundsList(data, activeStory);
+              // left-to-right = window, right-to-left = crossing
+              const mode = prev.end.x >= prev.start.x ? 'window' : 'crossing';
+              const ids = selectByRectangle(entities, minX, minY, maxX, maxY, mode);
+              useEditorStore.getState().setSelectedIds(ids);
+            }
+          }
+        }
+        return { start: null, end: null };
+      });
+    },
+    [],
+  );
+
+  /** Inject a coordinate point as if user clicked at that position. */
+  const injectCoordinate = useCallback(
+    (pos: Point2D) => {
+      const { activeTool } = useEditorStore.getState();
+      if (activeTool !== 'select' && activeTool !== 'pan') {
+        handleDrawingClick(activeTool, pos);
+      }
+    },
+    [handleDrawingClick],
   );
 
   const resetDrawing = useCallback(() => {
@@ -282,9 +461,13 @@ export function useEditorInteraction() {
 
   return {
     drawState,
+    rectSelect,
     handleClick,
     handleDoubleClick,
     handleMouseMove,
+    handleMouseDown,
+    handleMouseUp,
+    injectCoordinate,
     resetDrawing,
   };
 }

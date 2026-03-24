@@ -25,6 +25,7 @@ export function exportDxf(data: ProjectData, storyId: string): string {
     { name: 'SLAB', color: 6 },      // magenta
     { name: 'DIMENSION', color: 7 }, // white
     { name: 'ANNOTATION', color: 7 },
+    { name: 'CONSTRUCTION', color: 8 }, // gray
   ];
 
   for (const layer of layerDefs) {
@@ -82,10 +83,29 @@ export function exportDxf(data: ProjectData, storyId: string): string {
   // Annotations
   const annotations = data.annotations.filter((a) => a.story === storyId);
   for (const a of annotations) {
+    if (a.type === 'spline' && a.points && a.points.length >= 2) {
+      addSpline(lines, 'ANNOTATION', a.points);
+      continue;
+    }
     if (a.text.includes('\n')) {
       addMText(lines, 'ANNOTATION', a.x, a.y, a.fontSize ?? 250, a.text, a.rotation);
     } else {
       addText(lines, 'ANNOTATION', a.x, a.y, a.fontSize ?? 250, a.text, a.rotation);
+    }
+  }
+
+  // Construction Lines
+  const constructionLines = (data.constructionLines ?? []).filter((cl) => cl.story === storyId);
+  for (const cl of constructionLines) {
+    const ext = 500000;
+    if (cl.type === 'xline') {
+      addLine(lines, 'CONSTRUCTION',
+        cl.origin.x - cl.direction.x * ext, cl.origin.y - cl.direction.y * ext,
+        cl.origin.x + cl.direction.x * ext, cl.origin.y + cl.direction.y * ext);
+    } else {
+      addLine(lines, 'CONSTRUCTION',
+        cl.origin.x, cl.origin.y,
+        cl.origin.x + cl.direction.x * ext, cl.origin.y + cl.direction.y * ext);
     }
   }
 
@@ -195,4 +215,16 @@ function addMText(lines: string[], layer: string, x: number, y: number, height: 
   }
   const encoded = text.replace(/\r?\n/g, '\\P');
   lines.push('1', encoded);
+}
+
+function addSpline(lines: string[], layer: string, points: { x: number; y: number }[]) {
+  // Export as SPLINE entity (degree 3 cubic)
+  lines.push('0', 'SPLINE');
+  lines.push('8', layer);
+  lines.push('70', '8'); // Planar flag
+  lines.push('71', '3'); // Degree 3 (cubic)
+  lines.push('73', String(points.length)); // Number of control points
+  for (const p of points) {
+    lines.push('10', String(p.x), '20', String(p.y), '30', '0');
+  }
 }

@@ -15,14 +15,23 @@ import type {
   Section,
   Sheet,
   PlanView,
+  Group,
+  ConstructionLine,
+  ExternalRef,
+  Viewport,
 } from '@/domain/structural/types';
 import {
   duplicateSelection,
   scaleSelection,
   stretchSelection,
   translateSelection,
+  offsetSelection,
+  mirrorSelection,
+  arraySelection,
   type StretchSelectionOptions,
+  type ArraySelectionOptions,
 } from '@/domain/structural/editTransform';
+import { trimMember as trimMemberFn, extendMember as extendMemberFn, filletWalls as filletWallsFn } from '@/domain/structural/editTrim';
 
 export interface ProjectState {
   data: ProjectData | null;
@@ -45,6 +54,9 @@ export interface ProjectState {
   duplicateEntities: (ids: string[], dx: number, dy: number, count?: number) => string[];
   scaleEntities: (ids: string[], origin: Point2D, scaleX: number, scaleY: number) => void;
   stretchEntities: (ids: string[], options: StretchSelectionOptions) => void;
+  offsetEntities: (ids: string[], distance: number) => string[];
+  mirrorEntities: (ids: string[], axisStart: Point2D, axisEnd: Point2D, copy: boolean) => string[];
+  arrayEntities: (ids: string[], options: ArraySelectionOptions) => string[];
 
   // Annotation operations
   addAnnotation: (annotation: Annotation) => void;
@@ -78,6 +90,34 @@ export interface ProjectState {
   deleteSection: (id: string) => void;
   addPlanSheet: (storyId: string) => string | null;
   updateSheet: (id: string, updates: Partial<Sheet>) => void;
+
+  // Trim/Extend operations
+  trimMember: (memberId: string, cutPoint: Point2D, side: 'start' | 'end') => boolean;
+  extendMember: (memberId: string, targetMemberId: string) => boolean;
+  filletWalls: (wallId1: string, wallId2: string, radius?: number) => boolean;
+
+  // Slab vertex editing
+  updateSlabVertex: (memberId: string, vertexIndex: number, point: Point2D) => void;
+  addSlabVertex: (memberId: string, afterIndex: number) => void;
+  removeSlabVertex: (memberId: string, vertexIndex: number) => void;
+
+  // Grouping
+  createGroup: (ids: string[], name: string) => string | null;
+  ungroupSelection: (groupId: string) => void;
+
+  // Construction Lines
+  addConstructionLine: (cl: ConstructionLine) => void;
+  deleteConstructionLine: (id: string) => void;
+
+  // External References
+  addExternalRef: (ref: ExternalRef) => void;
+  removeExternalRef: (id: string) => void;
+  toggleExternalRefVisibility: (id: string) => void;
+
+  // Viewports
+  addViewport: (viewport: Viewport) => void;
+  updateViewport: (id: string, updates: Partial<Viewport>) => void;
+  removeViewport: (id: string) => void;
 
   // Generic delete by id (from any collection)
   deleteById: (id: string) => void;
@@ -275,6 +315,36 @@ export const useProjectStore = create<ProjectState>()(
           stretchSelection(state.data, ids, options);
           state.isDirty = true;
         }),
+
+      offsetEntities: (ids, distance) => {
+        let createdIds: string[] = [];
+        set((state) => {
+          if (!state.data || ids.length === 0) return;
+          createdIds = offsetSelection(state.data, ids, distance);
+          state.isDirty = true;
+        });
+        return createdIds;
+      },
+
+      mirrorEntities: (ids, axisStart, axisEnd, copy) => {
+        let createdIds: string[] = [];
+        set((state) => {
+          if (!state.data || ids.length === 0) return;
+          createdIds = mirrorSelection(state.data, ids, axisStart, axisEnd, copy);
+          state.isDirty = true;
+        });
+        return createdIds;
+      },
+
+      arrayEntities: (ids, options) => {
+        let createdIds: string[] = [];
+        set((state) => {
+          if (!state.data || ids.length === 0) return;
+          createdIds = arraySelection(state.data, ids, options);
+          state.isDirty = true;
+        });
+        return createdIds;
+      },
 
       // ── Annotations ──
 
@@ -562,6 +632,181 @@ export const useProjectStore = create<ProjectState>()(
           state.isDirty = true;
         }),
 
+      // ── Trim/Extend ──
+
+      trimMember: (memberId, cutPoint, side) => {
+        let result = false;
+        set((state) => {
+          if (!state.data) return;
+          result = trimMemberFn(state.data, memberId, cutPoint, side);
+          if (result) state.isDirty = true;
+        });
+        return result;
+      },
+
+      extendMember: (memberId, targetMemberId) => {
+        let result = false;
+        set((state) => {
+          if (!state.data) return;
+          result = extendMemberFn(state.data, memberId, targetMemberId);
+          if (result) state.isDirty = true;
+        });
+        return result;
+      },
+
+      filletWalls: (wallId1, wallId2, radius = 0) => {
+        let result = false;
+        set((state) => {
+          if (!state.data) return;
+          result = filletWallsFn(state.data, wallId1, wallId2, radius);
+          if (result) state.isDirty = true;
+        });
+        return result;
+      },
+
+      // ── Slab Vertex Editing ──
+
+      updateSlabVertex: (memberId, vertexIndex, point) =>
+        set((state) => {
+          if (!state.data) return;
+          const member = state.data.members.find((m) => m.id === memberId);
+          if (!member || member.type !== 'slab') return;
+          if (vertexIndex < 0 || vertexIndex >= member.polygon.length) return;
+          member.polygon[vertexIndex] = { x: point.x, y: point.y };
+          state.isDirty = true;
+        }),
+
+      addSlabVertex: (memberId, afterIndex) =>
+        set((state) => {
+          if (!state.data) return;
+          const member = state.data.members.find((m) => m.id === memberId);
+          if (!member || member.type !== 'slab') return;
+          const n = member.polygon.length;
+          if (afterIndex < 0 || afterIndex >= n) return;
+          const nextIndex = (afterIndex + 1) % n;
+          const midpoint = {
+            x: (member.polygon[afterIndex].x + member.polygon[nextIndex].x) / 2,
+            y: (member.polygon[afterIndex].y + member.polygon[nextIndex].y) / 2,
+          };
+          member.polygon.splice(afterIndex + 1, 0, midpoint);
+          state.isDirty = true;
+        }),
+
+      removeSlabVertex: (memberId, vertexIndex) =>
+        set((state) => {
+          if (!state.data) return;
+          const member = state.data.members.find((m) => m.id === memberId);
+          if (!member || member.type !== 'slab') return;
+          if (member.polygon.length <= 3) return; // minimum 3 vertices
+          if (vertexIndex < 0 || vertexIndex >= member.polygon.length) return;
+          member.polygon.splice(vertexIndex, 1);
+          state.isDirty = true;
+        }),
+
+      // ── Grouping ──
+
+      createGroup: (ids, name) => {
+        let groupId: string | null = null;
+        set((state) => {
+          if (!state.data || ids.length === 0) return;
+          if (!state.data.groups) state.data.groups = [];
+          groupId = uuidv4();
+          const group: Group = { id: groupId, name, memberIds: [...ids] };
+          state.data.groups.push(group);
+          state.isDirty = true;
+        });
+        return groupId;
+      },
+
+      ungroupSelection: (groupId) =>
+        set((state) => {
+          if (!state.data || !state.data.groups) return;
+          state.data.groups = state.data.groups.filter((g) => g.id !== groupId);
+          state.isDirty = true;
+        }),
+
+      // ── Construction Lines ──
+
+      addConstructionLine: (cl) =>
+        set((state) => {
+          if (!state.data) return;
+          if (!state.data.constructionLines) state.data.constructionLines = [];
+          state.data.constructionLines.push(cl);
+          state.isDirty = true;
+        }),
+
+      deleteConstructionLine: (id) =>
+        set((state) => {
+          if (!state.data || !state.data.constructionLines) return;
+          state.data.constructionLines = state.data.constructionLines.filter((cl) => cl.id !== id);
+          state.isDirty = true;
+        }),
+
+      // ── External References ──
+
+      addExternalRef: (ref) =>
+        set((state) => {
+          if (!state.data) return;
+          if (!state.data.externalRefs) state.data.externalRefs = [];
+          state.data.externalRefs.push(ref);
+          state.isDirty = true;
+        }),
+
+      removeExternalRef: (id) =>
+        set((state) => {
+          if (!state.data || !state.data.externalRefs) return;
+          state.data.externalRefs = state.data.externalRefs.filter((r) => r.id !== id);
+          state.isDirty = true;
+        }),
+
+      toggleExternalRefVisibility: (id) =>
+        set((state) => {
+          if (!state.data || !state.data.externalRefs) return;
+          const ref = state.data.externalRefs.find((r) => r.id === id);
+          if (ref) ref.visible = !ref.visible;
+          state.isDirty = true;
+        }),
+
+      // ── Viewports ──
+
+      addViewport: (viewport) =>
+        set((state) => {
+          if (!state.data) return;
+          const sheet = state.data.sheets.find((s) => s.id === viewport.sheetId);
+          if (!sheet) return;
+          if (!sheet.viewports) sheet.viewports = [];
+          sheet.viewports.push(viewport);
+          state.isDirty = true;
+        }),
+
+      updateViewport: (id, updates) =>
+        set((state) => {
+          if (!state.data) return;
+          for (const sheet of state.data.sheets) {
+            if (!sheet.viewports) continue;
+            const vp = sheet.viewports.find((v) => v.id === id);
+            if (vp) {
+              Object.assign(vp, updates);
+              state.isDirty = true;
+              return;
+            }
+          }
+        }),
+
+      removeViewport: (id) =>
+        set((state) => {
+          if (!state.data) return;
+          for (const sheet of state.data.sheets) {
+            if (!sheet.viewports) continue;
+            const idx = sheet.viewports.findIndex((v) => v.id === id);
+            if (idx >= 0) {
+              sheet.viewports.splice(idx, 1);
+              state.isDirty = true;
+              return;
+            }
+          }
+        }),
+
       // ── Generic delete ──
 
       deleteById: (id) =>
@@ -571,6 +816,9 @@ export const useProjectStore = create<ProjectState>()(
           state.data.openings = state.data.openings.filter((o) => o.id !== id && o.memberId !== id);
           state.data.annotations = state.data.annotations.filter((a) => a.id !== id);
           state.data.dimensions = state.data.dimensions.filter((d) => d.id !== id);
+          if (state.data.constructionLines) {
+            state.data.constructionLines = state.data.constructionLines.filter((cl) => cl.id !== id);
+          }
           state.isDirty = true;
         }),
     })),

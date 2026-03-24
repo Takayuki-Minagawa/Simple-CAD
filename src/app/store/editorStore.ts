@@ -8,9 +8,13 @@ export type EditorTool =
   | 'wall'
   | 'slab'
   | 'dimension'
-  | 'annotation';
+  | 'annotation'
+  | 'trim'
+  | 'extend'
+  | 'xline'
+  | 'spline';
 
-export type SnapMode = 'grid' | 'endpoint' | 'midpoint' | 'intersection';
+export type SnapMode = 'grid' | 'endpoint' | 'midpoint' | 'intersection' | 'perpendicular' | 'nearest';
 
 export const LAYER_NAMES = [
   'grid',
@@ -21,6 +25,7 @@ export const LAYER_NAMES = [
   'opening',
   'dimension',
   'annotation',
+  'construction',
 ] as const;
 
 export type LayerName = (typeof LAYER_NAMES)[number];
@@ -79,6 +84,7 @@ interface EditorState {
   setLayerLocked: (layer: string, locked: boolean) => void;
   setWireframe: (on: boolean) => void;
   setOrthographic: (on: boolean) => void;
+  zoomToFit: (bounds: { minX: number; minY: number; maxX: number; maxY: number }, viewportWidth: number, viewportHeight: number) => void;
 }
 
 const defaultLayerVisibility: Record<string, boolean> = {};
@@ -135,4 +141,22 @@ export const useEditorStore = create<EditorState>()((set) => ({
     })),
   setWireframe: (on) => set({ wireframe: on }),
   setOrthographic: (on) => set({ orthographic: on }),
+  zoomToFit: (bounds, viewportWidth, viewportHeight) => {
+    const padding = 0.1;
+    const contentWidth = bounds.maxX - bounds.minX;
+    const contentHeight = bounds.maxY - bounds.minY;
+    if (contentWidth <= 0 && contentHeight <= 0) return;
+    const zoomX = contentWidth > 0 ? viewportWidth / (contentWidth * (1 + padding)) : 10;
+    const zoomY = contentHeight > 0 ? viewportHeight / (contentHeight * (1 + padding)) : 10;
+    const zoom = Math.max(0.001, Math.min(10, Math.min(zoomX, zoomY)));
+    const centerX = (bounds.minX + bounds.maxX) / 2;
+    const centerY = (bounds.minY + bounds.maxY) / 2;
+    set({
+      zoom,
+      pan: {
+        x: viewportWidth / 2 - centerX * zoom,
+        y: viewportHeight / 2 + centerY * zoom, // Y is flipped in SVG
+      },
+    });
+  },
 }));

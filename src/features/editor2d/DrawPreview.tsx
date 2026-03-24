@@ -43,7 +43,7 @@ export function DrawPreview({ drawState, activeTool }: Props) {
       )}
 
       {/* Tool preview lines */}
-      {(activeTool === 'beam' || activeTool === 'wall' || activeTool === 'dimension') &&
+      {(activeTool === 'beam' || activeTool === 'wall' || activeTool === 'dimension' || activeTool === 'xline') &&
         points.length === 1 && (
           <line
             x1={points[0].x}
@@ -82,6 +82,22 @@ export function DrawPreview({ drawState, activeTool }: Props) {
           {/* Vertices */}
           {points.map((p, i) => (
             <circle key={i} cx={p.x} cy={p.y} r={80} fill="var(--color-slab)" />
+          ))}
+        </g>
+      )}
+
+      {/* Spline preview */}
+      {activeTool === 'spline' && points.length > 0 && (
+        <g>
+          <polyline
+            points={[...points, previewPos].map((p) => `${p.x},${p.y}`).join(' ')}
+            fill="none"
+            stroke="var(--color-selection)"
+            strokeWidth={20}
+            strokeDasharray="100 50"
+          />
+          {points.map((p, i) => (
+            <circle key={i} cx={p.x} cy={p.y} r={80} fill="var(--color-selection)" />
           ))}
         </g>
       )}
