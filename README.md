@@ -73,14 +73,15 @@ npm run test:watch    # ウォッチモード
 2. 左パネルの **Story** でフロアを切り替え、**複製** ボタンで上階を作成
 3. ツールバーの描画ツール（Column / Beam / Wall / Slab / Dim / Text）で部材を追加
 4. **Select** ツールでオブジェクトを選択 → 右パネルでプロパティ（色・線種・線太さ・テキスト配置・回転等）を編集
-5. **マスタ** ボタンで materials / sections / sheets / タイトルブロックを編集
-6. **IFC取込** / **DXF取込** ボタンで外部ファイルを取り込み（JSON Open は構造計算 JSON も自動判別）
-7. **2D / 3D** ボタンで表示モードを切り替え（3D では clip / slice / section box で断面表示）
-8. **Export** で SVG / PDF / DXF / IFC / 構造計算 JSON に出力
-9. **AI** ボタンで LLM 連携（プロンプトコピー・JSON 貼り付け読み込み）
-10. 🌙 / ☀️ ボタンでダーク / ライトモードを切替
-11. **EN / JA** ボタンで表示言語を切替
-12. **ヘルプ** ボタンで簡易マニュアルを表示
+5. **変形** ボタンで選択要素に移動 / 複写 / 縮尺 / パラメトリック変形を数値指定で適用
+6. **マスタ** ボタンで materials / sections / sheets / タイトルブロックを編集
+7. **IFC取込** / **DXF取込** ボタンで外部ファイルを取り込み（JSON Open は構造計算 JSON も自動判別）
+8. **2D / 3D** ボタンで表示モードを切り替え（3D では clip / slice / section box で断面表示）
+9. **Export** で SVG / PDF / DXF / IFC / 構造計算 JSON に出力
+10. **AI** ボタンで LLM 連携（プロンプトコピー・JSON 貼り付け読み込み）
+11. 🌙 / ☀️ ボタンでダーク / ライトモードを切替
+12. **EN / JA** ボタンで表示言語を切替
+13. **ヘルプ** ボタンで簡易マニュアルを表示
 
 ### キーボードショートカット
 
@@ -96,7 +97,7 @@ npm run test:watch    # ウォッチモード
 | `T` | Text (Annotation) |
 | `Ctrl+Z` | Undo |
 | `Ctrl+Shift+Z` / `Ctrl+Y` | Redo |
-| `Ctrl+D` | 複製 |
+| `Ctrl+D` | 1000mm オフセット複写 |
 | `Delete` | 削除 |
 | `Escape` | キャンセル / 選択解除 |
 | マウスホイール | ズーム |
