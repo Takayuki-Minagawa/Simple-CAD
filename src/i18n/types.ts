@@ -5,6 +5,13 @@ export interface Translations {
   appTitle: string;
   loadPrompt: string;
 
+  // Toolbar - Menu labels
+  menuFile: string;
+  menuEdit: string;
+  menuDraw: string;
+  menuView: string;
+  menuTools: string;
+
   // Toolbar - File
   fileNew: string;
   fileOpen: string;

@@ -4,6 +4,12 @@ export const en: Translations = {
   appTitle: 'Structural Web CAD',
   loadPrompt: 'Open a project or click "Sample" to load demo data',
 
+  menuFile: 'File',
+  menuEdit: 'Edit',
+  menuDraw: 'Draw',
+  menuView: 'View',
+  menuTools: 'Tools',
+
   fileNew: 'New',
   fileOpen: 'Open',
   fileSave: 'Save',

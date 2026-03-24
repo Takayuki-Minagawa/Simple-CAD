@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useEditorStore, useProjectStore } from '@/app/store';
 import type { EditorTool } from '@/app/store';
 import { useI18n } from '@/i18n';
@@ -35,6 +35,21 @@ export function MainToolbar({ onExport, onMasters, onAiAssist, onHelp, onTransfo
   const xrefLabel = locale === 'ja' ? '外部参照' : 'Xref';
 
   const [showTemplatePicker, setShowTemplatePicker] = useState(false);
+  const [openMenu, setOpenMenu] = useState<string | null>(null);
+  const menuBarRef = useRef<HTMLDivElement>(null);
+
+  const closeMenu = useCallback(() => setOpenMenu(null), []);
+
+  useEffect(() => {
+    if (!openMenu) return;
+    const handleClick = (e: MouseEvent) => {
+      if (menuBarRef.current && !menuBarRef.current.contains(e.target as Node)) {
+        closeMenu();
+      }
+    };
+    document.addEventListener('mousedown', handleClick);
+    return () => document.removeEventListener('mousedown', handleClick);
+  }, [openMenu, closeMenu]);
 
   const handleNew = () => {
     if (isDirty && !confirm(t.confirmUnsaved)) return;
@@ -234,95 +249,178 @@ export function MainToolbar({ onExport, onMasters, onAiAssist, onHelp, onTransfo
     </button>
   );
 
+  const toggleMenu = (name: string) => setOpenMenu((prev) => (prev === name ? null : name));
+
+  const menuItem = (label: string, onClick: () => void, disabled?: boolean) => (
+    <button
+      className="dropdown-item"
+      disabled={disabled}
+      onClick={() => { closeMenu(); onClick(); }}
+    >
+      {label}
+    </button>
+  );
+
+  const drawToolItem = (tool: EditorTool, label: string) => (
+    <button
+      className={`dropdown-item ${activeTool === tool ? 'active' : ''}`}
+      onClick={() => {
+        closeMenu();
+        setActiveTool(tool);
+        if (tool !== 'select') setSelectedIds([]);
+      }}
+    >
+      {label}
+    </button>
+  );
+
   return (
-    <div className="main-toolbar">
-      <div className="toolbar-group">
-        <button className="toolbar-btn" onClick={handleNew}>{t.fileNew}</button>
-        <button className="toolbar-btn" onClick={handleOpen}>{t.fileOpen}</button>
-        <button className="toolbar-btn" onClick={handleSave} disabled={!data}>
-          {t.fileSave}{isDirty ? ' *' : ''}
-        </button>
-        <button className="toolbar-btn" onClick={handleSample}>{t.fileSample}</button>
-        <button className="toolbar-btn" onClick={handleImportIfc}>{importIfcLabel}</button>
-        <button className="toolbar-btn" onClick={handleImportDxf} disabled={!data}>{importDxfLabel}</button>
-        <button className="toolbar-btn" onClick={handleImportXref} disabled={!data}>{xrefLabel}</button>
+    <div className="main-toolbar" ref={menuBarRef}>
+      {/* ── Dropdown Menus ── */}
+      <div className="toolbar-group menu-bar-group">
+        {/* File */}
+        <div className="dropdown-wrapper">
+          <button
+            className={`toolbar-btn menu-trigger ${openMenu === 'file' ? 'open' : ''}`}
+            onClick={() => toggleMenu('file')}
+          >
+            {t.menuFile}
+          </button>
+          {openMenu === 'file' && (
+            <div className="dropdown-menu">
+              {menuItem(t.fileNew, handleNew)}
+              {menuItem(t.fileOpen, handleOpen)}
+              {menuItem(`${t.fileSave}${isDirty ? ' *' : ''}`, handleSave, !data)}
+              {menuItem(t.fileSample, handleSample)}
+              <div className="dropdown-divider" />
+              {menuItem(importIfcLabel, handleImportIfc)}
+              {menuItem(importDxfLabel, handleImportDxf, !data)}
+              {menuItem(xrefLabel, handleImportXref, !data)}
+              <div className="dropdown-divider" />
+              {menuItem(t.fileExport, onExport, !data)}
+              {menuItem(t.printPreview, onPrintPreview, !data)}
+            </div>
+          )}
+        </div>
+
+        {/* Edit */}
+        <div className="dropdown-wrapper">
+          <button
+            className={`toolbar-btn menu-trigger ${openMenu === 'edit' ? 'open' : ''}`}
+            onClick={() => toggleMenu('edit')}
+          >
+            {t.menuEdit}
+          </button>
+          {openMenu === 'edit' && (
+            <div className="dropdown-menu">
+              {menuItem(t.editUndo, handleUndo, !data)}
+              {menuItem(t.editRedo, handleRedo, !data)}
+              <div className="dropdown-divider" />
+              {menuItem(transformLabel, onTransform, selectedIds.length === 0)}
+            </div>
+          )}
+        </div>
+
+        {/* Draw */}
+        <div className="dropdown-wrapper">
+          <button
+            className={`toolbar-btn menu-trigger ${openMenu === 'draw' ? 'open' : ''}`}
+            onClick={() => toggleMenu('draw')}
+          >
+            {t.menuDraw}
+          </button>
+          {openMenu === 'draw' && (
+            <div className="dropdown-menu">
+              {drawToolItem('column', t.toolColumn)}
+              {drawToolItem('beam', t.toolBeam)}
+              {drawToolItem('wall', t.toolWall)}
+              {drawToolItem('slab', t.toolSlab)}
+              <div className="dropdown-divider" />
+              {drawToolItem('dimension', t.toolDimension)}
+              {drawToolItem('annotation', t.toolAnnotation)}
+              {drawToolItem('xline', t.toolXline)}
+              {drawToolItem('spline', t.toolSpline)}
+              <div className="dropdown-divider" />
+              {drawToolItem('trim', t.toolTrim)}
+              {drawToolItem('extend', t.toolExtend)}
+            </div>
+          )}
+        </div>
+
+        {/* View */}
+        <div className="dropdown-wrapper">
+          <button
+            className={`toolbar-btn menu-trigger ${openMenu === 'view' ? 'open' : ''}`}
+            onClick={() => toggleMenu('view')}
+          >
+            {t.menuView}
+          </button>
+          {openMenu === 'view' && (
+            <div className="dropdown-menu">
+              <button
+                className={`dropdown-item ${viewMode === '2d' ? 'active' : ''}`}
+                onClick={() => { closeMenu(); setViewMode('2d'); }}
+              >
+                {t.view2d}
+              </button>
+              <button
+                className={`dropdown-item ${viewMode === '3d' ? 'active' : ''}`}
+                onClick={() => { closeMenu(); setViewMode('3d'); }}
+              >
+                {t.view3d}
+              </button>
+              <div className="dropdown-divider" />
+              {menuItem(t.zoomExtents, () => {
+                if (!data) return;
+                const el = document.querySelector('svg');
+                if (!el) return;
+                const rect = el.getBoundingClientRect();
+                const allBounds = getAllEntityBounds(data, activeStory);
+                if (!allBounds) return;
+                useEditorStore.getState().zoomToFit(allBounds, rect.width, rect.height);
+              }, !data)}
+              {menuItem(t.zoomSelection, () => {
+                if (!data) return;
+                const el = document.querySelector('svg');
+                if (!el) return;
+                const rect = el.getBoundingClientRect();
+                const bounds = getSelectionBounds(data, selectedIds);
+                if (!bounds) return;
+                useEditorStore.getState().zoomToFit(
+                  { minX: bounds.min.x, minY: bounds.min.y, maxX: bounds.max.x, maxY: bounds.max.y },
+                  rect.width,
+                  rect.height,
+                );
+              }, selectedIds.length === 0 || !data)}
+            </div>
+          )}
+        </div>
+
+        {/* Tools */}
+        <div className="dropdown-wrapper">
+          <button
+            className={`toolbar-btn menu-trigger ${openMenu === 'tools' ? 'open' : ''}`}
+            onClick={() => toggleMenu('tools')}
+          >
+            {t.menuTools}
+          </button>
+          {openMenu === 'tools' && (
+            <div className="dropdown-menu">
+              {menuItem(mastersLabel, onMasters, !data)}
+              {menuItem(t.btnAi, onAiAssist)}
+              {menuItem(t.btnHelp, onHelp)}
+            </div>
+          )}
+        </div>
       </div>
 
-      <div className="toolbar-group">
-        <button className="toolbar-btn" onClick={handleUndo} disabled={!data}>{t.editUndo}</button>
-        <button className="toolbar-btn" onClick={handleRedo} disabled={!data}>{t.editRedo}</button>
-        <button className="toolbar-btn" onClick={onTransform} disabled={selectedIds.length === 0}>
-          {transformLabel}
-        </button>
-      </div>
-
+      {/* ── Direct tool buttons (Select / Pan) ── */}
       <div className="toolbar-group">
         {toolBtn('select', t.toolSelect)}
         {toolBtn('pan', t.toolPan)}
       </div>
 
-      <div className="toolbar-group">
-        {toolBtn('column', t.toolColumn)}
-        {toolBtn('beam', t.toolBeam)}
-        {toolBtn('wall', t.toolWall)}
-        {toolBtn('slab', t.toolSlab)}
-        {toolBtn('dimension', t.toolDimension)}
-        {toolBtn('annotation', t.toolAnnotation)}
-        {toolBtn('trim', t.toolTrim)}
-        {toolBtn('extend', t.toolExtend)}
-        {toolBtn('xline', t.toolXline)}
-        {toolBtn('spline', t.toolSpline)}
-      </div>
-
-      <div className="toolbar-group">
-        <button className={`toolbar-btn ${viewMode === '2d' ? 'active' : ''}`} onClick={() => setViewMode('2d')}>{t.view2d}</button>
-        <button className={`toolbar-btn ${viewMode === '3d' ? 'active' : ''}`} onClick={() => setViewMode('3d')}>{t.view3d}</button>
-        <button
-          className="toolbar-btn"
-          disabled={!data}
-          title={t.zoomExtents}
-          onClick={() => {
-            if (!data) return;
-            const el = document.querySelector('svg');
-            if (!el) return;
-            const rect = el.getBoundingClientRect();
-            const allBounds = getAllEntityBounds(data, activeStory);
-            if (!allBounds) return;
-            useEditorStore.getState().zoomToFit(allBounds, rect.width, rect.height);
-          }}
-        >
-          {t.zoomExtents}
-        </button>
-        <button
-          className="toolbar-btn"
-          disabled={selectedIds.length === 0 || !data}
-          title={t.zoomSelection}
-          onClick={() => {
-            if (!data) return;
-            const el = document.querySelector('svg');
-            if (!el) return;
-            const rect = el.getBoundingClientRect();
-            const bounds = getSelectionBounds(data, selectedIds);
-            if (!bounds) return;
-            useEditorStore.getState().zoomToFit(
-              { minX: bounds.min.x, minY: bounds.min.y, maxX: bounds.max.x, maxY: bounds.max.y },
-              rect.width,
-              rect.height,
-            );
-          }}
-        >
-          {t.zoomSelection}
-        </button>
-      </div>
-
-      <div className="toolbar-group">
-        <button className="toolbar-btn" onClick={onExport} disabled={!data}>{t.fileExport}</button>
-        <button className="toolbar-btn" onClick={onPrintPreview} disabled={!data}>{t.printPreview}</button>
-        <button className="toolbar-btn" onClick={onMasters} disabled={!data}>{mastersLabel}</button>
-        <button className="toolbar-btn" onClick={onAiAssist}>{t.btnAi}</button>
-        <button className="toolbar-btn" onClick={onHelp}>{t.btnHelp}</button>
-      </div>
-
+      {/* ── Right side: theme & locale ── */}
       <div className="toolbar-group" style={{ marginLeft: 'auto' }}>
         <button className="toolbar-btn" onClick={toggleTheme} title={theme === 'light' ? t.themeDark : t.themeLight}>
           {theme === 'light' ? '🌙' : '☀️'}

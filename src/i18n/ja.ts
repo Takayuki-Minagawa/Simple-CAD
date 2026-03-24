@@ -4,6 +4,12 @@ export const ja: Translations = {
   appTitle: 'Structural Web CAD',
   loadPrompt: 'プロジェクトを開くか「サンプル」をクリックしてデモデータを読み込んでください',
 
+  menuFile: 'ファイル',
+  menuEdit: '編集',
+  menuDraw: '描画',
+  menuView: '表示',
+  menuTools: 'ツール',
+
   fileNew: '新規',
   fileOpen: '開く',
   fileSave: '保存',

@@ -68,6 +68,78 @@
   cursor: default;
 }
 
+/* ── Dropdown Menus ── */
+.menu-bar-group {
+  gap: 0 !important;
+  padding: 0 !important;
+}
+
+.dropdown-wrapper {
+  position: relative;
+}
+
+.menu-trigger {
+  font-weight: 500;
+  padding: 4px 12px;
+  border-radius: 4px;
+}
+
+.menu-trigger.open {
+  background: rgba(255, 255, 255, 0.15);
+}
+
+.dropdown-menu {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  min-width: 180px;
+  background: var(--bg-panel, #2a2a2a);
+  border: 1px solid #555;
+  border-radius: 6px;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35);
+  padding: 4px 0;
+  z-index: 900;
+}
+
+.dropdown-item {
+  display: block;
+  width: 100%;
+  padding: 6px 16px;
+  background: transparent;
+  color: var(--text-primary, #e0e0e0);
+  border: none;
+  text-align: left;
+  font-size: 12px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.dropdown-item:hover {
+  background: var(--accent, #4a90d9);
+  color: #fff;
+}
+
+.dropdown-item.active {
+  background: var(--accent, #4a90d9);
+  color: #fff;
+}
+
+.dropdown-item:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.dropdown-item:disabled:hover {
+  background: transparent;
+  color: var(--text-primary, #e0e0e0);
+}
+
+.dropdown-divider {
+  height: 1px;
+  background: #555;
+  margin: 4px 8px;
+}
+
 /* ── Side Panels ── */
 .left-panel,
 .right-panel {
