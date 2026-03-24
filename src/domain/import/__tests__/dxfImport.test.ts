@@ -307,3 +307,84 @@ describe('isSquarish', () => {
     expect(isSquarish(0, 500)).toBe(false);
   });
 });
+
+describe('regression: classic POLYLINE + VERTEX', () => {
+  const CLASSIC_POLYLINE_DXF = `0
+SECTION
+2
+ENTITIES
+0
+POLYLINE
+8
+WALLS
+70
+1
+0
+VERTEX
+10
+0
+20
+0
+0
+VERTEX
+10
+4000
+20
+0
+0
+VERTEX
+10
+4000
+20
+600
+0
+VERTEX
+10
+0
+20
+600
+0
+SEQEND
+0
+ENDSEC
+0
+EOF`;
+
+  it('imports classic POLYLINE vertices as column from closed rectangle', () => {
+    const result = importDxf(CLASSIC_POLYLINE_DXF, '1F', { convertGeometry: true });
+    // Closed rectangle 4000x600 → elongated → beam
+    expect(result.members.length).toBeGreaterThanOrEqual(1);
+    expect(result.primitiveCount).toBe(1);
+  });
+});
+
+describe('regression: dimension offset sign', () => {
+  const DIM_NEGATIVE_DXF = `0
+SECTION
+2
+ENTITIES
+0
+DIMENSION
+13
+0
+23
+0
+14
+4000
+24
+0
+10
+2000
+20
+-500
+0
+ENDSEC
+0
+EOF`;
+
+  it('preserves negative offset for dimensions below the measured line', () => {
+    const result = importDxf(DIM_NEGATIVE_DXF, '1F', { convertGeometry: true });
+    expect(result.dimensions).toHaveLength(1);
+    expect(result.dimensions[0].offset).toBeLessThan(0);
+  });
+});

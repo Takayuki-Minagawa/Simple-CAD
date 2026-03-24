@@ -21,6 +21,8 @@ interface DxfEntity {
   dimExt1?: { x: number; y: number };
   dimExt2?: { x: number; y: number };
   closed?: boolean;
+  /** Internal flag: classic POLYLINE is expecting vertex coordinates from next group codes */
+  _pendingVertex?: boolean;
 }
 
 export interface DxfImportResult {
@@ -335,14 +337,21 @@ function convertPolylineToMembers(
 function convertDimensionEntity(entity: DxfEntity, story: string): Dimension | null {
   if (!entity.dimExt1 || !entity.dimExt2) return null;
 
-  // Compute offset from dimension line origin to the midpoint of extension line origins
+  // Compute signed offset by projecting dimLineOrigin onto the perpendicular of the measured segment
   let offset = 0;
   if (entity.dimLineOrigin) {
-    const midX = (entity.dimExt1.x + entity.dimExt2.x) / 2;
-    const midY = (entity.dimExt1.y + entity.dimExt2.y) / 2;
-    offset = Math.sqrt(
-      (entity.dimLineOrigin.x - midX) ** 2 + (entity.dimLineOrigin.y - midY) ** 2,
-    );
+    const dx = entity.dimExt2.x - entity.dimExt1.x;
+    const dy = entity.dimExt2.y - entity.dimExt1.y;
+    const len = Math.hypot(dx, dy);
+    if (len > 1e-9) {
+      // Perpendicular direction (same convention as DimensionLayer)
+      const perpX = -dy / len;
+      const perpY = dx / len;
+      const midX = (entity.dimExt1.x + entity.dimExt2.x) / 2;
+      const midY = (entity.dimExt1.y + entity.dimExt2.y) / 2;
+      // Signed projection onto perpendicular
+      offset = (entity.dimLineOrigin.x - midX) * perpX + (entity.dimLineOrigin.y - midY) * perpY;
+    }
   }
 
   return {
@@ -493,6 +502,17 @@ function parseDxfEntities(content: string): DxfEntity[] {
     if (!inEntities) continue;
 
     if (code === 0) {
+      // Classic POLYLINE: accumulate VERTEX rows into parent, finalize on SEQEND
+      if (current && current.type === 'POLYLINE' && value === 'VERTEX') {
+        // Mark that the next 10/20 codes should update (not push) a vertex
+        current._pendingVertex = true;
+        continue;
+      }
+      if (current && current.type === 'POLYLINE' && value === 'SEQEND') {
+        entities.push(current);
+        current = null;
+        continue;
+      }
       if (current) entities.push(current);
       current = { type: value };
       continue;
@@ -609,7 +629,13 @@ function assignPrimaryX(entity: DxfEntity, value: number) {
   }
   if (isVertexEntity(entity.type)) {
     entity.vertices ??= [];
-    entity.vertices.push({ x: value, y: 0 });
+    if (entity._pendingVertex) {
+      // Classic POLYLINE VERTEX: push new vertex with this X
+      entity.vertices.push({ x: value, y: 0 });
+      entity._pendingVertex = false;
+    } else {
+      entity.vertices.push({ x: value, y: 0 });
+    }
     return;
   }
   entity.startPoint = { ...entity.startPoint, x: value, y: entity.startPoint?.y ?? 0 };
