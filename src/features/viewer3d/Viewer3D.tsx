@@ -13,6 +13,26 @@ export function Viewer3D() {
     useEditorStore();
   const { t, locale } = useI18n();
 
+  // All hooks must be called before any conditional return (Rules of Hooks)
+  const [clipEnabled, setClipEnabled] = useState(false);
+  const [clipHeight, setClipHeight] = useState(0);
+
+  const topStory = useMemo(
+    () => data?.stories.reduce((max, s) => Math.max(max, s.elevation + s.height), 0) ?? 0,
+    [data?.stories],
+  );
+
+  useEffect(() => {
+    setClipHeight((prev) => (prev === 0 ? topStory : Math.min(prev, topStory || 0)));
+  }, [topStory]);
+
+  const scale = 0.001;
+
+  const clippingPlanes = useMemo(() => {
+    if (!clipEnabled) return undefined;
+    return [new THREE.Plane(new THREE.Vector3(0, -1, 0), clipHeight * scale)];
+  }, [clipEnabled, clipHeight, scale]);
+
   if (!data) return null;
 
   const filteredMembers = data.members.filter(
@@ -27,24 +47,10 @@ export function Viewer3D() {
     cx = xs.length > 0 ? (Math.min(...xs) + Math.max(...xs)) / 2 : 0;
     cy = ys.length > 0 ? (Math.min(...ys) + Math.max(...ys)) / 2 : 0;
   }
-  const topStory = data.stories.reduce((max, s) => Math.max(max, s.elevation + s.height), 0);
   cz = topStory / 2;
 
-  // Scale everything to reasonable Three.js units (mm -> m conversion via scale)
-  const scale = 0.001;
-  const [clipEnabled, setClipEnabled] = useState(false);
-  const [clipHeight, setClipHeight] = useState(topStory);
   const clipLabel = locale === 'ja' ? '断面' : 'Clip';
   const clipOffLabel = locale === 'ja' ? 'OFF' : 'OFF';
-
-  useEffect(() => {
-    setClipHeight((prev) => Math.min(prev, topStory || 0));
-  }, [topStory]);
-
-  const clippingPlanes = useMemo(() => {
-    if (!clipEnabled) return undefined;
-    return [new THREE.Plane(new THREE.Vector3(0, -1, 0), clipHeight * scale)];
-  }, [clipEnabled, clipHeight, scale]);
 
   return (
     <div style={{ width: '100%', height: '100%', position: 'relative' }}>

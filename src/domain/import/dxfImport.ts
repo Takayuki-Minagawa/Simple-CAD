@@ -11,8 +11,8 @@ interface DxfEntity {
   textHeight?: number;
   center?: { x: number; y: number; z?: number };
   radius?: number;
-  majorRadius?: number;
-  minorRadius?: number;
+  majorAxisEndpoint?: { x: number; y: number };
+  minorAxisRatio?: number;
   startAngle?: number;
   endAngle?: number;
 }
@@ -132,14 +132,14 @@ function parseDxfEntities(content: string): DxfEntity[] {
         break;
       case 11:
         if (current.type === 'ELLIPSE') {
-          current.majorRadius = parseFloat(value);
+          current.majorAxisEndpoint = { ...current.majorAxisEndpoint, x: parseFloat(value), y: current.majorAxisEndpoint?.y ?? 0 };
         } else {
           current.endPoint = { ...current.endPoint, x: parseFloat(value), y: current.endPoint?.y ?? 0 };
         }
         break;
       case 21:
         if (current.type === 'ELLIPSE') {
-          current.minorRadius = parseFloat(value);
+          current.majorAxisEndpoint = { ...current.majorAxisEndpoint, x: current.majorAxisEndpoint?.x ?? 0, y: parseFloat(value) };
         } else {
           current.endPoint = { ...current.endPoint, x: current.endPoint?.x ?? 0, y: parseFloat(value) };
         }
@@ -154,7 +154,7 @@ function parseDxfEntities(content: string): DxfEntity[] {
         if (current.type === 'CIRCLE' || current.type === 'ARC') {
           current.radius = parseFloat(value);
         } else if (current.type === 'ELLIPSE') {
-          current.minorRadius = parseFloat(value) * (current.majorRadius ?? 0);
+          current.minorAxisRatio = parseFloat(value);
         } else {
           current.textHeight = parseFloat(value);
         }

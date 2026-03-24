@@ -459,6 +459,7 @@ export const useProjectStore = create<ProjectState>()(
       deleteMaterial: (id) =>
         set((state) => {
           if (!state.data) return;
+          if (state.data.members.some((m) => m.materialId === id)) return;
           state.data.materials = state.data.materials.filter((item) => item.id !== id);
           state.isDirty = true;
         }),
@@ -482,6 +483,7 @@ export const useProjectStore = create<ProjectState>()(
       deleteSection: (id) =>
         set((state) => {
           if (!state.data) return;
+          if (state.data.members.some((m) => m.sectionId === id)) return;
           state.data.sections = state.data.sections.filter((item) => item.id !== id);
           state.isDirty = true;
         }),
