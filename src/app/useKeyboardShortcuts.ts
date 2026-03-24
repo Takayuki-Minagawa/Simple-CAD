@@ -30,8 +30,9 @@ export function useKeyboardShortcuts() {
             e.preventDefault();
             {
               const ids = useEditorStore.getState().selectedIds;
-              for (const id of ids) {
-                useProjectStore.getState().duplicateMember(id);
+              if (ids.length > 0) {
+                const createdIds = useProjectStore.getState().duplicateEntities(ids, 1000, 1000, 1);
+                useEditorStore.getState().setSelectedIds(createdIds);
               }
             }
             return;

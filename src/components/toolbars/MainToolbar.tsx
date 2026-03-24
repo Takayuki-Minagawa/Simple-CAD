@@ -15,17 +15,19 @@ interface Props {
   onMasters: () => void;
   onAiAssist: () => void;
   onHelp: () => void;
+  onTransform: () => void;
 }
 
-export function MainToolbar({ onExport, onMasters, onAiAssist, onHelp }: Props) {
+export function MainToolbar({ onExport, onMasters, onAiAssist, onHelp, onTransform }: Props) {
   const { data, isDirty, fileHandle, loadProject, newProject, setFileHandle, markClean, addAnnotations } =
     useProjectStore();
-  const { viewMode, setViewMode, activeTool, setActiveTool, setSelectedIds, theme, toggleTheme, activeStory } =
+  const { viewMode, setViewMode, activeTool, setActiveTool, setSelectedIds, selectedIds, theme, toggleTheme, activeStory } =
     useEditorStore();
   const { t, locale, setLocale } = useI18n();
   const mastersLabel = locale === 'ja' ? 'マスタ' : 'Masters';
   const importDxfLabel = locale === 'ja' ? 'DXF取込' : 'DXF Import';
   const importIfcLabel = locale === 'ja' ? 'IFC取込' : 'IFC Import';
+  const transformLabel = locale === 'ja' ? '変形' : 'Transform';
 
   const handleNew = () => {
     if (isDirty && !confirm(t.confirmUnsaved)) return;
@@ -151,6 +153,9 @@ export function MainToolbar({ onExport, onMasters, onAiAssist, onHelp }: Props) 
       <div className="toolbar-group">
         <button className="toolbar-btn" onClick={handleUndo} disabled={!data}>{t.editUndo}</button>
         <button className="toolbar-btn" onClick={handleRedo} disabled={!data}>{t.editRedo}</button>
+        <button className="toolbar-btn" onClick={onTransform} disabled={selectedIds.length === 0}>
+          {transformLabel}
+        </button>
       </div>
 
       <div className="toolbar-group">
