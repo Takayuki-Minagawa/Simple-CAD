@@ -1,12 +1,15 @@
-import { useMemo } from 'react';
+import { useEffect, useMemo } from 'react';
 import * as THREE from 'three';
-import type { Member, Section } from '@/domain/structural/types';
+import type { Member, Opening, Section } from '@/domain/structural/types';
+import { buildMemberGeometry, type GeometryEngine } from './memberGeometry';
 
 interface Props {
   member: Member;
   section: Section | undefined;
+  openings: Opening[];
   selected: boolean;
   wireframe: boolean;
+  engine: GeometryEngine;
   clippingPlanes?: THREE.Plane[];
   onClick: () => void;
 }
@@ -17,243 +20,78 @@ const COLORS = {
   wall: '#00bcd4',
   slab: '#9b59b6',
   selected: '#3b82f6',
-};
+} as const;
 
-export function MemberMesh({ member, section, selected, wireframe, clippingPlanes, onClick }: Props) {
-  const color = selected ? COLORS.selected : COLORS[member.type];
-
-  switch (member.type) {
-    case 'column':
-      return (
-        <ColumnMesh
-          member={member}
-          section={section}
-          color={color}
-          wireframe={wireframe}
-          clippingPlanes={clippingPlanes}
-          onClick={onClick}
-        />
-      );
-    case 'beam':
-      return (
-        <BeamMesh
-          member={member}
-          section={section}
-          color={color}
-          wireframe={wireframe}
-          clippingPlanes={clippingPlanes}
-          onClick={onClick}
-        />
-      );
-    case 'wall':
-      return (
-        <WallMesh
-          member={member}
-          section={section}
-          color={color}
-          wireframe={wireframe}
-          clippingPlanes={clippingPlanes}
-          onClick={onClick}
-        />
-      );
-    case 'slab':
-      return (
-        <SlabMesh
-          member={member}
-          section={section}
-          color={color}
-          wireframe={wireframe}
-          clippingPlanes={clippingPlanes}
-          onClick={onClick}
-        />
-      );
-  }
-}
-
-function ColumnMesh({
+export function MemberMesh({
   member,
   section,
-  color,
+  openings,
+  selected,
   wireframe,
+  engine,
   clippingPlanes,
   onClick,
-}: {
-  member: Member & { type: 'column' };
-  section: Section | undefined;
-  color: string;
-  wireframe: boolean;
-  clippingPlanes?: THREE.Plane[];
-  onClick: () => void;
-}) {
-  const w = section && 'width' in section ? section.width : 600;
-  const d = section && 'depth' in section ? section.depth : 600;
-  const h = Math.abs(member.end.z - member.start.z) || 3000;
-
-  const midZ = (member.start.z + member.end.z) / 2;
-
-  return (
-    <mesh
-      position={[member.start.x, member.start.y, midZ]}
-      onClick={(e) => {
-        e.stopPropagation();
-        onClick();
-      }}
-    >
-      <boxGeometry args={[w, d, h]} />
-      <meshStandardMaterial color={color} wireframe={wireframe} transparent opacity={0.85} clippingPlanes={clippingPlanes} />
-    </mesh>
+}: Props) {
+  const geometry = useMemo(
+    () => buildMemberGeometry({ member, section, openings }, engine),
+    [member, section, openings, engine],
   );
-}
 
-function BeamMesh({
-  member,
-  section,
-  color,
-  wireframe,
-  clippingPlanes,
-  onClick,
-}: {
-  member: Member & { type: 'beam' };
-  section: Section | undefined;
-  color: string;
-  wireframe: boolean;
-  clippingPlanes?: THREE.Plane[];
-  onClick: () => void;
-}) {
-  const w = section && 'width' in section ? section.width : 300;
-  const d = section && 'depth' in section ? section.depth : 600;
-
-  const start = new THREE.Vector3(member.start.x, member.start.y, member.start.z);
-  const end = new THREE.Vector3(member.end.x, member.end.y, member.end.z);
-  const dir = new THREE.Vector3().subVectors(end, start);
-  const length = dir.length();
-  if (length === 0) return null;
-
-  const mid = new THREE.Vector3().addVectors(start, end).multiplyScalar(0.5);
-
-  // Rotation to align box along the direction
-  const quaternion = useMemo(() => {
-    const q = new THREE.Quaternion();
-    const up = new THREE.Vector3(0, 0, 1);
-    q.setFromUnitVectors(up, dir.clone().normalize());
-    return q;
-  }, [dir]);
-
-  return (
-    <mesh
-      position={[mid.x, mid.y, mid.z]}
-      quaternion={quaternion}
-      onClick={(e) => {
-        e.stopPropagation();
-        onClick();
-      }}
-    >
-      <boxGeometry args={[w, d, length]} />
-      <meshStandardMaterial color={color} wireframe={wireframe} transparent opacity={0.75} clippingPlanes={clippingPlanes} />
-    </mesh>
-  );
-}
-
-function WallMesh({
-  member,
-  section,
-  color,
-  wireframe,
-  clippingPlanes,
-  onClick,
-}: {
-  member: Member & { type: 'wall' };
-  section: Section | undefined;
-  color: string;
-  wireframe: boolean;
-  clippingPlanes?: THREE.Plane[];
-  onClick: () => void;
-}) {
-  const thickness = section && 'thickness' in section ? section.thickness : member.thickness;
-  const start = new THREE.Vector3(member.start.x, member.start.y, member.start.z);
-  const end = new THREE.Vector3(member.end.x, member.end.y, member.end.z);
-  const dir = new THREE.Vector3().subVectors(end, start);
-  const length = dir.length();
-  if (length === 0) return null;
-
-  const midXY = new THREE.Vector3().addVectors(start, end).multiplyScalar(0.5);
-  const midZ = member.start.z + member.height / 2;
-
-  const angle = Math.atan2(dir.y, dir.x);
-
-  return (
-    <mesh
-      position={[midXY.x, midXY.y, midZ]}
-      rotation={[0, 0, angle]}
-      onClick={(e) => {
-        e.stopPropagation();
-        onClick();
-      }}
-    >
-      <boxGeometry args={[length, thickness, member.height]} />
-      <meshStandardMaterial
-        color={color}
-        wireframe={wireframe}
-        transparent
-        opacity={0.6}
-        side={THREE.DoubleSide}
-        clippingPlanes={clippingPlanes}
-      />
-    </mesh>
-  );
-}
-
-function SlabMesh({
-  member,
-  section,
-  color,
-  wireframe,
-  clippingPlanes,
-  onClick,
-}: {
-  member: Member & { type: 'slab' };
-  section: Section | undefined;
-  color: string;
-  wireframe: boolean;
-  clippingPlanes?: THREE.Plane[];
-  onClick: () => void;
-}) {
-  const thickness = section && 'thickness' in section ? section.thickness : 180;
-
-  const geometry = useMemo(() => {
-    const shape = new THREE.Shape();
-    if (member.polygon.length < 3) return null;
-    shape.moveTo(member.polygon[0].x, member.polygon[0].y);
-    for (let i = 1; i < member.polygon.length; i++) {
-      shape.lineTo(member.polygon[i].x, member.polygon[i].y);
-    }
-    shape.closePath();
-
-    return new THREE.ExtrudeGeometry(shape, {
-      depth: thickness,
-      bevelEnabled: false,
-    });
-  }, [member.polygon, thickness]);
+  useEffect(() => () => {
+    geometry?.dispose();
+  }, [geometry]);
 
   if (!geometry) return null;
+
+  const color = selected ? COLORS.selected : COLORS[member.type];
+  const materialProps = getMaterialProps(member.type, color, wireframe, clippingPlanes);
 
   return (
     <mesh
       geometry={geometry}
-      position={[0, 0, member.level - thickness]}
-      onClick={(e) => {
-        e.stopPropagation();
+      onClick={(event) => {
+        event.stopPropagation();
         onClick();
       }}
     >
-      <meshStandardMaterial
-        color={color}
-        wireframe={wireframe}
-        transparent
-        opacity={0.5}
-        side={THREE.DoubleSide}
-        clippingPlanes={clippingPlanes}
-      />
+      <meshStandardMaterial {...materialProps} />
     </mesh>
   );
+}
+
+function getMaterialProps(
+  memberType: Member['type'],
+  color: string,
+  wireframe: boolean,
+  clippingPlanes?: THREE.Plane[],
+) {
+  if (memberType === 'slab') {
+    return {
+      color,
+      wireframe,
+      transparent: true,
+      opacity: 0.5,
+      side: THREE.DoubleSide,
+      clippingPlanes,
+    };
+  }
+
+  if (memberType === 'wall') {
+    return {
+      color,
+      wireframe,
+      transparent: true,
+      opacity: 0.6,
+      side: THREE.DoubleSide,
+      clippingPlanes,
+    };
+  }
+
+  return {
+    color,
+    wireframe,
+    transparent: true,
+    opacity: memberType === 'column' ? 0.85 : 0.75,
+    clippingPlanes,
+  };
 }

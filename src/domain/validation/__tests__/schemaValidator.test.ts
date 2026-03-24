@@ -10,7 +10,8 @@ describe('validateSchema', () => {
   });
 
   it('rejects missing schemaVersion', () => {
-    const { schemaVersion, ...rest } = sampleProject;
+    const rest = { ...sampleProject };
+    delete (rest as { schemaVersion?: string }).schemaVersion;
     const result = validateSchema(rest);
     expect(result.ok).toBe(false);
     expect(result.errors.length).toBeGreaterThan(0);

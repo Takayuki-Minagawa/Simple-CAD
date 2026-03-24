@@ -4,6 +4,8 @@ import { useI18n } from '@/i18n';
 import { exportSvg } from '@/domain/export/svgExport';
 import { exportPdf } from '@/domain/export/pdfExport';
 import { exportDxf } from '@/domain/export/dxfExport';
+import { exportIfc } from '@/domain/integration/ifc';
+import { exportStructuralAnalysisJson } from '@/domain/integration/structuralAnalysisJson';
 import { downloadBlob, saveFile } from '@/libs/fileSystem';
 
 interface Props { onClose: () => void; }
@@ -12,11 +14,13 @@ export function ExportDialog({ onClose }: Props) {
   const data = useProjectStore((s) => s.data);
   const activeStory = useEditorStore((s) => s.activeStory);
   const { t, locale } = useI18n();
-  const [format, setFormat] = useState<'svg' | 'pdf' | 'dxf'>('svg');
+  const [format, setFormat] = useState<'svg' | 'pdf' | 'dxf' | 'ifc' | 'structural-json'>('svg');
   const [sheetId, setSheetId] = useState(data?.sheets[0]?.id ?? '');
   const [exportAllSheets, setExportAllSheets] = useState(false);
   const [exporting, setExporting] = useState(false);
   const allSheetsLabel = locale === 'ja' ? 'すべてのシートを1つのPDFに出力' : 'Export all sheets into one PDF';
+  const ifcLabel = locale === 'ja' ? 'IFC (基本連携)' : 'IFC (Basic)';
+  const structuralJsonLabel = locale === 'ja' ? '構造計算 JSON' : 'Structural JSON';
 
   if (!data) return null;
 
@@ -33,6 +37,16 @@ export function ExportDialog({ onClose }: Props) {
           break;
         }
         case 'dxf': { const sid = activeStory ?? data.stories[0]?.id ?? ''; const dxf = exportDxf(data, sid); await saveFile(dxf, `${name}.dxf`, 'application/dxf'); break; }
+        case 'ifc': {
+          const ifc = exportIfc(data);
+          await saveFile(ifc, `${name}.ifc`, 'application/octet-stream');
+          break;
+        }
+        case 'structural-json': {
+          const json = exportStructuralAnalysisJson(data);
+          await saveFile(json, `${name}.structural.json`, 'application/json');
+          break;
+        }
       }
       onClose();
     } catch (e) { alert(`Export error: ${String(e)}`); } finally { setExporting(false); }
@@ -44,8 +58,17 @@ export function ExportDialog({ onClose }: Props) {
         <h3 style={{ margin: '0 0 16px', fontSize: 16 }}>{t.exportTitle}</h3>
         <div style={{ marginBottom: 12 }}>
           <label style={{ display: 'block', marginBottom: 4, fontSize: 12, color: 'var(--text-secondary)' }}>{t.exportFormat}</label>
-          <select className="prop-select" style={{ maxWidth: '100%', width: '100%' }} value={format} onChange={(e) => setFormat(e.target.value as 'svg' | 'pdf' | 'dxf')}>
-            <option value="svg">SVG</option><option value="pdf">PDF</option><option value="dxf">DXF</option>
+          <select
+            className="prop-select"
+            style={{ maxWidth: '100%', width: '100%' }}
+            value={format}
+            onChange={(e) => setFormat(e.target.value as 'svg' | 'pdf' | 'dxf' | 'ifc' | 'structural-json')}
+          >
+            <option value="svg">SVG</option>
+            <option value="pdf">PDF</option>
+            <option value="dxf">DXF</option>
+            <option value="ifc">{ifcLabel}</option>
+            <option value="structural-json">{structuralJsonLabel}</option>
           </select>
         </div>
         {(format === 'svg' || format === 'pdf') && (
