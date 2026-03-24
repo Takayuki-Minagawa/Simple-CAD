@@ -14,10 +14,10 @@
 | 機能 | 概要 |
 |------|------|
 | **2D 作図** | SVG ベースの平面図。柱・梁・壁・スラブ・寸法線・注記を作図・編集 |
-| **3D ビュー** | Three.js による確認用 3D 表示。Orbit 操作 / 投影切替 / ワイヤーフレーム / 断面クリップ |
+| **3D ビュー** | Three.js による確認用 3D 表示。Orbit 操作 / 投影切替 / ワイヤーフレーム / 断面表示（clip / slice / section box） |
 | **JSON 正本** | すべてのデータを JSON で管理。JSON Schema 2020-12 による自動バリデーション |
-| **エクスポート** | SVG / PDF（複数シート一括） / DXF へ出力 |
-| **インポート** | JSON 読み込み / DXF 注記取り込み |
+| **エクスポート** | SVG / PDF（複数シート一括） / DXF / IFC / 構造計算 JSON へ出力 |
+| **インポート** | JSON / IFC / 構造計算 JSON 読み込み / DXF 注記取り込み |
 | **Undo / Redo** | 全編集操作の履歴管理 |
 | **スナップ** | グリッド・端点・中点スナップ |
 | **AI 連携** | LLM 用プロンプトテンプレートのコピー、生成 JSON の貼り付け読み込み |
@@ -72,9 +72,9 @@ npm run test:watch    # ウォッチモード
 3. ツールバーの描画ツール（Column / Beam / Wall / Slab / Dim / Text）で部材を追加
 4. **Select** ツールでオブジェクトを選択 → 右パネルでプロパティを編集
 5. **マスタ** ボタンで materials / sections / sheets / タイトルブロックを編集
-6. **DXF取込** ボタンで DXF ファイルの注記をアクティブ階に取り込み
-7. **2D / 3D** ボタンで表示モードを切り替え（3D では断面スライダでクリップ表示）
-8. **Export** で SVG / PDF / DXF に出力（PDF は全シートを1つの複数ページ PDF にまとめ可能）
+6. **IFC取込** / **DXF取込** ボタンで外部ファイルを取り込み（JSON Open は構造計算 JSON も自動判別）
+7. **2D / 3D** ボタンで表示モードを切り替え（3D では clip / slice / section box で断面表示）
+8. **Export** で SVG / PDF / DXF / IFC / 構造計算 JSON に出力
 9. **AI** ボタンで LLM 連携（プロンプトコピー・JSON 貼り付け読み込み）
 10. 🌙 / ☀️ ボタンでダーク / ライトモードを切替
 11. **EN / JA** ボタンで表示言語を切替
@@ -114,6 +114,8 @@ npm run test:watch    # ウォッチモード
 | PDF 出力 | [jsPDF](https://github.com/parallax/jsPDF) + [svg2pdf.js](https://github.com/yWorks/svg2pdf.js/) |
 | DXF 出力 | DXF ASCII 直接生成 |
 | DXF 取込 | 自作パーサー (LINE / LWPOLYLINE / CIRCLE / ARC / TEXT / MTEXT / SPLINE / HATCH / ELLIPSE) |
+| IFC 連携 | 自作 IFC4 基本サブセットパーサー / ライター（STEP Part 21 形式） |
+| 構造計算 JSON | 独自スキーマ (`simple-cad.structural-analysis/v1`) による節点モデル入出力 |
 | テスト | [Vitest](https://vitest.dev/) |
 | CI/CD | GitHub Actions → GitHub Pages |
 
