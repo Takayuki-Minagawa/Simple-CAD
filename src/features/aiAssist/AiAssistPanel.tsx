@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useProjectStore } from '@/app/store';
+import { useI18n } from '@/i18n';
 import { importProjectJson } from '@/domain/import/jsonImport';
 import { exportProjectJson } from '@/domain/export/jsonExport';
 
@@ -16,136 +17,50 @@ const PROMPT_TEMPLATE = `あなたは構造設計向け Web CAD の JSON デー�
 部材タイプ: column, beam, wall, slab
 断面タイプ: rc_column_rect, rc_beam_rect, rc_slab, rc_wall`;
 
-interface Props {
-  onClose: () => void;
-}
+interface Props { onClose: () => void; }
 
 export function AiAssistPanel({ onClose }: Props) {
   const { data, loadProject } = useProjectStore();
+  const { t } = useI18n();
   const [jsonInput, setJsonInput] = useState('');
   const [error, setError] = useState('');
 
-  const handleCopyPrompt = () => {
-    navigator.clipboard.writeText(PROMPT_TEMPLATE);
-    alert('プロンプトをクリップボードにコピーしました');
-  };
+  const handleCopyPrompt = () => { navigator.clipboard.writeText(PROMPT_TEMPLATE); };
+  const handleCopyJson = () => { if (data) navigator.clipboard.writeText(exportProjectJson(data)); };
 
-  const handleCopyCurrentJson = () => {
-    if (data) {
-      navigator.clipboard.writeText(exportProjectJson(data));
-      alert('現在のプロジェクト JSON をコピーしました');
-    }
-  };
-
-  const handleImportJson = () => {
+  const handleImport = () => {
     setError('');
     const result = importProjectJson(jsonInput);
-    if (!result.ok) {
-      setError(result.errors.map((e) => e.message).join('\n'));
-      return;
-    }
+    if (!result.ok) { setError(result.errors.map((e) => e.message).join('\n')); return; }
     loadProject(result.data);
     onClose();
   };
 
   return (
-    <div
-      style={{
-        position: 'fixed',
-        inset: 0,
-        background: 'rgba(0,0,0,0.4)',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        zIndex: 1000,
-      }}
-      onClick={onClose}
-    >
-      <div
-        style={{
-          background: '#fff',
-          borderRadius: 8,
-          padding: 24,
-          width: 520,
-          maxHeight: '80vh',
-          overflow: 'auto',
-          boxShadow: '0 8px 32px rgba(0,0,0,0.2)',
-        }}
-        onClick={(e) => e.stopPropagation()}
-      >
-        <h3 style={{ margin: '0 0 12px', fontSize: 16 }}>AI Assist</h3>
-
+    <div style={{ position: 'fixed', inset: 0, background: 'var(--bg-modal-overlay)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }} onClick={onClose}>
+      <div style={{ background: 'var(--bg-modal)', borderRadius: 8, padding: 24, width: 520, maxHeight: '80vh', overflow: 'auto', boxShadow: '0 8px 32px rgba(0,0,0,0.2)', color: 'var(--text-primary)' }} onClick={(e) => e.stopPropagation()}>
+        <h3 style={{ margin: '0 0 12px', fontSize: 16 }}>{t.aiTitle}</h3>
         <div style={{ marginBottom: 16 }}>
-          <label style={{ fontSize: 12, fontWeight: 600, color: '#666' }}>
-            AI 用プロンプトテンプレート
-          </label>
-          <pre
-            style={{
-              background: '#f5f5f5',
-              padding: 8,
-              borderRadius: 4,
-              fontSize: 11,
-              maxHeight: 120,
-              overflow: 'auto',
-              marginTop: 4,
-            }}
-          >
-            {PROMPT_TEMPLATE}
-          </pre>
+          <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)' }}>{t.aiPromptLabel}</label>
+          <pre style={{ background: 'var(--code-bg)', color: 'var(--text-primary)', padding: 8, borderRadius: 4, fontSize: 11, maxHeight: 120, overflow: 'auto', marginTop: 4 }}>{PROMPT_TEMPLATE}</pre>
           <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
-            <button className="toolbar-btn" style={{ background: '#555', color: '#fff' }} onClick={handleCopyPrompt}>
-              Copy Prompt
-            </button>
-            <button
-              className="toolbar-btn"
-              style={{ background: '#555', color: '#fff' }}
-              onClick={handleCopyCurrentJson}
-              disabled={!data}
-            >
-              Copy Current JSON
-            </button>
+            <button className="toolbar-btn" style={{ background: 'var(--border-color)', color: 'var(--text-primary)' }} onClick={handleCopyPrompt}>{t.aiCopyPrompt}</button>
+            <button className="toolbar-btn" style={{ background: 'var(--border-color)', color: 'var(--text-primary)' }} onClick={handleCopyJson} disabled={!data}>{t.aiCopyJson}</button>
           </div>
         </div>
-
         <div style={{ marginBottom: 12 }}>
-          <label style={{ fontSize: 12, fontWeight: 600, color: '#666' }}>
-            JSON 貼り付け読み込み
-          </label>
+          <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)' }}>{t.aiPasteLabel}</label>
           <textarea
-            style={{
-              width: '100%',
-              height: 150,
-              marginTop: 4,
-              padding: 8,
-              fontFamily: 'monospace',
-              fontSize: 11,
-              border: '1px solid #ccc',
-              borderRadius: 4,
-              resize: 'vertical',
-            }}
-            placeholder="AI が生成した JSON をここに貼り付けてください..."
+            style={{ width: '100%', height: 150, marginTop: 4, padding: 8, fontFamily: 'monospace', fontSize: 11, border: '1px solid var(--border-color)', borderRadius: 4, resize: 'vertical', background: 'var(--input-bg)', color: 'var(--text-primary)' }}
+            placeholder={t.aiPastePlaceholder}
             value={jsonInput}
             onChange={(e) => setJsonInput(e.target.value)}
           />
-          {error && (
-            <pre style={{ color: 'var(--error)', fontSize: 11, marginTop: 4, whiteSpace: 'pre-wrap' }}>
-              {error}
-            </pre>
-          )}
+          {error && <pre style={{ color: 'var(--error)', fontSize: 11, marginTop: 4, whiteSpace: 'pre-wrap' }}>{error}</pre>}
         </div>
-
         <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-          <button className="toolbar-btn" style={{ background: '#ccc', color: '#333' }} onClick={onClose}>
-            Close
-          </button>
-          <button
-            className="toolbar-btn"
-            style={{ background: 'var(--accent)', color: '#fff' }}
-            onClick={handleImportJson}
-            disabled={!jsonInput.trim()}
-          >
-            Import JSON
-          </button>
+          <button className="toolbar-btn" style={{ background: 'var(--border-color)', color: 'var(--text-primary)' }} onClick={onClose}>{t.aiClose}</button>
+          <button className="toolbar-btn" style={{ background: 'var(--accent)', color: '#fff' }} onClick={handleImport} disabled={!jsonInput.trim()}>{t.aiImport}</button>
         </div>
       </div>
     </div>

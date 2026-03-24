@@ -25,7 +25,12 @@ export const LAYER_NAMES = [
 
 export type LayerName = (typeof LAYER_NAMES)[number];
 
+export type ThemeMode = 'light' | 'dark';
+
 interface EditorState {
+  // Theme
+  theme: ThemeMode;
+
   // View mode
   viewMode: '2d' | '3d';
   activeStory: string | null;
@@ -56,6 +61,8 @@ interface EditorState {
   orthographic: boolean;
 
   // Actions
+  setTheme: (theme: ThemeMode) => void;
+  toggleTheme: () => void;
   setViewMode: (mode: '2d' | '3d') => void;
   setActiveStory: (storyId: string | null) => void;
   setSelectedIds: (ids: string[]) => void;
@@ -76,6 +83,7 @@ for (const name of LAYER_NAMES) {
 }
 
 export const useEditorStore = create<EditorState>()((set) => ({
+  theme: (window.matchMedia?.('(prefers-color-scheme: dark)').matches ? 'dark' : 'light') as ThemeMode,
   viewMode: '2d',
   activeStory: null,
   selectedIds: [],
@@ -90,6 +98,8 @@ export const useEditorStore = create<EditorState>()((set) => ({
   wireframe: false,
   orthographic: true,
 
+  setTheme: (theme) => set({ theme }),
+  toggleTheme: () => set((state) => ({ theme: state.theme === 'light' ? 'dark' : 'light' })),
   setViewMode: (mode) => set({ viewMode: mode }),
   setActiveStory: (storyId) => set({ activeStory: storyId }),
   setSelectedIds: (ids) => set({ selectedIds: ids }),

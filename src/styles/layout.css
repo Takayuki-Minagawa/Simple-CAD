@@ -152,7 +152,8 @@
   border: 1px solid var(--border-color);
   border-radius: 3px;
   font-size: 12px;
-  background: var(--bg-primary);
+  background: var(--input-bg, var(--bg-primary));
+  color: var(--text-primary);
 }
 
 .prop-input:focus {
@@ -167,7 +168,8 @@
   border: 1px solid var(--border-color);
   border-radius: 3px;
   font-size: 12px;
-  background: var(--bg-primary);
+  background: var(--input-bg, var(--bg-primary));
+  color: var(--text-primary);
 }
 
 /* ── Layer checkbox ── */

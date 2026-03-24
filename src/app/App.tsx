@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useEditorStore, useProjectStore } from '@/app/store';
+import { useI18n } from '@/i18n';
 import { useKeyboardShortcuts } from '@/app/useKeyboardShortcuts';
 import { MainToolbar } from '@/components/toolbars/MainToolbar';
 import { StatusBar } from '@/components/common/StatusBar';
@@ -12,15 +13,24 @@ import { Editor2D } from '@/features/editor2d/Editor2D';
 import { Viewer3D } from '@/features/viewer3d/Viewer3D';
 import { ExportDialog } from '@/features/project/ExportDialog';
 import { AiAssistPanel } from '@/features/aiAssist/AiAssistPanel';
+import { HelpDialog } from '@/features/help/HelpDialog';
 
 export function App() {
   const viewMode = useEditorStore((s) => s.viewMode);
+  const theme = useEditorStore((s) => s.theme);
   const data = useProjectStore((s) => s.data);
   const { activeStory, setActiveStory } = useEditorStore();
+  const { t } = useI18n();
   const [showExport, setShowExport] = useState(false);
   const [showAi, setShowAi] = useState(false);
+  const [showHelp, setShowHelp] = useState(false);
 
   useKeyboardShortcuts();
+
+  // Apply theme to document
+  useEffect(() => {
+    document.documentElement.setAttribute('data-theme', theme);
+  }, [theme]);
 
   // Auto-select first story when project loads
   useEffect(() => {
@@ -34,6 +44,7 @@ export function App() {
       <MainToolbar
         onExport={() => setShowExport(true)}
         onAiAssist={() => setShowAi(true)}
+        onHelp={() => setShowHelp(true)}
       />
       <div className="app-body">
         <div className="left-panel">
@@ -56,8 +67,8 @@ export function App() {
                 gap: 8,
               }}
             >
-              <div style={{ fontSize: 18, fontWeight: 600 }}>Structural Web CAD</div>
-              <div>Open a project or click "Sample" to load demo data</div>
+              <div style={{ fontSize: 18, fontWeight: 600 }}>{t.appTitle}</div>
+              <div>{t.loadPrompt}</div>
             </div>
           )}
         </div>
@@ -70,6 +81,7 @@ export function App() {
 
       {showExport && <ExportDialog onClose={() => setShowExport(false)} />}
       {showAi && <AiAssistPanel onClose={() => setShowAi(false)} />}
+      {showHelp && <HelpDialog onClose={() => setShowHelp(false)} />}
     </div>
   );
 }

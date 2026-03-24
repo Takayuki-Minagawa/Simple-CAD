@@ -1,6 +1,7 @@
 import { Canvas } from '@react-three/fiber';
 import { OrbitControls, OrthographicCamera, PerspectiveCamera, GizmoHelper, GizmoViewport } from '@react-three/drei';
 import { useProjectStore, useEditorStore } from '@/app/store';
+import { useI18n } from '@/i18n';
 import { MemberMesh } from './MemberMesh';
 import { GridHelper3D } from './GridHelper3D';
 
@@ -8,6 +9,7 @@ export function Viewer3D() {
   const data = useProjectStore((s) => s.data);
   const { activeStory, selectedIds, wireframe, orthographic, setWireframe, setOrthographic, setSelectedIds } =
     useEditorStore();
+  const { t } = useI18n();
 
   if (!data) return null;
 
@@ -47,14 +49,14 @@ export function Viewer3D() {
           style={{ background: orthographic ? 'var(--accent)' : '#555', color: '#fff', fontSize: 11 }}
           onClick={() => setOrthographic(!orthographic)}
         >
-          {orthographic ? 'Ortho' : 'Persp'}
+          {orthographic ? t.viewOrtho : t.viewPersp}
         </button>
         <button
           className="toolbar-btn"
           style={{ background: wireframe ? 'var(--accent)' : '#555', color: '#fff', fontSize: 11 }}
           onClick={() => setWireframe(!wireframe)}
         >
-          Wire
+          {t.viewWire}
         </button>
       </div>
 

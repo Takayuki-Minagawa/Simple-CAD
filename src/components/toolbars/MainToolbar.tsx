@@ -1,5 +1,6 @@
 import { useEditorStore, useProjectStore } from '@/app/store';
 import type { EditorTool } from '@/app/store';
+import { useI18n } from '@/i18n';
 import { openJsonFile, saveFile } from '@/libs/fileSystem';
 import { importProjectJson } from '@/domain/import/jsonImport';
 import { exportProjectJson } from '@/domain/export/jsonExport';
@@ -9,15 +10,18 @@ import type { ProjectData } from '@/domain/structural/types';
 interface Props {
   onExport: () => void;
   onAiAssist: () => void;
+  onHelp: () => void;
 }
 
-export function MainToolbar({ onExport, onAiAssist }: Props) {
+export function MainToolbar({ onExport, onAiAssist, onHelp }: Props) {
   const { data, isDirty, fileHandle, loadProject, newProject, setFileHandle, markClean } =
     useProjectStore();
-  const { viewMode, setViewMode, activeTool, setActiveTool, setSelectedIds } = useEditorStore();
+  const { viewMode, setViewMode, activeTool, setActiveTool, setSelectedIds, theme, toggleTheme } =
+    useEditorStore();
+  const { t, locale, setLocale } = useI18n();
 
   const handleNew = () => {
-    if (isDirty && !confirm('未保存の変更があります。新規作成しますか？')) return;
+    if (isDirty && !confirm(t.confirmUnsaved)) return;
     newProject();
   };
 
@@ -26,7 +30,7 @@ export function MainToolbar({ onExport, onAiAssist }: Props) {
       const result = await openJsonFile();
       const imported = importProjectJson(result.content);
       if (!imported.ok) {
-        alert('バリデーションエラー:\n' + imported.errors.map((e) => e.message).join('\n'));
+        alert(imported.errors.map((e) => e.message).join('\n'));
         return;
       }
       loadProject(imported.data);
@@ -49,17 +53,12 @@ export function MainToolbar({ onExport, onAiAssist }: Props) {
   };
 
   const handleSample = () => {
-    if (isDirty && !confirm('未保存の変更があります。サンプルを読み込みますか？')) return;
+    if (isDirty && !confirm(t.confirmLoadSample)) return;
     loadProject(sampleProject as unknown as ProjectData);
   };
 
-  const handleUndo = () => {
-    useProjectStore.temporal.getState().undo();
-  };
-
-  const handleRedo = () => {
-    useProjectStore.temporal.getState().redo();
-  };
+  const handleUndo = () => useProjectStore.temporal.getState().undo();
+  const handleRedo = () => useProjectStore.temporal.getState().redo();
 
   const toolBtn = (tool: EditorTool, label: string) => (
     <button
@@ -68,6 +67,7 @@ export function MainToolbar({ onExport, onAiAssist }: Props) {
         setActiveTool(tool);
         if (tool !== 'select') setSelectedIds([]);
       }}
+      title={label}
     >
       {label}
     </button>
@@ -76,51 +76,51 @@ export function MainToolbar({ onExport, onAiAssist }: Props) {
   return (
     <div className="main-toolbar">
       <div className="toolbar-group">
-        <button className="toolbar-btn" onClick={handleNew}>New</button>
-        <button className="toolbar-btn" onClick={handleOpen}>Open</button>
+        <button className="toolbar-btn" onClick={handleNew}>{t.fileNew}</button>
+        <button className="toolbar-btn" onClick={handleOpen}>{t.fileOpen}</button>
         <button className="toolbar-btn" onClick={handleSave} disabled={!data}>
-          Save{isDirty ? ' *' : ''}
+          {t.fileSave}{isDirty ? ' *' : ''}
         </button>
-        <button className="toolbar-btn" onClick={handleSample}>Sample</button>
+        <button className="toolbar-btn" onClick={handleSample}>{t.fileSample}</button>
       </div>
 
       <div className="toolbar-group">
-        <button className="toolbar-btn" onClick={handleUndo} disabled={!data}>Undo</button>
-        <button className="toolbar-btn" onClick={handleRedo} disabled={!data}>Redo</button>
+        <button className="toolbar-btn" onClick={handleUndo} disabled={!data}>{t.editUndo}</button>
+        <button className="toolbar-btn" onClick={handleRedo} disabled={!data}>{t.editRedo}</button>
       </div>
 
       <div className="toolbar-group">
-        {toolBtn('select', 'Select')}
-        {toolBtn('pan', 'Pan')}
+        {toolBtn('select', t.toolSelect)}
+        {toolBtn('pan', t.toolPan)}
       </div>
 
       <div className="toolbar-group">
-        {toolBtn('column', 'Column')}
-        {toolBtn('beam', 'Beam')}
-        {toolBtn('wall', 'Wall')}
-        {toolBtn('slab', 'Slab')}
-        {toolBtn('dimension', 'Dim')}
-        {toolBtn('annotation', 'Text')}
+        {toolBtn('column', t.toolColumn)}
+        {toolBtn('beam', t.toolBeam)}
+        {toolBtn('wall', t.toolWall)}
+        {toolBtn('slab', t.toolSlab)}
+        {toolBtn('dimension', t.toolDimension)}
+        {toolBtn('annotation', t.toolAnnotation)}
       </div>
 
       <div className="toolbar-group">
-        <button
-          className={`toolbar-btn ${viewMode === '2d' ? 'active' : ''}`}
-          onClick={() => setViewMode('2d')}
-        >
-          2D
+        <button className={`toolbar-btn ${viewMode === '2d' ? 'active' : ''}`} onClick={() => setViewMode('2d')}>{t.view2d}</button>
+        <button className={`toolbar-btn ${viewMode === '3d' ? 'active' : ''}`} onClick={() => setViewMode('3d')}>{t.view3d}</button>
+      </div>
+
+      <div className="toolbar-group">
+        <button className="toolbar-btn" onClick={onExport} disabled={!data}>{t.fileExport}</button>
+        <button className="toolbar-btn" onClick={onAiAssist}>{t.btnAi}</button>
+        <button className="toolbar-btn" onClick={onHelp}>{t.btnHelp}</button>
+      </div>
+
+      <div className="toolbar-group" style={{ marginLeft: 'auto' }}>
+        <button className="toolbar-btn" onClick={toggleTheme} title={theme === 'light' ? t.themeDark : t.themeLight}>
+          {theme === 'light' ? '🌙' : '☀️'}
         </button>
-        <button
-          className={`toolbar-btn ${viewMode === '3d' ? 'active' : ''}`}
-          onClick={() => setViewMode('3d')}
-        >
-          3D
+        <button className="toolbar-btn" onClick={() => setLocale(locale === 'ja' ? 'en' : 'ja')}>
+          {locale === 'ja' ? 'EN' : 'JA'}
         </button>
-      </div>
-
-      <div className="toolbar-group">
-        <button className="toolbar-btn" onClick={onExport} disabled={!data}>Export</button>
-        <button className="toolbar-btn" onClick={onAiAssist}>AI</button>
       </div>
     </div>
   );

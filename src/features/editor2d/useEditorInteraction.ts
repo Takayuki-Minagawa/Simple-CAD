@@ -2,6 +2,7 @@ import { useState, useCallback } from 'react';
 import { v4 as uuidv4 } from 'uuid';
 import { useProjectStore, useEditorStore } from '@/app/store';
 import type { EditorTool } from '@/app/store';
+import { useI18n } from '@/i18n';
 import type { Annotation, Dimension, ColumnMember, BeamMember, WallMember, SlabMember } from '@/domain/structural/types';
 import type { Point2D } from '@/domain/geometry/types';
 import { findSnap, buildSnapCandidatesFromMembers } from '@/domain/geometry/snap';
@@ -204,7 +205,7 @@ export function useEditorInteraction() {
         }
 
         case 'annotation': {
-          const text = prompt('テキストを入力:');
+          const text = prompt(useI18n.getState().t.promptAnnotationText);
           if (!text) break;
           const ann: Annotation = {
             id: uuidv4(),
