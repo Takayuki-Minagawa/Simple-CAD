@@ -1,5 +1,6 @@
 import type { Dimension } from '@/domain/structural/types';
 import { sub2D, normalize2D, perpendicular2D, distance2D } from '@/domain/geometry/point';
+import { lineTypeToDashArray } from '@/domain/rendering/lineStyle';
 
 interface Props {
   dimensions: Dimension[];
@@ -36,26 +37,47 @@ function DimensionShape({ dim, selected }: { dim: Dimension; selected: boolean }
   const text = dim.text ?? length.toFixed(0);
 
   const mid = { x: (s.x + e.x) / 2, y: (s.y + e.y) / 2 };
-  const color = selected ? 'var(--color-selection)' : 'var(--color-dimension)';
-  const sw = selected ? 30 : 15;
+  const baseLw = dim.lineWeight ?? 15;
+  const color = selected ? 'var(--color-selection)' : (dim.color ?? 'var(--color-dimension)');
+  const sw = selected ? baseLw * 2 : baseLw;
+  const dash = lineTypeToDashArray(dim.lineType);
+  const textSize = 250;
+
+  // Arrow triangle size based on text size
+  const arrowLen = textSize * 0.4;
+  const arrowHalf = arrowLen * 0.35;
+
+  // Arrow at start: pointing inward toward end
+  const startArrow = [
+    `${s.x},${s.y}`,
+    `${s.x + dir.x * arrowLen + perp.x * arrowHalf},${s.y + dir.y * arrowLen + perp.y * arrowHalf}`,
+    `${s.x + dir.x * arrowLen - perp.x * arrowHalf},${s.y + dir.y * arrowLen - perp.y * arrowHalf}`,
+  ].join(' ');
+
+  // Arrow at end: pointing inward toward start
+  const endArrow = [
+    `${e.x},${e.y}`,
+    `${e.x - dir.x * arrowLen + perp.x * arrowHalf},${e.y - dir.y * arrowLen + perp.y * arrowHalf}`,
+    `${e.x - dir.x * arrowLen - perp.x * arrowHalf},${e.y - dir.y * arrowLen - perp.y * arrowHalf}`,
+  ].join(' ');
 
   return (
     <g data-id={dim.id} style={{ cursor: 'pointer' }}>
       {/* Dimension line */}
-      <line x1={s.x} y1={s.y} x2={e.x} y2={e.y} stroke={color} strokeWidth={sw} />
+      <line x1={s.x} y1={s.y} x2={e.x} y2={e.y} stroke={color} strokeWidth={sw} strokeDasharray={dash} />
       {/* Extension lines */}
       <line x1={s1.x} y1={s1.y} x2={s2.x} y2={s2.y} stroke={color} strokeWidth={sw * 0.7} />
       <line x1={e1.x} y1={e1.y} x2={e2.x} y2={e2.y} stroke={color} strokeWidth={sw * 0.7} />
-      {/* Arrows */}
-      <circle cx={s.x} cy={s.y} r={50} fill={color} />
-      <circle cx={e.x} cy={e.y} r={50} fill={color} />
+      {/* Arrow triangles */}
+      <polygon points={startArrow} fill={color} />
+      <polygon points={endArrow} fill={color} />
       {/* Text */}
       <text
         x={mid.x}
         y={mid.y}
         textAnchor="middle"
         dominantBaseline="central"
-        fontSize={250}
+        fontSize={textSize}
         fill={color}
         transform={`translate(0,0) scale(1,-1) translate(0,${-2 * mid.y})`}
       >

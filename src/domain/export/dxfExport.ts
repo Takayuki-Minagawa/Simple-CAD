@@ -82,7 +82,11 @@ export function exportDxf(data: ProjectData, storyId: string): string {
   // Annotations
   const annotations = data.annotations.filter((a) => a.story === storyId);
   for (const a of annotations) {
-    addText(lines, 'ANNOTATION', a.x, a.y, a.fontSize ?? 250, a.text);
+    if (a.text.includes('\n')) {
+      addMText(lines, 'ANNOTATION', a.x, a.y, a.fontSize ?? 250, a.text, a.rotation);
+    } else {
+      addText(lines, 'ANNOTATION', a.x, a.y, a.fontSize ?? 250, a.text, a.rotation);
+    }
   }
 
   lines.push('0', 'ENDSEC');
@@ -169,10 +173,26 @@ function addLwPolyline(lines: string[], layer: string, points: number[][], close
   }
 }
 
-function addText(lines: string[], layer: string, x: number, y: number, height: number, text: string) {
+function addText(lines: string[], layer: string, x: number, y: number, height: number, text: string, rotation?: number) {
+  const sanitized = text.replace(/\r?\n/g, ' ');
   lines.push('0', 'TEXT');
   lines.push('8', layer);
   lines.push('10', String(x), '20', String(y), '30', '0');
   lines.push('40', String(height));
-  lines.push('1', text);
+  if (rotation) {
+    lines.push('50', String(rotation));
+  }
+  lines.push('1', sanitized);
+}
+
+function addMText(lines: string[], layer: string, x: number, y: number, height: number, text: string, rotation?: number) {
+  lines.push('0', 'MTEXT');
+  lines.push('8', layer);
+  lines.push('10', String(x), '20', String(y), '30', '0');
+  lines.push('40', String(height));
+  if (rotation) {
+    lines.push('50', String(rotation));
+  }
+  const encoded = text.replace(/\r?\n/g, '\\P');
+  lines.push('1', encoded);
 }

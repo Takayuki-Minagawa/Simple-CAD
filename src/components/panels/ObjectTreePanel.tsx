@@ -1,9 +1,10 @@
 import { useProjectStore, useEditorStore } from '@/app/store';
 import { useI18n } from '@/i18n';
+import { isLayerLockedForEntity } from '@/domain/rendering/layerLock';
 
 export function ObjectTreePanel() {
   const data = useProjectStore((s) => s.data);
-  const { selectedIds, setSelectedIds, activeStory } = useEditorStore();
+  const { selectedIds, setSelectedIds, activeStory, layerLocked } = useEditorStore();
   const { t } = useI18n();
 
   if (!data) return <div className="panel-content">{t.noProject}</div>;
@@ -32,37 +33,49 @@ export function ObjectTreePanel() {
         {Object.entries(membersByType).map(([type, members]) => (
           <div key={type}>
             <div className="tree-group-label">{typeLabels[type]} ({members.length})</div>
-            {members.map((m) => (
-              <div
-                key={m.id}
-                className={`tree-node ${selectedIds.includes(m.id) ? 'selected' : ''}`}
-                onClick={() => setSelectedIds([m.id])}
-              >
-                {m.id}
-              </div>
-            ))}
+            {members.map((m) => {
+              const locked = isLayerLockedForEntity('member', m.type, layerLocked);
+              return (
+                <div
+                  key={m.id}
+                  className={`tree-node ${selectedIds.includes(m.id) ? 'selected' : ''}`}
+                  style={locked ? { opacity: 0.4, cursor: 'not-allowed' } : undefined}
+                  onClick={() => { if (!locked) setSelectedIds([m.id]); }}
+                >
+                  {m.id}
+                </div>
+              );
+            })}
           </div>
         ))}
         <div className="tree-group-label">{t.memberAnnotation} ({annotations.length})</div>
-        {annotations.map((a) => (
-          <div
-            key={a.id}
-            className={`tree-node ${selectedIds.includes(a.id) ? 'selected' : ''}`}
-            onClick={() => setSelectedIds([a.id])}
-          >
-            {a.id}: {a.text}
-          </div>
-        ))}
+        {annotations.map((a) => {
+          const locked = layerLocked['annotation'];
+          return (
+            <div
+              key={a.id}
+              className={`tree-node ${selectedIds.includes(a.id) ? 'selected' : ''}`}
+              style={locked ? { opacity: 0.4, cursor: 'not-allowed' } : undefined}
+              onClick={() => { if (!locked) setSelectedIds([a.id]); }}
+            >
+              {a.id}: {a.text}
+            </div>
+          );
+        })}
         <div className="tree-group-label">{t.memberDimension} ({dimensions.length})</div>
-        {dimensions.map((d) => (
-          <div
-            key={d.id}
-            className={`tree-node ${selectedIds.includes(d.id) ? 'selected' : ''}`}
-            onClick={() => setSelectedIds([d.id])}
-          >
-            {d.id}
-          </div>
-        ))}
+        {dimensions.map((d) => {
+          const locked = layerLocked['dimension'];
+          return (
+            <div
+              key={d.id}
+              className={`tree-node ${selectedIds.includes(d.id) ? 'selected' : ''}`}
+              style={locked ? { opacity: 0.4, cursor: 'not-allowed' } : undefined}
+              onClick={() => { if (!locked) setSelectedIds([d.id]); }}
+            >
+              {d.id}
+            </div>
+          );
+        })}
       </div>
     </div>
   );

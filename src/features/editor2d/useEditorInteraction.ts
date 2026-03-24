@@ -198,7 +198,7 @@ export function useEditorInteraction() {
 
   const handleClick = useCallback(
     (worldPos: Point2D, e: React.MouseEvent) => {
-      const { activeTool, setSelectedIds, toggleSelection } = useEditorStore.getState();
+      const { activeTool, setSelectedIds, toggleSelection, layerLocked } = useEditorStore.getState();
 
       if (activeTool === 'select') {
         const target = (e.target as SVGElement).closest('[data-id]');
@@ -207,6 +207,18 @@ export function useEditorInteraction() {
           return;
         }
         const id = target.getAttribute('data-id')!;
+
+        // Check if entity's layer is locked
+        const data = useProjectStore.getState().data;
+        if (data) {
+          const member = data.members.find((m) => m.id === id);
+          if (member && layerLocked[`member-${member.type}`]) return;
+          const annotation = data.annotations.find((a) => a.id === id);
+          if (annotation && layerLocked['annotation']) return;
+          const dimension = data.dimensions.find((d) => d.id === id);
+          if (dimension && layerLocked['dimension']) return;
+        }
+
         if (e.shiftKey || e.ctrlKey || e.metaKey) {
           toggleSelection(id);
         } else {

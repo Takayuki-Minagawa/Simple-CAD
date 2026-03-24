@@ -43,7 +43,7 @@ export function MemberMesh({
 
   if (!geometry) return null;
 
-  const color = selected ? COLORS.selected : COLORS[member.type];
+  const color = selected ? COLORS.selected : (member.color ?? COLORS[member.type]);
   const materialProps = getMaterialProps(member.type, color, wireframe, clippingPlanes);
 
   return (

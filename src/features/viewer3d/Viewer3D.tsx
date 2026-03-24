@@ -387,19 +387,23 @@ export function Viewer3D() {
               </mesh>
             )}
 
-            {filteredMembers.map((member) => (
-              <MemberMesh
-                key={member.id}
-                member={member}
-                section={sectionMap.get(member.sectionId)}
-                openings={openingsMap.get(member.id) ?? []}
-                selected={selectedIds.includes(member.id)}
-                wireframe={wireframe}
-                engine={geometryEngine}
-                clippingPlanes={clippingPlanes}
-                onClick={() => setSelectedIds([member.id])}
-              />
-            ))}
+            {filteredMembers.map((member) => {
+              const layerLocked = useEditorStore.getState().layerLocked;
+              const locked = !!layerLocked[`member-${member.type}`];
+              return (
+                <MemberMesh
+                  key={member.id}
+                  member={member}
+                  section={sectionMap.get(member.sectionId)}
+                  openings={openingsMap.get(member.id) ?? []}
+                  selected={selectedIds.includes(member.id)}
+                  wireframe={wireframe}
+                  engine={geometryEngine}
+                  clippingPlanes={clippingPlanes}
+                  onClick={() => { if (!locked) setSelectedIds([member.id]); }}
+                />
+              );
+            })}
           </group>
         </group>
 

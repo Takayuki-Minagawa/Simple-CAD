@@ -1,4 +1,5 @@
 import type { Member, Section } from '@/domain/structural/types';
+import { lineTypeToDashArray } from '@/domain/rendering/lineStyle';
 
 interface Props {
   members: Member[];
@@ -88,6 +89,10 @@ function ColumnShape({
   const cy = member.start.y;
   const hw = width / 2;
   const hd = depth / 2;
+  const lw = member.lineWeight ?? 20;
+  const sw = selected ? lw * 2 : lw;
+  const strokeColor = selected ? 'var(--color-selection)' : (member.color ?? 'var(--color-column)');
+  const dash = lineTypeToDashArray(member.lineType);
 
   return (
     <rect
@@ -97,8 +102,9 @@ function ColumnShape({
       width={width}
       height={depth}
       fill={selected ? 'rgba(59,130,246,0.3)' : 'rgba(231,76,60,0.3)'}
-      stroke={selected ? 'var(--color-selection)' : 'var(--color-column)'}
-      strokeWidth={selected ? 40 : 20}
+      stroke={strokeColor}
+      strokeWidth={sw}
+      strokeDasharray={dash}
       style={{ cursor: 'pointer' }}
     />
   );
@@ -128,13 +134,19 @@ function BeamShape({
     `${start.x - nx},${start.y - ny}`,
   ].join(' ');
 
+  const lw = member.lineWeight ?? 20;
+  const sw = selected ? lw * 2 : lw;
+  const strokeColor = selected ? 'var(--color-selection)' : (member.color ?? 'var(--color-beam)');
+  const dash = lineTypeToDashArray(member.lineType);
+
   return (
     <polygon
       data-id={member.id}
       points={points}
       fill={selected ? 'rgba(59,130,246,0.2)' : 'rgba(243,156,18,0.2)'}
-      stroke={selected ? 'var(--color-selection)' : 'var(--color-beam)'}
-      strokeWidth={selected ? 40 : 20}
+      stroke={strokeColor}
+      strokeWidth={sw}
+      strokeDasharray={dash}
       style={{ cursor: 'pointer' }}
     />
   );
@@ -164,13 +176,19 @@ function WallShape({
     `${start.x - nx},${start.y - ny}`,
   ].join(' ');
 
+  const lw = member.lineWeight ?? 20;
+  const sw = selected ? lw * 2 : lw;
+  const strokeColor = selected ? 'var(--color-selection)' : (member.color ?? 'var(--color-wall)');
+  const dash = lineTypeToDashArray(member.lineType);
+
   return (
     <polygon
       data-id={member.id}
       points={points}
       fill={selected ? 'rgba(59,130,246,0.2)' : 'rgba(0,188,212,0.2)'}
-      stroke={selected ? 'var(--color-selection)' : 'var(--color-wall)'}
-      strokeWidth={selected ? 40 : 20}
+      stroke={strokeColor}
+      strokeWidth={sw}
+      strokeDasharray={dash}
       style={{ cursor: 'pointer' }}
     />
   );
@@ -184,15 +202,24 @@ function SlabShape({
   selected: boolean;
 }) {
   const points = member.polygon.map((p) => `${p.x},${p.y}`).join(' ');
+  const lw = member.lineWeight ?? 20;
+  const sw = selected ? lw * 2 : lw;
+  const strokeColor = selected ? 'var(--color-selection)' : (member.color ?? 'var(--color-slab)');
+  const dash = lineTypeToDashArray(member.lineType) ?? '200 100';
+  const fillColor = selected
+    ? 'rgba(59,130,246,0.15)'
+    : (member.fillColor ?? 'rgba(155,89,182,0.1)');
+  const fillOpacity = member.fillOpacity ?? undefined;
 
   return (
     <polygon
       data-id={member.id}
       points={points}
-      fill={selected ? 'rgba(59,130,246,0.15)' : 'rgba(155,89,182,0.1)'}
-      stroke={selected ? 'var(--color-selection)' : 'var(--color-slab)'}
-      strokeWidth={selected ? 40 : 20}
-      strokeDasharray="200 100"
+      fill={fillColor}
+      fillOpacity={fillOpacity}
+      stroke={strokeColor}
+      strokeWidth={sw}
+      strokeDasharray={dash}
       style={{ cursor: 'pointer' }}
     />
   );

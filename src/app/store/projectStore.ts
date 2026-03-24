@@ -42,6 +42,7 @@ export interface ProjectState {
 
   // Dimension operations
   addDimension: (dimension: Dimension) => void;
+  updateDimension: (id: string, updates: Partial<Dimension>) => void;
   deleteDimension: (id: string) => void;
 
   // Opening operations
@@ -286,6 +287,15 @@ export const useProjectStore = create<ProjectState>()(
         set((state) => {
           if (!state.data) return;
           state.data.dimensions.push(dimension);
+          state.isDirty = true;
+        }),
+
+      updateDimension: (id, updates) =>
+        set((state) => {
+          if (!state.data) return;
+          const idx = state.data.dimensions.findIndex((d) => d.id === id);
+          if (idx < 0) return;
+          Object.assign(state.data.dimensions[idx], updates);
           state.isDirty = true;
         }),
 
