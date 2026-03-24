@@ -127,6 +127,7 @@ export function TransformDialog({ onClose }: Props) {
           cancel: 'キャンセル',
           apply: '適用',
           invalidNumber: '数値入力が不正です。',
+          invalidScale: '倍率に 0 は指定できません。',
           invalidCount: '複写数は 1 以上の整数を指定してください。',
           invalidStretch: '幅と高さは 0 以上の値を指定してください。',
           lockedWidth: '選択範囲の幅が 0 のため、幅方向のパラメトリック変形はできません。',
@@ -160,6 +161,7 @@ export function TransformDialog({ onClose }: Props) {
           cancel: 'Cancel',
           apply: 'Apply',
           invalidNumber: 'Invalid numeric input.',
+          invalidScale: 'Scale factor must not be 0.',
           invalidCount: 'Copy count must be an integer greater than 0.',
           invalidStretch: 'Width and height must be 0 or greater.',
           lockedWidth: 'The current selection width is 0, so width stretching is not available.',
@@ -223,6 +225,10 @@ export function TransformDialog({ onClose }: Props) {
         nextScaleY === null
       ) {
         alert(labels.invalidNumber);
+        return;
+      }
+      if (nextScaleX === 0 || nextScaleY === 0) {
+        alert(labels.invalidScale);
         return;
       }
       scaleEntities(selectedIds, { x: nextOriginX, y: nextOriginY }, nextScaleX, nextScaleY);
