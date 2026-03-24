@@ -1,10 +1,12 @@
 import { useEditorStore, useProjectStore } from '@/app/store';
 import type { EditorTool } from '@/app/store';
 import { useI18n } from '@/i18n';
-import { openDxfFile, openJsonFile, saveFile } from '@/libs/fileSystem';
+import { openDxfFile, openIfcFile, openJsonFile, saveFile } from '@/libs/fileSystem';
 import { importProjectJson } from '@/domain/import/jsonImport';
 import { importDxf } from '@/domain/import/dxfImport';
 import { exportProjectJson } from '@/domain/export/jsonExport';
+import { importIfc } from '@/domain/integration/ifc';
+import { importStructuralAnalysisJson, STRUCTURAL_ANALYSIS_SCHEMA } from '@/domain/integration/structuralAnalysisJson';
 import sampleProject from '@/samples/sample-project.json';
 import type { ProjectData } from '@/domain/structural/types';
 
@@ -23,6 +25,7 @@ export function MainToolbar({ onExport, onMasters, onAiAssist, onHelp }: Props) 
   const { t, locale, setLocale } = useI18n();
   const mastersLabel = locale === 'ja' ? 'マスタ' : 'Masters';
   const importDxfLabel = locale === 'ja' ? 'DXF取込' : 'DXF Import';
+  const importIfcLabel = locale === 'ja' ? 'IFC取込' : 'IFC Import';
 
   const handleNew = () => {
     if (isDirty && !confirm(t.confirmUnsaved)) return;
@@ -32,7 +35,18 @@ export function MainToolbar({ onExport, onMasters, onAiAssist, onHelp }: Props) 
   const handleOpen = async () => {
     try {
       const result = await openJsonFile();
-      const imported = importProjectJson(result.content);
+      let detectedSchema: string | null = null;
+      try {
+        const parsed = JSON.parse(result.content) as { schema?: unknown };
+        detectedSchema = typeof parsed.schema === 'string' ? parsed.schema : null;
+      } catch {
+        // Let the dedicated importer surface the parse error.
+      }
+
+      const imported =
+        detectedSchema === STRUCTURAL_ANALYSIS_SCHEMA
+          ? importStructuralAnalysisJson(result.content)
+          : importProjectJson(result.content);
       if (!imported.ok) {
         alert(imported.errors.map((e) => e.message).join('\n'));
         return;
@@ -91,6 +105,20 @@ export function MainToolbar({ onExport, onMasters, onAiAssist, onHelp }: Props) 
     }
   };
 
+  const handleImportIfc = async () => {
+    try {
+      const result = await openIfcFile();
+      const imported = importIfc(result.content);
+      if (!imported.ok) {
+        alert(imported.errors.map((error) => error.message).join('\n'));
+        return;
+      }
+      loadProject(imported.data);
+    } catch {
+      // User cancelled
+    }
+  };
+
   const handleUndo = () => useProjectStore.temporal.getState().undo();
   const handleRedo = () => useProjectStore.temporal.getState().redo();
 
@@ -116,6 +144,7 @@ export function MainToolbar({ onExport, onMasters, onAiAssist, onHelp }: Props) 
           {t.fileSave}{isDirty ? ' *' : ''}
         </button>
         <button className="toolbar-btn" onClick={handleSample}>{t.fileSample}</button>
+        <button className="toolbar-btn" onClick={handleImportIfc}>{importIfcLabel}</button>
         <button className="toolbar-btn" onClick={handleImportDxf} disabled={!data}>{importDxfLabel}</button>
       </div>
 

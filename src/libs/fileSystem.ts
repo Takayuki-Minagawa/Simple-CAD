@@ -39,6 +39,23 @@ export async function openDxfFile(): Promise<{ content: string }> {
   return openViaInput('.dxf');
 }
 
+export async function openIfcFile(): Promise<{ content: string }> {
+  if (supportsFileSystemAccess()) {
+    const [handle] = await window.showOpenFilePicker({
+      types: [
+        {
+          description: 'IFC files',
+          accept: { 'application/octet-stream': ['.ifc'] },
+        },
+      ],
+    });
+    const file = await handle.getFile();
+    const content = await file.text();
+    return { content };
+  }
+  return openViaInput('.ifc');
+}
+
 function openViaInput(accept: string): Promise<{ content: string }> {
   return new Promise((resolve, reject) => {
     const input = document.createElement('input');

@@ -65,35 +65,8 @@ export function useEditorInteraction() {
     [],
   );
 
-  const handleClick = useCallback(
-    (worldPos: Point2D, e: React.MouseEvent) => {
-      const { activeTool, setSelectedIds, toggleSelection } = useEditorStore.getState();
-
-      // For select tool, handle click on elements via data-id
-      if (activeTool === 'select') {
-        const target = (e.target as SVGElement).closest('[data-id]');
-        if (!target) {
-          setSelectedIds([]);
-          return;
-        }
-        const id = target.getAttribute('data-id')!;
-        if (e.shiftKey || e.ctrlKey || e.metaKey) {
-          toggleSelection(id);
-        } else {
-          setSelectedIds([id]);
-        }
-        return;
-      }
-
-      // Drawing tools
-      const { pos, snap } = getSnapPos(worldPos);
-      handleDrawingClick(activeTool, pos, snap);
-    },
-    [getSnapPos],
-  );
-
   const handleDrawingClick = useCallback(
-    (tool: EditorTool, pos: Point2D, _snap: SnapResult | null) => {
+    (tool: EditorTool, pos: Point2D) => {
       const store = useProjectStore.getState();
       const { activeStory } = useEditorStore.getState();
       if (!store.data || !activeStory) return;
@@ -223,8 +196,33 @@ export function useEditorInteraction() {
     [],
   );
 
+  const handleClick = useCallback(
+    (worldPos: Point2D, e: React.MouseEvent) => {
+      const { activeTool, setSelectedIds, toggleSelection } = useEditorStore.getState();
+
+      if (activeTool === 'select') {
+        const target = (e.target as SVGElement).closest('[data-id]');
+        if (!target) {
+          setSelectedIds([]);
+          return;
+        }
+        const id = target.getAttribute('data-id')!;
+        if (e.shiftKey || e.ctrlKey || e.metaKey) {
+          toggleSelection(id);
+        } else {
+          setSelectedIds([id]);
+        }
+        return;
+      }
+
+      const { pos } = getSnapPos(worldPos);
+      handleDrawingClick(activeTool, pos);
+    },
+    [getSnapPos, handleDrawingClick],
+  );
+
   const handleDoubleClick = useCallback(
-    (_worldPos: Point2D) => {
+    () => {
       const { activeTool } = useEditorStore.getState();
       // Close slab polygon on double-click
       if (activeTool === 'slab') {
