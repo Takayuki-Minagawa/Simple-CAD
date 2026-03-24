@@ -7,6 +7,12 @@ export type TextAlign = 'left' | 'center' | 'right';
 
 // ── Project Root ─────────────────────────────────────────────
 
+export interface Group {
+  id: string;
+  name: string;
+  memberIds: string[];
+}
+
 export interface ProjectData {
   schemaVersion: string;
   project: ProjectMeta;
@@ -21,6 +27,7 @@ export interface ProjectData {
   sheets: Sheet[];
   views: View[];
   issues?: Issue[];
+  groups?: Group[];
 }
 
 export interface ProjectMeta {

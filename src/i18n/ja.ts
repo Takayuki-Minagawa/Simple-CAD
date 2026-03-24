@@ -159,4 +159,37 @@ export const ja: Translations = {
   memberSlab: 'スラブ',
   memberAnnotation: '注記',
   memberDimension: '寸法線',
+
+  // Trim/Extend
+  toolTrim: 'トリム',
+  toolExtend: '延長',
+  toolFillet: 'フィレット',
+  trimPrompt: '部材の端付近をクリックしてトリム',
+  extendPrompt: '延長する部材をクリック、次にターゲット部材をクリック',
+  filletPrompt: '2つの壁をクリックして交差をクリーン',
+
+  // Measurement
+  propArea: '面積',
+  propPerimeter: '周長',
+
+  // Vertex editing
+  propVertices: '頂点',
+  vertexAdd: '追加',
+  vertexRemove: '削除',
+
+  // Grouping
+  groupCreate: 'グループ化',
+  groupUngroup: 'グループ解除',
+  groupName: 'グループ',
+  groupPromptName: 'グループ名を入力:',
+
+  // Print Preview
+  printPreview: 'プレビュー',
+  printPreviewTitle: '印刷プレビュー',
+  printPreviewClose: '閉じる',
+  printPreviewEmpty: 'プレビューなし',
+
+  // Snap additions
+  snapPerpendicular: '垂直',
+  snapNearest: '最近点',
 };

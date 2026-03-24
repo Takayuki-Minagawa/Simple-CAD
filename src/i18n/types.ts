@@ -175,4 +175,37 @@ export interface Translations {
   memberSlab: string;
   memberAnnotation: string;
   memberDimension: string;
+
+  // Trim/Extend
+  toolTrim: string;
+  toolExtend: string;
+  toolFillet: string;
+  trimPrompt: string;
+  extendPrompt: string;
+  filletPrompt: string;
+
+  // Measurement
+  propArea: string;
+  propPerimeter: string;
+
+  // Vertex editing
+  propVertices: string;
+  vertexAdd: string;
+  vertexRemove: string;
+
+  // Grouping
+  groupCreate: string;
+  groupUngroup: string;
+  groupName: string;
+  groupPromptName: string;
+
+  // Print Preview
+  printPreview: string;
+  printPreviewTitle: string;
+  printPreviewClose: string;
+  printPreviewEmpty: string;
+
+  // Snap additions
+  snapPerpendicular: string;
+  snapNearest: string;
 }

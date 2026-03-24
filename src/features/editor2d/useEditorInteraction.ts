@@ -232,11 +232,61 @@ export function useEditorInteraction() {
           if (dimension && layerLocked['dimension']) return;
         }
 
+        // Group selection: if member belongs to a group, select all group members
+        if (data) {
+          const memberForGroup = data.members.find((m) => m.id === id);
+          if (memberForGroup && data.groups && !(e.shiftKey || e.ctrlKey || e.metaKey)) {
+            const group = data.groups.find((g) => g.memberIds.includes(id));
+            if (group) {
+              setSelectedIds(group.memberIds.filter((mid) => data.members.some((m) => m.id === mid)));
+              return;
+            }
+          }
+        }
+
         if (e.shiftKey || e.ctrlKey || e.metaKey) {
           toggleSelection(id);
         } else {
           setSelectedIds([id]);
         }
+        return;
+      }
+
+      // Trim tool: click on a member to trim it at nearest intersection
+      if (activeTool === 'trim') {
+        const target = (e.target as SVGElement).closest('[data-id]');
+        if (!target) return;
+        const id = target.getAttribute('data-id')!;
+        const store = useProjectStore.getState();
+        if (!store.data) return;
+        const member = store.data.members.find((m) => m.id === id);
+        if (!member || member.type === 'slab') return;
+        // Determine which side to keep based on click proximity to start/end
+        const distToStart = Math.hypot(worldPos.x - member.start.x, worldPos.y - member.start.y);
+        const distToEnd = Math.hypot(worldPos.x - member.end.x, worldPos.y - member.end.y);
+        const side = distToEnd < distToStart ? 'start' : 'end';
+        store.trimMember(id, worldPos, side);
+        return;
+      }
+
+      // Extend tool: first click selects member, second click selects target
+      if (activeTool === 'extend') {
+        const target = (e.target as SVGElement).closest('[data-id]');
+        if (!target) return;
+        const id = target.getAttribute('data-id')!;
+        setDrawState((prev) => {
+          if (prev.points.length === 0) {
+            // First click: store the member to extend (abuse points array for state)
+            return { ...prev, points: [{ x: 0, y: 0 }], previewPos: null, snapResult: null, _extendMemberId: id } as DrawState & { _extendMemberId: string };
+          } else {
+            // Second click: extend the stored member to the clicked target
+            const storedId = (prev as DrawState & { _extendMemberId?: string })._extendMemberId;
+            if (storedId) {
+              useProjectStore.getState().extendMember(storedId, id);
+            }
+            return { points: [], previewPos: null, snapResult: null };
+          }
+        });
         return;
       }
 

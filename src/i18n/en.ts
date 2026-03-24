@@ -159,4 +159,37 @@ export const en: Translations = {
   memberSlab: 'slab',
   memberAnnotation: 'annotation',
   memberDimension: 'dimension',
+
+  // Trim/Extend
+  toolTrim: 'Trim',
+  toolExtend: 'Extend',
+  toolFillet: 'Fillet',
+  trimPrompt: 'Click near the end of a member to trim',
+  extendPrompt: 'Click a member to extend, then click the target member',
+  filletPrompt: 'Click two walls to clean their intersection',
+
+  // Measurement
+  propArea: 'Area',
+  propPerimeter: 'Perimeter',
+
+  // Vertex editing
+  propVertices: 'Vertices',
+  vertexAdd: 'Add',
+  vertexRemove: 'Remove',
+
+  // Grouping
+  groupCreate: 'Group',
+  groupUngroup: 'Ungroup',
+  groupName: 'Group',
+  groupPromptName: 'Enter group name:',
+
+  // Print Preview
+  printPreview: 'Preview',
+  printPreviewTitle: 'Print Preview',
+  printPreviewClose: 'Close',
+  printPreviewEmpty: 'No preview available',
+
+  // Snap additions
+  snapPerpendicular: 'Perpendicular',
+  snapNearest: 'Nearest',
 };

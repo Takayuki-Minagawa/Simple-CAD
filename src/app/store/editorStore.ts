@@ -8,9 +8,11 @@ export type EditorTool =
   | 'wall'
   | 'slab'
   | 'dimension'
-  | 'annotation';
+  | 'annotation'
+  | 'trim'
+  | 'extend';
 
-export type SnapMode = 'grid' | 'endpoint' | 'midpoint' | 'intersection';
+export type SnapMode = 'grid' | 'endpoint' | 'midpoint' | 'intersection' | 'perpendicular' | 'nearest';
 
 export const LAYER_NAMES = [
   'grid',

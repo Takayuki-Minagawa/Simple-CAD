@@ -17,9 +17,10 @@ interface Props {
   onAiAssist: () => void;
   onHelp: () => void;
   onTransform: () => void;
+  onPrintPreview: () => void;
 }
 
-export function MainToolbar({ onExport, onMasters, onAiAssist, onHelp, onTransform }: Props) {
+export function MainToolbar({ onExport, onMasters, onAiAssist, onHelp, onTransform, onPrintPreview }: Props) {
   const { data, isDirty, fileHandle, loadProject, newProject, setFileHandle, markClean, addAnnotations } =
     useProjectStore();
   const { viewMode, setViewMode, activeTool, setActiveTool, setSelectedIds, selectedIds, theme, toggleTheme, activeStory } =
@@ -171,6 +172,8 @@ export function MainToolbar({ onExport, onMasters, onAiAssist, onHelp, onTransfo
         {toolBtn('slab', t.toolSlab)}
         {toolBtn('dimension', t.toolDimension)}
         {toolBtn('annotation', t.toolAnnotation)}
+        {toolBtn('trim', t.toolTrim)}
+        {toolBtn('extend', t.toolExtend)}
       </div>
 
       <div className="toolbar-group">
@@ -216,6 +219,7 @@ export function MainToolbar({ onExport, onMasters, onAiAssist, onHelp, onTransfo
 
       <div className="toolbar-group">
         <button className="toolbar-btn" onClick={onExport} disabled={!data}>{t.fileExport}</button>
+        <button className="toolbar-btn" onClick={onPrintPreview} disabled={!data}>{t.printPreview}</button>
         <button className="toolbar-btn" onClick={onMasters} disabled={!data}>{mastersLabel}</button>
         <button className="toolbar-btn" onClick={onAiAssist}>{t.btnAi}</button>
         <button className="toolbar-btn" onClick={onHelp}>{t.btnHelp}</button>
