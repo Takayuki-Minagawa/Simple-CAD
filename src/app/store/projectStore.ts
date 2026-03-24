@@ -21,7 +21,11 @@ import {
   scaleSelection,
   stretchSelection,
   translateSelection,
+  offsetSelection,
+  mirrorSelection,
+  arraySelection,
   type StretchSelectionOptions,
+  type ArraySelectionOptions,
 } from '@/domain/structural/editTransform';
 
 export interface ProjectState {
@@ -45,6 +49,9 @@ export interface ProjectState {
   duplicateEntities: (ids: string[], dx: number, dy: number, count?: number) => string[];
   scaleEntities: (ids: string[], origin: Point2D, scaleX: number, scaleY: number) => void;
   stretchEntities: (ids: string[], options: StretchSelectionOptions) => void;
+  offsetEntities: (ids: string[], distance: number) => string[];
+  mirrorEntities: (ids: string[], axisStart: Point2D, axisEnd: Point2D, copy: boolean) => string[];
+  arrayEntities: (ids: string[], options: ArraySelectionOptions) => string[];
 
   // Annotation operations
   addAnnotation: (annotation: Annotation) => void;
@@ -275,6 +282,36 @@ export const useProjectStore = create<ProjectState>()(
           stretchSelection(state.data, ids, options);
           state.isDirty = true;
         }),
+
+      offsetEntities: (ids, distance) => {
+        let createdIds: string[] = [];
+        set((state) => {
+          if (!state.data || ids.length === 0) return;
+          createdIds = offsetSelection(state.data, ids, distance);
+          state.isDirty = true;
+        });
+        return createdIds;
+      },
+
+      mirrorEntities: (ids, axisStart, axisEnd, copy) => {
+        let createdIds: string[] = [];
+        set((state) => {
+          if (!state.data || ids.length === 0) return;
+          createdIds = mirrorSelection(state.data, ids, axisStart, axisEnd, copy);
+          state.isDirty = true;
+        });
+        return createdIds;
+      },
+
+      arrayEntities: (ids, options) => {
+        let createdIds: string[] = [];
+        set((state) => {
+          if (!state.data || ids.length === 0) return;
+          createdIds = arraySelection(state.data, ids, options);
+          state.isDirty = true;
+        });
+        return createdIds;
+      },
 
       // ── Annotations ──
 

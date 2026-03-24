@@ -8,6 +8,7 @@ import type { Point2D } from '@/domain/geometry/types';
 import { findSnap, buildSnapCandidatesFromMembers } from '@/domain/geometry/snap';
 import type { SnapResult } from '@/domain/geometry/snap';
 import { snapPointToGrid } from '@/domain/geometry/transform';
+import { getEntityBoundsList, selectByRectangle } from '@/domain/structural/editTransform';
 
 export interface DrawState {
   /** Points collected so far for multi-click tools */
@@ -18,11 +19,23 @@ export interface DrawState {
   snapResult: SnapResult | null;
 }
 
+export interface RectSelectState {
+  /** Start point in world coords */
+  start: Point2D | null;
+  /** Current end point in world coords */
+  end: Point2D | null;
+}
+
 export function useEditorInteraction() {
   const [drawState, setDrawState] = useState<DrawState>({
     points: [],
     previewPos: null,
     snapResult: null,
+  });
+
+  const [rectSelect, setRectSelect] = useState<RectSelectState>({
+    start: null,
+    end: null,
   });
 
   const getSnapPos = useCallback(
@@ -272,8 +285,70 @@ export function useEditorInteraction() {
         previewPos: pos,
         snapResult: snap,
       }));
+      // Update rect select end if dragging
+      setRectSelect((prev) => {
+        if (prev.start) {
+          return { ...prev, end: worldPos };
+        }
+        return prev;
+      });
     },
     [getSnapPos],
+  );
+
+  const handleMouseDown = useCallback(
+    (worldPos: Point2D, e: React.MouseEvent) => {
+      const { activeTool } = useEditorStore.getState();
+      if (activeTool === 'select' && e.button === 0) {
+        // Start rect select only if clicking on empty area (not on an entity)
+        const target = (e.target as SVGElement).closest('[data-id]');
+        if (!target) {
+          setRectSelect({ start: worldPos, end: worldPos });
+        }
+      }
+    },
+    [],
+  );
+
+  const handleMouseUp = useCallback(
+    (_worldPos: Point2D, _e: React.MouseEvent) => {
+      setRectSelect((prev) => {
+        if (prev.start && prev.end) {
+          const minX = Math.min(prev.start.x, prev.end.x);
+          const maxX = Math.max(prev.start.x, prev.end.x);
+          const minY = Math.min(prev.start.y, prev.end.y);
+          const maxY = Math.max(prev.start.y, prev.end.y);
+          const width = maxX - minX;
+          const height = maxY - minY;
+
+          // Only process if drag was big enough (avoid accidental micro-drags)
+          if (width > 50 || height > 50) {
+            const data = useProjectStore.getState().data;
+            const { activeStory } = useEditorStore.getState();
+            if (data) {
+              const entities = getEntityBoundsList(data, activeStory);
+              // left-to-right = window, right-to-left = crossing
+              const mode = prev.end.x >= prev.start.x ? 'window' : 'crossing';
+              const ids = selectByRectangle(entities, minX, minY, maxX, maxY, mode);
+              useEditorStore.getState().setSelectedIds(ids);
+            }
+          }
+        }
+        return { start: null, end: null };
+      });
+    },
+    [],
+  );
+
+  /** Inject a coordinate point as if user clicked at that position. */
+  const injectCoordinate = useCallback(
+    (pos: Point2D) => {
+      const { activeTool } = useEditorStore.getState();
+      if (activeTool !== 'select' && activeTool !== 'pan') {
+        handleDrawingClick(activeTool, pos);
+      }
+    },
+    [handleDrawingClick],
   );
 
   const resetDrawing = useCallback(() => {
@@ -282,9 +357,13 @@ export function useEditorInteraction() {
 
   return {
     drawState,
+    rectSelect,
     handleClick,
     handleDoubleClick,
     handleMouseMove,
+    handleMouseDown,
+    handleMouseUp,
+    injectCoordinate,
     resetDrawing,
   };
 }

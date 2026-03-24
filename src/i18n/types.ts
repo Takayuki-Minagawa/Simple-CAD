@@ -140,6 +140,34 @@ export interface Translations {
   helpSectionAi: string;
   helpAiText: string;
 
+  // Transform modes
+  transformOffset: string;
+  transformMirror: string;
+  transformArray: string;
+  transformOffsetDistance: string;
+  transformMirrorAxis: string;
+  transformMirrorCopy: string;
+  transformAxisHorizontal: string;
+  transformAxisVertical: string;
+  transformAxisCustom: string;
+  transformAxisAngle: string;
+  transformArrayRows: string;
+  transformArrayColumns: string;
+  transformArrayRowSpacing: string;
+  transformArrayColSpacing: string;
+
+  // Coordinate input
+  coordInputPlaceholder: string;
+  coordInputLabel: string;
+
+  // Zoom
+  zoomExtents: string;
+  zoomSelection: string;
+
+  // Rectangle selection
+  selectionWindow: string;
+  selectionCrossing: string;
+
   // member type labels
   memberColumn: string;
   memberBeam: string;

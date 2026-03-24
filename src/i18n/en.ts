@@ -129,6 +129,30 @@ export const en: Translations = {
   helpAiText:
     'Copy the prompt template from the "AI" button and paste it into ChatGPT, Claude, or other LLMs to auto-generate JSON data. You can also paste generated JSON directly to import it.',
 
+  transformOffset: 'Offset',
+  transformMirror: 'Mirror',
+  transformArray: 'Array',
+  transformOffsetDistance: 'Distance',
+  transformMirrorAxis: 'Axis',
+  transformMirrorCopy: 'Copy',
+  transformAxisHorizontal: 'Horizontal',
+  transformAxisVertical: 'Vertical',
+  transformAxisCustom: 'Custom Angle',
+  transformAxisAngle: 'Angle',
+  transformArrayRows: 'Rows',
+  transformArrayColumns: 'Columns',
+  transformArrayRowSpacing: 'Row Spacing',
+  transformArrayColSpacing: 'Column Spacing',
+
+  coordInputPlaceholder: 'x,y or @dx,dy or @dist<angle',
+  coordInputLabel: 'Coordinate',
+
+  zoomExtents: 'Zoom Extents',
+  zoomSelection: 'Zoom Selection',
+
+  selectionWindow: 'Window',
+  selectionCrossing: 'Crossing',
+
   memberColumn: 'column',
   memberBeam: 'beam',
   memberWall: 'wall',

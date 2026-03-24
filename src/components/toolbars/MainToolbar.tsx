@@ -9,6 +9,7 @@ import { importIfc } from '@/domain/integration/ifc';
 import { importStructuralAnalysisJson, STRUCTURAL_ANALYSIS_SCHEMA } from '@/domain/integration/structuralAnalysisJson';
 import sampleProject from '@/samples/sample-project.json';
 import type { ProjectData } from '@/domain/structural/types';
+import { getAllEntityBounds, getSelectionBounds } from '@/domain/structural/editTransform';
 
 interface Props {
   onExport: () => void;
@@ -175,6 +176,42 @@ export function MainToolbar({ onExport, onMasters, onAiAssist, onHelp, onTransfo
       <div className="toolbar-group">
         <button className={`toolbar-btn ${viewMode === '2d' ? 'active' : ''}`} onClick={() => setViewMode('2d')}>{t.view2d}</button>
         <button className={`toolbar-btn ${viewMode === '3d' ? 'active' : ''}`} onClick={() => setViewMode('3d')}>{t.view3d}</button>
+        <button
+          className="toolbar-btn"
+          disabled={!data}
+          title={t.zoomExtents}
+          onClick={() => {
+            if (!data) return;
+            const el = document.querySelector('svg');
+            if (!el) return;
+            const rect = el.getBoundingClientRect();
+            const allBounds = getAllEntityBounds(data, activeStory);
+            if (!allBounds) return;
+            useEditorStore.getState().zoomToFit(allBounds, rect.width, rect.height);
+          }}
+        >
+          {t.zoomExtents}
+        </button>
+        <button
+          className="toolbar-btn"
+          disabled={selectedIds.length === 0 || !data}
+          title={t.zoomSelection}
+          onClick={() => {
+            if (!data) return;
+            const el = document.querySelector('svg');
+            if (!el) return;
+            const rect = el.getBoundingClientRect();
+            const bounds = getSelectionBounds(data, selectedIds);
+            if (!bounds) return;
+            useEditorStore.getState().zoomToFit(
+              { minX: bounds.min.x, minY: bounds.min.y, maxX: bounds.max.x, maxY: bounds.max.y },
+              rect.width,
+              rect.height,
+            );
+          }}
+        >
+          {t.zoomSelection}
+        </button>
       </div>
 
       <div className="toolbar-group">

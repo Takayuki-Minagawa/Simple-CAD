@@ -129,6 +129,30 @@ export const ja: Translations = {
   helpAiText:
     'ツールバーの「AI」ボタンからプロンプトテンプレートをコピーし、ChatGPT や Claude 等の LLM に渡すことで JSON データを自動生成できます。生成された JSON を貼り付けて読み込むことも可能です。',
 
+  transformOffset: 'オフセット',
+  transformMirror: 'ミラー',
+  transformArray: '配列複写',
+  transformOffsetDistance: '距離',
+  transformMirrorAxis: '軸',
+  transformMirrorCopy: '複写',
+  transformAxisHorizontal: '水平',
+  transformAxisVertical: '垂直',
+  transformAxisCustom: 'カスタム角度',
+  transformAxisAngle: '角度',
+  transformArrayRows: '行数',
+  transformArrayColumns: '列数',
+  transformArrayRowSpacing: '行間隔',
+  transformArrayColSpacing: '列間隔',
+
+  coordInputPlaceholder: 'x,y または @dx,dy または @距離<角度',
+  coordInputLabel: '座標',
+
+  zoomExtents: '全体表示',
+  zoomSelection: '選択範囲表示',
+
+  selectionWindow: 'ウィンドウ選択',
+  selectionCrossing: 'クロス選択',
+
   memberColumn: '柱',
   memberBeam: '梁',
   memberWall: '壁',

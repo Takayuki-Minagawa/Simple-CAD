@@ -7,7 +7,7 @@ interface Props {
   onClose: () => void;
 }
 
-type TransformMode = 'move' | 'copy' | 'scale' | 'stretch';
+type TransformMode = 'move' | 'copy' | 'scale' | 'stretch' | 'offset' | 'mirror' | 'array';
 
 function formatValue(value: number) {
   return Number.isInteger(value) ? String(value) : value.toFixed(2);
@@ -69,14 +69,34 @@ function SelectField({
   );
 }
 
+function CheckboxField({
+  label,
+  checked,
+  onChange,
+}: {
+  label: string;
+  checked: boolean;
+  onChange: (checked: boolean) => void;
+}) {
+  return (
+    <label style={{ display: 'flex', gap: 6, alignItems: 'center', fontSize: 12, color: 'var(--text-secondary)' }}>
+      <input type="checkbox" checked={checked} onChange={(e) => onChange(e.target.checked)} />
+      {label}
+    </label>
+  );
+}
+
 export function TransformDialog({ onClose }: Props) {
   const data = useProjectStore((state) => state.data);
   const translateEntities = useProjectStore((state) => state.translateEntities);
   const duplicateEntities = useProjectStore((state) => state.duplicateEntities);
   const scaleEntities = useProjectStore((state) => state.scaleEntities);
   const stretchEntities = useProjectStore((state) => state.stretchEntities);
+  const offsetEntities = useProjectStore((state) => state.offsetEntities);
+  const mirrorEntities = useProjectStore((state) => state.mirrorEntities);
+  const arrayEntities = useProjectStore((state) => state.arrayEntities);
   const { selectedIds, setSelectedIds } = useEditorStore();
-  const { locale } = useI18n();
+  const { t, locale } = useI18n();
   const bounds = data && selectedIds.length > 0 ? getSelectionBounds(data, selectedIds) : null;
   const defaultOriginX = bounds ? formatValue(bounds.center.x) : '0';
   const defaultOriginY = bounds ? formatValue(bounds.center.y) : '0';
@@ -94,6 +114,17 @@ export function TransformDialog({ onClose }: Props) {
   const [targetHeight, setTargetHeight] = useState(defaultTargetHeight);
   const [anchorX, setAnchorX] = useState<TransformAnchor>('center');
   const [anchorY, setAnchorY] = useState<TransformAnchor>('center');
+  // Offset
+  const [offsetDistance, setOffsetDistance] = useState('1000');
+  // Mirror
+  const [mirrorAxis, setMirrorAxis] = useState<'horizontal' | 'vertical' | 'custom'>('horizontal');
+  const [mirrorAngle, setMirrorAngle] = useState('0');
+  const [mirrorCopy, setMirrorCopy] = useState(true);
+  // Array
+  const [arrayRows, setArrayRows] = useState('2');
+  const [arrayCols, setArrayCols] = useState('2');
+  const [arrayRowSpacing, setArrayRowSpacing] = useState('3000');
+  const [arrayColSpacing, setArrayColSpacing] = useState('3000');
 
   if (!data || selectedIds.length === 0 || !bounds) return null;
 
@@ -180,6 +211,12 @@ export function TransformDialog({ onClose }: Props) {
     { value: 'max', label: labels.anchorMaxY },
   ];
 
+  const mirrorAxisOptions = [
+    { value: 'horizontal', label: t.transformAxisHorizontal },
+    { value: 'vertical', label: t.transformAxisVertical },
+    { value: 'custom', label: t.transformAxisCustom },
+  ];
+
   const handleApply = () => {
     if (mode === 'move') {
       const nextDx = parseNumber(dx);
@@ -236,32 +273,116 @@ export function TransformDialog({ onClose }: Props) {
       return;
     }
 
-    const nextTargetWidth = parseNumber(targetWidth);
-    const nextTargetHeight = parseNumber(targetHeight);
-    if (nextTargetWidth === null || nextTargetHeight === null) {
-      alert(labels.invalidNumber);
+    if (mode === 'stretch') {
+      const nextTargetWidth = parseNumber(targetWidth);
+      const nextTargetHeight = parseNumber(targetHeight);
+      if (nextTargetWidth === null || nextTargetHeight === null) {
+        alert(labels.invalidNumber);
+        return;
+      }
+      if (nextTargetWidth < 0 || nextTargetHeight < 0) {
+        alert(labels.invalidStretch);
+        return;
+      }
+      if (bounds.width === 0 && nextTargetWidth !== 0) {
+        alert(labels.lockedWidth);
+        return;
+      }
+      if (bounds.height === 0 && nextTargetHeight !== 0) {
+        alert(labels.lockedHeight);
+        return;
+      }
+      stretchEntities(selectedIds, {
+        targetWidth: nextTargetWidth,
+        targetHeight: nextTargetHeight,
+        anchorX,
+        anchorY,
+      });
+      onClose();
       return;
     }
-    if (nextTargetWidth < 0 || nextTargetHeight < 0) {
-      alert(labels.invalidStretch);
+
+    if (mode === 'offset') {
+      const dist = parseNumber(offsetDistance);
+      if (dist === null) {
+        alert(labels.invalidNumber);
+        return;
+      }
+      const createdIds = offsetEntities(selectedIds, dist);
+      if (createdIds.length > 0) {
+        setSelectedIds(createdIds);
+      }
+      onClose();
       return;
     }
-    if (bounds.width === 0 && nextTargetWidth !== 0) {
-      alert(labels.lockedWidth);
+
+    if (mode === 'mirror') {
+      let axisStart = bounds.center;
+      let axisEnd = { x: bounds.center.x + 1, y: bounds.center.y };
+      if (mirrorAxis === 'horizontal') {
+        // Mirror across horizontal axis (Y stays same, X flips) -> axis is horizontal line
+        axisStart = { x: bounds.center.x, y: bounds.center.y };
+        axisEnd = { x: bounds.center.x + 1, y: bounds.center.y };
+      } else if (mirrorAxis === 'vertical') {
+        axisStart = { x: bounds.center.x, y: bounds.center.y };
+        axisEnd = { x: bounds.center.x, y: bounds.center.y + 1 };
+      } else {
+        const angle = parseNumber(mirrorAngle);
+        if (angle === null) {
+          alert(labels.invalidNumber);
+          return;
+        }
+        const rad = (angle * Math.PI) / 180;
+        axisStart = bounds.center;
+        axisEnd = {
+          x: bounds.center.x + Math.cos(rad),
+          y: bounds.center.y + Math.sin(rad),
+        };
+      }
+      const createdIds = mirrorEntities(selectedIds, axisStart, axisEnd, mirrorCopy);
+      if (createdIds.length > 0) {
+        setSelectedIds(createdIds);
+      }
+      onClose();
       return;
     }
-    if (bounds.height === 0 && nextTargetHeight !== 0) {
-      alert(labels.lockedHeight);
+
+    if (mode === 'array') {
+      const rows = parseCount(arrayRows);
+      const cols = parseCount(arrayCols);
+      const rowSpacing = parseNumber(arrayRowSpacing);
+      const colSpacing = parseNumber(arrayColSpacing);
+      if (rows === null || cols === null) {
+        alert(labels.invalidCount);
+        return;
+      }
+      if (rowSpacing === null || colSpacing === null) {
+        alert(labels.invalidNumber);
+        return;
+      }
+      const createdIds = arrayEntities(selectedIds, {
+        rows,
+        columns: cols,
+        rowSpacing,
+        colSpacing,
+      });
+      if (createdIds.length > 0) {
+        setSelectedIds(createdIds);
+      }
+      onClose();
       return;
     }
-    stretchEntities(selectedIds, {
-      targetWidth: nextTargetWidth,
-      targetHeight: nextTargetHeight,
-      anchorX,
-      anchorY,
-    });
-    onClose();
   };
+
+  const allModes: Array<[TransformMode, string]> = [
+    ['move', labels.modeMove],
+    ['copy', labels.modeCopy],
+    ['scale', labels.modeScale],
+    ['stretch', labels.modeStretch],
+    ['offset', t.transformOffset],
+    ['mirror', t.transformMirror],
+    ['array', t.transformArray],
+  ];
 
   return (
     <div
@@ -298,12 +419,7 @@ export function TransformDialog({ onClose }: Props) {
         </div>
 
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 16 }}>
-          {([
-            ['move', labels.modeMove],
-            ['copy', labels.modeCopy],
-            ['scale', labels.modeScale],
-            ['stretch', labels.modeStretch],
-          ] as Array<[TransformMode, string]>).map(([value, label]) => (
+          {allModes.map(([value, label]) => (
             <button
               key={value}
               className={`toolbar-btn ${mode === value ? 'active' : ''}`}
@@ -356,6 +472,40 @@ export function TransformDialog({ onClose }: Props) {
               <NumberField label={labels.targetHeight} value={targetHeight} onChange={setTargetHeight} />
               <SelectField label={labels.anchorX} value={anchorX} options={anchorXOptions} onChange={(value) => setAnchorX(value as TransformAnchor)} />
               <SelectField label={labels.anchorY} value={anchorY} options={anchorYOptions} onChange={(value) => setAnchorY(value as TransformAnchor)} />
+            </div>
+          </div>
+        )}
+
+        {mode === 'offset' && (
+          <div style={{ display: 'grid', gap: 12 }}>
+            <SectionTitle>{t.transformOffset}</SectionTitle>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 12 }}>
+              <NumberField label={t.transformOffsetDistance} value={offsetDistance} onChange={setOffsetDistance} />
+            </div>
+          </div>
+        )}
+
+        {mode === 'mirror' && (
+          <div style={{ display: 'grid', gap: 12 }}>
+            <SectionTitle>{t.transformMirror}</SectionTitle>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+              <SelectField label={t.transformMirrorAxis} value={mirrorAxis} options={mirrorAxisOptions} onChange={(v) => setMirrorAxis(v as 'horizontal' | 'vertical' | 'custom')} />
+              {mirrorAxis === 'custom' && (
+                <NumberField label={t.transformAxisAngle} value={mirrorAngle} onChange={setMirrorAngle} />
+              )}
+            </div>
+            <CheckboxField label={t.transformMirrorCopy} checked={mirrorCopy} onChange={setMirrorCopy} />
+          </div>
+        )}
+
+        {mode === 'array' && (
+          <div style={{ display: 'grid', gap: 12 }}>
+            <SectionTitle>{t.transformArray}</SectionTitle>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+              <NumberField label={t.transformArrayColumns} value={arrayCols} onChange={setArrayCols} />
+              <NumberField label={t.transformArrayRows} value={arrayRows} onChange={setArrayRows} />
+              <NumberField label={t.transformArrayColSpacing} value={arrayColSpacing} onChange={setArrayColSpacing} />
+              <NumberField label={t.transformArrayRowSpacing} value={arrayRowSpacing} onChange={setArrayRowSpacing} />
             </div>
           </div>
         )}
