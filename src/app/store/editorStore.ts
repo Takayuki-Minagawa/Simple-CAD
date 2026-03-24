@@ -10,7 +10,9 @@ export type EditorTool =
   | 'dimension'
   | 'annotation'
   | 'trim'
-  | 'extend';
+  | 'extend'
+  | 'xline'
+  | 'spline';
 
 export type SnapMode = 'grid' | 'endpoint' | 'midpoint' | 'intersection' | 'perpendicular' | 'nearest';
 
@@ -23,6 +25,7 @@ export const LAYER_NAMES = [
   'opening',
   'dimension',
   'annotation',
+  'construction',
 ] as const;
 
 export type LayerName = (typeof LAYER_NAMES)[number];

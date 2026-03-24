@@ -192,4 +192,34 @@ export const en: Translations = {
   // Snap additions
   snapPerpendicular: 'Perpendicular',
   snapNearest: 'Nearest',
+
+  // Construction Lines
+  toolXline: 'XLine',
+  layerConstruction: 'Construction',
+
+  // Spline
+  toolSpline: 'Spline',
+
+  // Text Formatting
+  propFontWeight: 'Bold',
+  propFontStyle: 'Italic',
+  propTextDecoration: 'Underline',
+  propFontFamily: 'Font',
+
+  // External References
+  xrefTitle: 'External References',
+  xrefImport: 'Import Xref',
+  xrefRemove: 'Remove',
+
+  // Viewports
+  viewportTitle: 'Viewports',
+  viewportAdd: 'Add Viewport',
+  viewportRemove: 'Remove',
+
+  // Drawing Templates
+  templatePickerTitle: 'Select Template',
+  templateA1Structure: 'A1 Structure (1:100)',
+  templateA3Detail: 'A3 Detail (1:50)',
+  templateBlankA1: 'Blank A1',
+  templateSelectPrompt: 'Choose a template for the new project:',
 };

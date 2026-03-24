@@ -3,7 +3,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { useProjectStore, useEditorStore } from '@/app/store';
 import type { EditorTool } from '@/app/store';
 import { useI18n } from '@/i18n';
-import type { Annotation, Dimension, ColumnMember, BeamMember, WallMember, SlabMember } from '@/domain/structural/types';
+import type { Annotation, Dimension, ColumnMember, BeamMember, WallMember, SlabMember, ConstructionLine } from '@/domain/structural/types';
 import type { Point2D } from '@/domain/geometry/types';
 import { findSnap, buildSnapCandidatesFromMembers } from '@/domain/geometry/snap';
 import type { SnapResult } from '@/domain/geometry/snap';
@@ -204,6 +204,38 @@ export function useEditorInteraction() {
           store.addAnnotation(ann);
           break;
         }
+
+        case 'xline': {
+          setDrawState((prev) => {
+            const pts = [...prev.points, pos];
+            if (pts.length >= 2) {
+              const dx = pts[1].x - pts[0].x;
+              const dy = pts[1].y - pts[0].y;
+              const len = Math.sqrt(dx * dx + dy * dy);
+              if (len > 0) {
+                const cl: ConstructionLine = {
+                  id: uuidv4(),
+                  story: activeStory,
+                  type: 'xline',
+                  origin: { x: pts[0].x, y: pts[0].y },
+                  direction: { x: dx / len, y: dy / len },
+                };
+                store.addConstructionLine(cl);
+              }
+              return { points: [], previewPos: null, snapResult: null };
+            }
+            return { ...prev, points: pts };
+          });
+          break;
+        }
+
+        case 'spline': {
+          setDrawState((prev) => {
+            const pts = [...prev.points, pos];
+            return { ...prev, points: pts };
+          });
+          break;
+        }
       }
     },
     [],
@@ -320,6 +352,28 @@ export function useEditorInteraction() {
             level: story.elevation + story.height,
           };
           store.addMember(member);
+          return { points: [], previewPos: null, snapResult: null };
+        });
+      }
+
+      // Close spline on double-click
+      if (activeTool === 'spline') {
+        setDrawState((prev) => {
+          if (prev.points.length < 2) return prev;
+          const store = useProjectStore.getState();
+          const { activeStory } = useEditorStore.getState();
+          if (!store.data || !activeStory) return prev;
+
+          const ann: Annotation = {
+            id: uuidv4(),
+            type: 'spline',
+            story: activeStory,
+            x: prev.points[0].x,
+            y: prev.points[0].y,
+            text: '',
+            points: prev.points.map((p) => ({ x: p.x, y: p.y })),
+          };
+          store.addAnnotation(ann);
           return { points: [], previewPos: null, snapResult: null };
         });
       }

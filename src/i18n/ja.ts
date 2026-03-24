@@ -192,4 +192,34 @@ export const ja: Translations = {
   // Snap additions
   snapPerpendicular: '垂直',
   snapNearest: '最近点',
+
+  // Construction Lines
+  toolXline: '補助線',
+  layerConstruction: '補助線',
+
+  // Spline
+  toolSpline: 'スプライン',
+
+  // Text Formatting
+  propFontWeight: '太字',
+  propFontStyle: '斜体',
+  propTextDecoration: '下線',
+  propFontFamily: 'フォント',
+
+  // External References
+  xrefTitle: '外部参照',
+  xrefImport: '外部参照取込',
+  xrefRemove: '削除',
+
+  // Viewports
+  viewportTitle: 'ビューポート',
+  viewportAdd: 'ビューポート追加',
+  viewportRemove: '削除',
+
+  // Drawing Templates
+  templatePickerTitle: 'テンプレート選択',
+  templateA1Structure: 'A1 構造図 (1:100)',
+  templateA3Detail: 'A3 詳細図 (1:50)',
+  templateBlankA1: '白紙 A1',
+  templateSelectPrompt: '新規プロジェクトのテンプレートを選択してください:',
 };

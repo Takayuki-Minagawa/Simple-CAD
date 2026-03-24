@@ -202,38 +202,91 @@ function MemberProps({ member }: { member: Member }) {
   );
 }
 
+const FONT_FAMILY_OPTIONS = ['sans-serif', 'serif', 'monospace'];
+
 function AnnotationProps({ annotation }: { annotation: Annotation }) {
   const updateAnnotation = useProjectStore((s) => s.updateAnnotation);
   const { t } = useI18n();
+
+  const isSpline = annotation.type === 'spline';
 
   return (
     <div>
       <div className="panel-header">{t.panelProperties}</div>
       <div className="panel-content">
         <div className="prop-row"><span className="prop-label">{t.propId}</span><span>{annotation.id}</span></div>
-        <div className="prop-row">
-          <span className="prop-label">{t.propText}</span>
-          <textarea
-            className="prop-input"
-            value={annotation.text}
-            onChange={(e) => updateAnnotation(annotation.id, { text: e.target.value })}
-            rows={3}
-            style={{ resize: 'vertical', fontFamily: 'inherit', fontSize: 'inherit' }}
-          />
-        </div>
-        <CoordRow label="X" value={annotation.x} onChange={(v) => updateAnnotation(annotation.id, { x: v })} />
-        <CoordRow label="Y" value={annotation.y} onChange={(v) => updateAnnotation(annotation.id, { y: v })} />
-        <div className="prop-row">
-          <span className="prop-label">{t.propColor}</span>
-          <input type="color" value={annotation.color ?? '#000000'} onChange={(e) => updateAnnotation(annotation.id, { color: e.target.value })} />
-        </div>
-        <div className="prop-row">
-          <span className="prop-label">{t.propTextAlign}</span>
-          <select className="prop-select" value={annotation.textAlign ?? 'left'} onChange={(e) => updateAnnotation(annotation.id, { textAlign: e.target.value as TextAlign })}>
-            {TEXT_ALIGN_OPTIONS.map((ta) => <option key={ta} value={ta}>{ta}</option>)}
-          </select>
-        </div>
-        <CoordRow label={t.propRotation} value={annotation.rotation ?? 0} onChange={(v) => updateAnnotation(annotation.id, { rotation: v })} />
+        <div className="prop-row"><span className="prop-label">{t.propType}</span><span>{annotation.type}</span></div>
+        {!isSpline && (
+          <>
+            <div className="prop-row">
+              <span className="prop-label">{t.propText}</span>
+              <textarea
+                className="prop-input"
+                value={annotation.text}
+                onChange={(e) => updateAnnotation(annotation.id, { text: e.target.value })}
+                rows={3}
+                style={{ resize: 'vertical', fontFamily: 'inherit', fontSize: 'inherit' }}
+              />
+            </div>
+            <CoordRow label="X" value={annotation.x} onChange={(v) => updateAnnotation(annotation.id, { x: v })} />
+            <CoordRow label="Y" value={annotation.y} onChange={(v) => updateAnnotation(annotation.id, { y: v })} />
+            <div className="prop-row">
+              <span className="prop-label">{t.propColor}</span>
+              <input type="color" value={annotation.color ?? '#000000'} onChange={(e) => updateAnnotation(annotation.id, { color: e.target.value })} />
+            </div>
+            <div className="prop-row">
+              <span className="prop-label">{t.propTextAlign}</span>
+              <select className="prop-select" value={annotation.textAlign ?? 'left'} onChange={(e) => updateAnnotation(annotation.id, { textAlign: e.target.value as TextAlign })}>
+                {TEXT_ALIGN_OPTIONS.map((ta) => <option key={ta} value={ta}>{ta}</option>)}
+              </select>
+            </div>
+            <CoordRow label={t.propRotation} value={annotation.rotation ?? 0} onChange={(v) => updateAnnotation(annotation.id, { rotation: v })} />
+
+            {/* Text Formatting */}
+            <div className="prop-row" style={{ marginTop: 8 }}>
+              <span className="prop-label">{t.propFontWeight}</span>
+              <button
+                className={`toolbar-btn ${annotation.fontWeight === 'bold' ? 'active' : ''}`}
+                style={{ minWidth: 32, fontWeight: 'bold' }}
+                onClick={() => updateAnnotation(annotation.id, { fontWeight: annotation.fontWeight === 'bold' ? 'normal' : 'bold' })}
+              >B</button>
+            </div>
+            <div className="prop-row">
+              <span className="prop-label">{t.propFontStyle}</span>
+              <button
+                className={`toolbar-btn ${annotation.fontStyle === 'italic' ? 'active' : ''}`}
+                style={{ minWidth: 32, fontStyle: 'italic' }}
+                onClick={() => updateAnnotation(annotation.id, { fontStyle: annotation.fontStyle === 'italic' ? 'normal' : 'italic' })}
+              >I</button>
+            </div>
+            <div className="prop-row">
+              <span className="prop-label">{t.propTextDecoration}</span>
+              <button
+                className={`toolbar-btn ${annotation.textDecoration === 'underline' ? 'active' : ''}`}
+                style={{ minWidth: 32, textDecoration: 'underline' }}
+                onClick={() => updateAnnotation(annotation.id, { textDecoration: annotation.textDecoration === 'underline' ? 'none' : 'underline' })}
+              >U</button>
+            </div>
+            <div className="prop-row">
+              <span className="prop-label">{t.propFontFamily}</span>
+              <select className="prop-select" value={annotation.fontFamily ?? 'sans-serif'} onChange={(e) => updateAnnotation(annotation.id, { fontFamily: e.target.value })}>
+                {FONT_FAMILY_OPTIONS.map((ff) => <option key={ff} value={ff}>{ff}</option>)}
+              </select>
+            </div>
+          </>
+        )}
+        {isSpline && (
+          <>
+            <div className="prop-row">
+              <span className="prop-label">{t.propColor}</span>
+              <input type="color" value={annotation.color ?? '#000000'} onChange={(e) => updateAnnotation(annotation.id, { color: e.target.value })} />
+            </div>
+            <div className="prop-row">
+              <span className="prop-label">Points</span>
+              <span>{annotation.points?.length ?? 0}</span>
+            </div>
+          </>
+        )}
       </div>
     </div>
   );

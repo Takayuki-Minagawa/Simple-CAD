@@ -32,6 +32,7 @@ export function PrintPreviewDialog({ onClose }: Props) {
   if (!data) return null;
 
   const sheet = data.sheets.find((s) => s.id === sheetId);
+  const viewports = sheet?.viewports ?? [];
   const paper = sheet ? PAPER_SIZES[sheet.paperSize] ?? PAPER_SIZES.A3 : PAPER_SIZES.A3;
   const aspectRatio = paper.width / paper.height;
 
@@ -115,6 +116,7 @@ export function PrintPreviewDialog({ onClose }: Props) {
           <div style={{ marginTop: 8, fontSize: 11, color: 'var(--text-secondary)', textAlign: 'center' }}>
             {sheet.paperSize} &mdash; {sheet.scale}
             {sheet.titleBlock?.drawingTitle ? ` &mdash; ${sheet.titleBlock.drawingTitle}` : ''}
+            {viewports.length > 0 && ` | ${viewports.length} viewport(s)`}
           </div>
         )}
 

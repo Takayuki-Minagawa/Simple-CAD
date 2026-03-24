@@ -100,6 +100,9 @@ export function Editor2D() {
   const filteredDimensions = data.dimensions.filter(
     (d) => !activeStory || d.story === activeStory,
   );
+  const filteredConstructionLines = (data.constructionLines ?? []).filter(
+    (cl) => !activeStory || cl.story === activeStory,
+  );
 
   const isVisible = (layer: string) => layerVisibility[layer] !== false;
 
@@ -157,6 +160,64 @@ export function Editor2D() {
           {isVisible('annotation') && (
             <AnnotationLayer annotations={filteredAnnotations} selectedIds={selectedIds} />
           )}
+          {isVisible('construction') && filteredConstructionLines.length > 0 && (
+            <g className="layer-construction">
+              {filteredConstructionLines.map((cl) => {
+                // Extend construction line to very large bounds
+                const ext = 500000;
+                if (cl.type === 'xline') {
+                  return (
+                    <line
+                      key={cl.id}
+                      data-id={cl.id}
+                      x1={cl.origin.x - cl.direction.x * ext}
+                      y1={cl.origin.y - cl.direction.y * ext}
+                      x2={cl.origin.x + cl.direction.x * ext}
+                      y2={cl.origin.y + cl.direction.y * ext}
+                      stroke="var(--color-annotation)"
+                      strokeWidth={10}
+                      strokeDasharray="80 60"
+                      opacity={0.5}
+                    />
+                  );
+                }
+                // ray: origin to +direction
+                return (
+                  <line
+                    key={cl.id}
+                    data-id={cl.id}
+                    x1={cl.origin.x}
+                    y1={cl.origin.y}
+                    x2={cl.origin.x + cl.direction.x * ext}
+                    y2={cl.origin.y + cl.direction.y * ext}
+                    stroke="var(--color-annotation)"
+                    strokeWidth={10}
+                    strokeDasharray="80 60"
+                    opacity={0.5}
+                  />
+                );
+              })}
+            </g>
+          )}
+          {/* External reference overlay */}
+          {data.externalRefs?.map((ref) => {
+            if (!ref.visible) return null;
+            const refMembers = ref.data.members;
+            return (
+              <g key={ref.id} transform={`translate(${ref.offsetX}, ${ref.offsetY})`} opacity={0.35} style={{ pointerEvents: 'none' }}>
+                {refMembers.map((m) => {
+                  if (m.type === 'slab') {
+                    const pts = m.polygon.map((p) => `${p.x},${p.y}`).join(' ');
+                    return <polygon key={m.id} points={pts} fill="none" stroke="#999" strokeWidth={15} />;
+                  }
+                  if ('start' in m && 'end' in m) {
+                    return <line key={m.id} x1={m.start.x} y1={m.start.y} x2={m.end.x} y2={m.end.y} stroke="#999" strokeWidth={15} />;
+                  }
+                  return null;
+                })}
+              </g>
+            );
+          })}
           <DrawPreview drawState={drawState} activeTool={activeTool} />
           {selectionRectOverlay}
         </SvgCanvas>

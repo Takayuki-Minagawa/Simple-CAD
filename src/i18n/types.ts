@@ -208,4 +208,34 @@ export interface Translations {
   // Snap additions
   snapPerpendicular: string;
   snapNearest: string;
+
+  // Construction Lines
+  toolXline: string;
+  layerConstruction: string;
+
+  // Spline
+  toolSpline: string;
+
+  // Text Formatting
+  propFontWeight: string;
+  propFontStyle: string;
+  propTextDecoration: string;
+  propFontFamily: string;
+
+  // External References
+  xrefTitle: string;
+  xrefImport: string;
+  xrefRemove: string;
+
+  // Viewports
+  viewportTitle: string;
+  viewportAdd: string;
+  viewportRemove: string;
+
+  // Drawing Templates
+  templatePickerTitle: string;
+  templateA1Structure: string;
+  templateA3Detail: string;
+  templateBlankA1: string;
+  templateSelectPrompt: string;
 }

@@ -16,6 +16,9 @@ import type {
   Sheet,
   PlanView,
   Group,
+  ConstructionLine,
+  ExternalRef,
+  Viewport,
 } from '@/domain/structural/types';
 import {
   duplicateSelection,
@@ -101,6 +104,20 @@ export interface ProjectState {
   // Grouping
   createGroup: (ids: string[], name: string) => string | null;
   ungroupSelection: (groupId: string) => void;
+
+  // Construction Lines
+  addConstructionLine: (cl: ConstructionLine) => void;
+  deleteConstructionLine: (id: string) => void;
+
+  // External References
+  addExternalRef: (ref: ExternalRef) => void;
+  removeExternalRef: (id: string) => void;
+  toggleExternalRefVisibility: (id: string) => void;
+
+  // Viewports
+  addViewport: (viewport: Viewport) => void;
+  updateViewport: (id: string, updates: Partial<Viewport>) => void;
+  removeViewport: (id: string) => void;
 
   // Generic delete by id (from any collection)
   deleteById: (id: string) => void;
@@ -708,6 +725,88 @@ export const useProjectStore = create<ProjectState>()(
           state.isDirty = true;
         }),
 
+      // ── Construction Lines ──
+
+      addConstructionLine: (cl) =>
+        set((state) => {
+          if (!state.data) return;
+          if (!state.data.constructionLines) state.data.constructionLines = [];
+          state.data.constructionLines.push(cl);
+          state.isDirty = true;
+        }),
+
+      deleteConstructionLine: (id) =>
+        set((state) => {
+          if (!state.data || !state.data.constructionLines) return;
+          state.data.constructionLines = state.data.constructionLines.filter((cl) => cl.id !== id);
+          state.isDirty = true;
+        }),
+
+      // ── External References ──
+
+      addExternalRef: (ref) =>
+        set((state) => {
+          if (!state.data) return;
+          if (!state.data.externalRefs) state.data.externalRefs = [];
+          state.data.externalRefs.push(ref);
+          state.isDirty = true;
+        }),
+
+      removeExternalRef: (id) =>
+        set((state) => {
+          if (!state.data || !state.data.externalRefs) return;
+          state.data.externalRefs = state.data.externalRefs.filter((r) => r.id !== id);
+          state.isDirty = true;
+        }),
+
+      toggleExternalRefVisibility: (id) =>
+        set((state) => {
+          if (!state.data || !state.data.externalRefs) return;
+          const ref = state.data.externalRefs.find((r) => r.id === id);
+          if (ref) ref.visible = !ref.visible;
+          state.isDirty = true;
+        }),
+
+      // ── Viewports ──
+
+      addViewport: (viewport) =>
+        set((state) => {
+          if (!state.data) return;
+          const sheet = state.data.sheets.find((s) => s.id === viewport.sheetId);
+          if (!sheet) return;
+          if (!sheet.viewports) sheet.viewports = [];
+          sheet.viewports.push(viewport);
+          state.isDirty = true;
+        }),
+
+      updateViewport: (id, updates) =>
+        set((state) => {
+          if (!state.data) return;
+          for (const sheet of state.data.sheets) {
+            if (!sheet.viewports) continue;
+            const vp = sheet.viewports.find((v) => v.id === id);
+            if (vp) {
+              Object.assign(vp, updates);
+              state.isDirty = true;
+              return;
+            }
+          }
+        }),
+
+      removeViewport: (id) =>
+        set((state) => {
+          if (!state.data) return;
+          for (const sheet of state.data.sheets) {
+            if (!sheet.viewports) continue;
+            const idx = sheet.viewports.findIndex((v) => v.id === id);
+            if (idx >= 0) {
+              sheet.viewports.splice(idx, 1);
+              state.isDirty = true;
+              return;
+            }
+          }
+        }),
+
       // ── Generic delete ──
 
       deleteById: (id) =>
@@ -717,6 +816,9 @@ export const useProjectStore = create<ProjectState>()(
           state.data.openings = state.data.openings.filter((o) => o.id !== id && o.memberId !== id);
           state.data.annotations = state.data.annotations.filter((a) => a.id !== id);
           state.data.dimensions = state.data.dimensions.filter((d) => d.id !== id);
+          if (state.data.constructionLines) {
+            state.data.constructionLines = state.data.constructionLines.filter((cl) => cl.id !== id);
+          }
           state.isDirty = true;
         }),
     })),
