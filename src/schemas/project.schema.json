@@ -1,0 +1,368 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://structural-web-cad.example/project.schema.json",
+  "title": "Structural CAD Project",
+  "type": "object",
+  "required": [
+    "schemaVersion",
+    "project",
+    "stories",
+    "grids",
+    "materials",
+    "sections",
+    "members",
+    "openings",
+    "annotations",
+    "dimensions",
+    "sheets",
+    "views"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "schemaVersion": {
+      "type": "string",
+      "pattern": "^\\d+\\.\\d+\\.\\d+$"
+    },
+    "project": { "$ref": "#/$defs/ProjectMeta" },
+    "stories": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/Story" }
+    },
+    "grids": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/Grid" }
+    },
+    "materials": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/Material" }
+    },
+    "sections": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/Section" }
+    },
+    "members": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/Member" }
+    },
+    "openings": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/Opening" }
+    },
+    "annotations": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/Annotation" }
+    },
+    "dimensions": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/Dimension" }
+    },
+    "sheets": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/Sheet" }
+    },
+    "views": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/View" }
+    },
+    "issues": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/Issue" }
+    }
+  },
+  "$defs": {
+    "Point2D": {
+      "type": "object",
+      "required": ["x", "y"],
+      "additionalProperties": false,
+      "properties": {
+        "x": { "type": "number" },
+        "y": { "type": "number" }
+      }
+    },
+    "Point3D": {
+      "type": "object",
+      "required": ["x", "y", "z"],
+      "additionalProperties": false,
+      "properties": {
+        "x": { "type": "number" },
+        "y": { "type": "number" },
+        "z": { "type": "number" }
+      }
+    },
+    "ProjectMeta": {
+      "type": "object",
+      "required": ["id", "name", "unit"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "name": { "type": "string", "minLength": 1 },
+        "unit": { "type": "string", "const": "mm" }
+      }
+    },
+    "Story": {
+      "type": "object",
+      "required": ["id", "name", "elevation", "height"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "name": { "type": "string" },
+        "elevation": { "type": "number" },
+        "height": { "type": "number", "exclusiveMinimum": 0 }
+      }
+    },
+    "Grid": {
+      "type": "object",
+      "required": ["id", "axis", "name", "position"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "axis": { "type": "string", "enum": ["X", "Y"] },
+        "name": { "type": "string" },
+        "position": { "type": "number" }
+      }
+    },
+    "Material": {
+      "type": "object",
+      "required": ["id", "name", "type"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "name": { "type": "string" },
+        "type": {
+          "type": "string",
+          "enum": ["concrete", "steel", "wood", "other"]
+        }
+      }
+    },
+    "Section": {
+      "oneOf": [
+        { "$ref": "#/$defs/RectColumnSection" },
+        { "$ref": "#/$defs/RectBeamSection" },
+        { "$ref": "#/$defs/SlabSection" },
+        { "$ref": "#/$defs/WallSection" }
+      ]
+    },
+    "RectColumnSection": {
+      "type": "object",
+      "required": ["id", "kind", "width", "depth"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "kind": { "type": "string", "const": "rc_column_rect" },
+        "width": { "type": "number", "exclusiveMinimum": 0 },
+        "depth": { "type": "number", "exclusiveMinimum": 0 }
+      }
+    },
+    "RectBeamSection": {
+      "type": "object",
+      "required": ["id", "kind", "width", "depth"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "kind": { "type": "string", "const": "rc_beam_rect" },
+        "width": { "type": "number", "exclusiveMinimum": 0 },
+        "depth": { "type": "number", "exclusiveMinimum": 0 }
+      }
+    },
+    "SlabSection": {
+      "type": "object",
+      "required": ["id", "kind", "thickness"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "kind": { "type": "string", "const": "rc_slab" },
+        "thickness": { "type": "number", "exclusiveMinimum": 0 }
+      }
+    },
+    "WallSection": {
+      "type": "object",
+      "required": ["id", "kind", "thickness"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "kind": { "type": "string", "const": "rc_wall" },
+        "thickness": { "type": "number", "exclusiveMinimum": 0 }
+      }
+    },
+    "Member": {
+      "oneOf": [
+        { "$ref": "#/$defs/ColumnMember" },
+        { "$ref": "#/$defs/BeamMember" },
+        { "$ref": "#/$defs/WallMember" },
+        { "$ref": "#/$defs/SlabMember" }
+      ]
+    },
+    "ColumnMember": {
+      "type": "object",
+      "required": ["id", "type", "story", "sectionId", "materialId", "start", "end"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "type": { "type": "string", "const": "column" },
+        "story": { "type": "string", "minLength": 1 },
+        "sectionId": { "type": "string", "minLength": 1 },
+        "materialId": { "type": "string", "minLength": 1 },
+        "start": { "$ref": "#/$defs/Point3D" },
+        "end": { "$ref": "#/$defs/Point3D" },
+        "rotation": { "type": "number" },
+        "tags": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "BeamMember": {
+      "type": "object",
+      "required": ["id", "type", "story", "sectionId", "materialId", "start", "end"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "type": { "type": "string", "const": "beam" },
+        "story": { "type": "string", "minLength": 1 },
+        "sectionId": { "type": "string", "minLength": 1 },
+        "materialId": { "type": "string", "minLength": 1 },
+        "start": { "$ref": "#/$defs/Point3D" },
+        "end": { "$ref": "#/$defs/Point3D" },
+        "rotation": { "type": "number" },
+        "tags": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "WallMember": {
+      "type": "object",
+      "required": [
+        "id", "type", "story", "sectionId", "materialId",
+        "start", "end", "height", "thickness"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "type": { "type": "string", "const": "wall" },
+        "story": { "type": "string", "minLength": 1 },
+        "sectionId": { "type": "string", "minLength": 1 },
+        "materialId": { "type": "string", "minLength": 1 },
+        "start": { "$ref": "#/$defs/Point3D" },
+        "end": { "$ref": "#/$defs/Point3D" },
+        "height": { "type": "number", "exclusiveMinimum": 0 },
+        "thickness": { "type": "number", "exclusiveMinimum": 0 },
+        "rotation": { "type": "number" },
+        "tags": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "SlabMember": {
+      "type": "object",
+      "required": ["id", "type", "story", "sectionId", "materialId", "polygon", "level"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "type": { "type": "string", "const": "slab" },
+        "story": { "type": "string", "minLength": 1 },
+        "sectionId": { "type": "string", "minLength": 1 },
+        "materialId": { "type": "string", "minLength": 1 },
+        "polygon": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/Point2D" },
+          "minItems": 3
+        },
+        "level": { "type": "number" },
+        "rotation": { "type": "number" },
+        "tags": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "Opening": {
+      "type": "object",
+      "required": ["id", "memberId", "type", "position", "width", "height"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "memberId": { "type": "string", "minLength": 1 },
+        "type": { "type": "string", "enum": ["door", "window", "void"] },
+        "position": { "$ref": "#/$defs/Point3D" },
+        "width": { "type": "number", "exclusiveMinimum": 0 },
+        "height": { "type": "number", "exclusiveMinimum": 0 }
+      }
+    },
+    "Annotation": {
+      "type": "object",
+      "required": ["id", "type", "story", "x", "y", "text"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "type": { "type": "string", "enum": ["text", "label", "leader"] },
+        "story": { "type": "string", "minLength": 1 },
+        "x": { "type": "number" },
+        "y": { "type": "number" },
+        "text": { "type": "string" },
+        "fontSize": { "type": "number", "exclusiveMinimum": 0 },
+        "rotation": { "type": "number" }
+      }
+    },
+    "Dimension": {
+      "type": "object",
+      "required": ["id", "story", "start", "end", "offset"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "story": { "type": "string", "minLength": 1 },
+        "start": { "$ref": "#/$defs/Point2D" },
+        "end": { "$ref": "#/$defs/Point2D" },
+        "offset": { "type": "number" },
+        "text": { "type": "string" }
+      }
+    },
+    "View": {
+      "oneOf": [
+        { "$ref": "#/$defs/PlanView" },
+        { "$ref": "#/$defs/Model3DView" }
+      ]
+    },
+    "PlanView": {
+      "type": "object",
+      "required": ["id", "type", "story", "center", "width", "height", "rotation"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "type": { "type": "string", "const": "plan" },
+        "story": { "type": "string", "minLength": 1 },
+        "center": { "$ref": "#/$defs/Point2D" },
+        "width": { "type": "number", "exclusiveMinimum": 0 },
+        "height": { "type": "number", "exclusiveMinimum": 0 },
+        "rotation": { "type": "number" }
+      }
+    },
+    "Model3DView": {
+      "type": "object",
+      "required": ["id", "type", "story"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "type": { "type": "string", "const": "model3d" },
+        "story": { "type": "string", "minLength": 1 }
+      }
+    },
+    "Sheet": {
+      "type": "object",
+      "required": ["id", "name", "paperSize", "scale", "viewIds"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "name": { "type": "string" },
+        "paperSize": {
+          "type": "string",
+          "enum": ["A0", "A1", "A2", "A3", "A4"]
+        },
+        "scale": { "type": "string", "pattern": "^1:\\d+$" },
+        "viewIds": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
+    "Issue": {
+      "type": "object",
+      "required": ["level", "message"],
+      "additionalProperties": false,
+      "properties": {
+        "level": { "type": "string", "enum": ["error", "warning", "info"] },
+        "message": { "type": "string" },
+        "memberId": { "type": "string" }
+      }
+    }
+  }
+}

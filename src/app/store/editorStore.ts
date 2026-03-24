@@ -1,0 +1,116 @@
+import { create } from 'zustand';
+
+export type EditorTool =
+  | 'select'
+  | 'pan'
+  | 'column'
+  | 'beam'
+  | 'wall'
+  | 'slab'
+  | 'dimension'
+  | 'annotation';
+
+export type SnapMode = 'grid' | 'endpoint' | 'midpoint' | 'intersection';
+
+export const LAYER_NAMES = [
+  'grid',
+  'member-column',
+  'member-beam',
+  'member-wall',
+  'member-slab',
+  'opening',
+  'dimension',
+  'annotation',
+] as const;
+
+export type LayerName = (typeof LAYER_NAMES)[number];
+
+interface EditorState {
+  // View mode
+  viewMode: '2d' | '3d';
+  activeStory: string | null;
+
+  // Selection
+  selectedIds: string[];
+
+  // Tool
+  activeTool: EditorTool;
+
+  // Snap
+  snapEnabled: boolean;
+  activeSnapModes: SnapMode[];
+  gridSpacing: number;
+
+  // 2D viewport
+  pan: { x: number; y: number };
+  zoom: number;
+
+  // Cursor world position
+  cursorWorld: { x: number; y: number } | null;
+
+  // Layer visibility
+  layerVisibility: Record<string, boolean>;
+
+  // 3D options
+  wireframe: boolean;
+  orthographic: boolean;
+
+  // Actions
+  setViewMode: (mode: '2d' | '3d') => void;
+  setActiveStory: (storyId: string | null) => void;
+  setSelectedIds: (ids: string[]) => void;
+  toggleSelection: (id: string) => void;
+  setActiveTool: (tool: EditorTool) => void;
+  setSnapEnabled: (enabled: boolean) => void;
+  setPan: (pan: { x: number; y: number }) => void;
+  setZoom: (zoom: number) => void;
+  setCursorWorld: (pos: { x: number; y: number } | null) => void;
+  toggleLayerVisibility: (layer: string) => void;
+  setWireframe: (on: boolean) => void;
+  setOrthographic: (on: boolean) => void;
+}
+
+const defaultLayerVisibility: Record<string, boolean> = {};
+for (const name of LAYER_NAMES) {
+  defaultLayerVisibility[name] = true;
+}
+
+export const useEditorStore = create<EditorState>()((set) => ({
+  viewMode: '2d',
+  activeStory: null,
+  selectedIds: [],
+  activeTool: 'select',
+  snapEnabled: true,
+  activeSnapModes: ['grid', 'endpoint', 'midpoint', 'intersection'],
+  gridSpacing: 1000,
+  pan: { x: 0, y: 0 },
+  zoom: 0.05,
+  cursorWorld: null,
+  layerVisibility: { ...defaultLayerVisibility },
+  wireframe: false,
+  orthographic: true,
+
+  setViewMode: (mode) => set({ viewMode: mode }),
+  setActiveStory: (storyId) => set({ activeStory: storyId }),
+  setSelectedIds: (ids) => set({ selectedIds: ids }),
+  toggleSelection: (id) =>
+    set((state) => ({
+      selectedIds: state.selectedIds.includes(id)
+        ? state.selectedIds.filter((i) => i !== id)
+        : [...state.selectedIds, id],
+    })),
+  setActiveTool: (tool) => set({ activeTool: tool }),
+  setSnapEnabled: (enabled) => set({ snapEnabled: enabled }),
+  setPan: (pan) => set({ pan }),
+  setZoom: (zoom) => set({ zoom: Math.max(0.001, Math.min(10, zoom)) }),
+  setCursorWorld: (pos) => set({ cursorWorld: pos }),
+  toggleLayerVisibility: (layer) =>
+    set((state) => ({
+      layerVisibility: {
+        ...state.layerVisibility,
+        [layer]: !state.layerVisibility[layer],
+      },
+    })),
+  setWireframe: (on) => set({ wireframe: on }),
+  setOrthographic: (on) => set({ orthographic: on }),
+}));

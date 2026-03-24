@@ -1,0 +1,179 @@
+{
+  "schemaVersion": "1.0.0",
+  "project": {
+    "id": "proj-001",
+    "name": "rc-sample",
+    "unit": "mm"
+  },
+  "stories": [
+    { "id": "1F", "name": "1F", "elevation": 0, "height": 3000 },
+    { "id": "2F", "name": "2F", "elevation": 3000, "height": 3000 }
+  ],
+  "grids": [
+    { "id": "GX1", "axis": "X", "name": "X1", "position": 0 },
+    { "id": "GX2", "axis": "X", "name": "X2", "position": 4000 },
+    { "id": "GX3", "axis": "X", "name": "X3", "position": 8000 },
+    { "id": "GY1", "axis": "Y", "name": "Y1", "position": 0 },
+    { "id": "GY2", "axis": "Y", "name": "Y2", "position": 6000 }
+  ],
+  "materials": [
+    { "id": "MAT-RC-24", "name": "RC Fc24", "type": "concrete" }
+  ],
+  "sections": [
+    { "id": "SEC-C600", "kind": "rc_column_rect", "width": 600, "depth": 600 },
+    { "id": "SEC-B300x600", "kind": "rc_beam_rect", "width": 300, "depth": 600 },
+    { "id": "SEC-SLAB180", "kind": "rc_slab", "thickness": 180 },
+    { "id": "SEC-WALL200", "kind": "rc_wall", "thickness": 200 }
+  ],
+  "members": [
+    {
+      "id": "C-X1Y1-1F", "type": "column", "story": "1F",
+      "sectionId": "SEC-C600", "materialId": "MAT-RC-24",
+      "start": { "x": 0, "y": 0, "z": 0 },
+      "end": { "x": 0, "y": 0, "z": 3000 },
+      "rotation": 0, "tags": ["grid:X1-Y1"]
+    },
+    {
+      "id": "C-X2Y1-1F", "type": "column", "story": "1F",
+      "sectionId": "SEC-C600", "materialId": "MAT-RC-24",
+      "start": { "x": 4000, "y": 0, "z": 0 },
+      "end": { "x": 4000, "y": 0, "z": 3000 },
+      "rotation": 0, "tags": ["grid:X2-Y1"]
+    },
+    {
+      "id": "C-X3Y1-1F", "type": "column", "story": "1F",
+      "sectionId": "SEC-C600", "materialId": "MAT-RC-24",
+      "start": { "x": 8000, "y": 0, "z": 0 },
+      "end": { "x": 8000, "y": 0, "z": 3000 },
+      "rotation": 0, "tags": ["grid:X3-Y1"]
+    },
+    {
+      "id": "C-X1Y2-1F", "type": "column", "story": "1F",
+      "sectionId": "SEC-C600", "materialId": "MAT-RC-24",
+      "start": { "x": 0, "y": 6000, "z": 0 },
+      "end": { "x": 0, "y": 6000, "z": 3000 },
+      "rotation": 0, "tags": ["grid:X1-Y2"]
+    },
+    {
+      "id": "C-X2Y2-1F", "type": "column", "story": "1F",
+      "sectionId": "SEC-C600", "materialId": "MAT-RC-24",
+      "start": { "x": 4000, "y": 6000, "z": 0 },
+      "end": { "x": 4000, "y": 6000, "z": 3000 },
+      "rotation": 0, "tags": ["grid:X2-Y2"]
+    },
+    {
+      "id": "C-X3Y2-1F", "type": "column", "story": "1F",
+      "sectionId": "SEC-C600", "materialId": "MAT-RC-24",
+      "start": { "x": 8000, "y": 6000, "z": 0 },
+      "end": { "x": 8000, "y": 6000, "z": 3000 },
+      "rotation": 0, "tags": ["grid:X3-Y2"]
+    },
+    {
+      "id": "B-Y1-X1X2-1F", "type": "beam", "story": "1F",
+      "sectionId": "SEC-B300x600", "materialId": "MAT-RC-24",
+      "start": { "x": 0, "y": 0, "z": 3000 },
+      "end": { "x": 4000, "y": 0, "z": 3000 },
+      "rotation": 0
+    },
+    {
+      "id": "B-Y1-X2X3-1F", "type": "beam", "story": "1F",
+      "sectionId": "SEC-B300x600", "materialId": "MAT-RC-24",
+      "start": { "x": 4000, "y": 0, "z": 3000 },
+      "end": { "x": 8000, "y": 0, "z": 3000 },
+      "rotation": 0
+    },
+    {
+      "id": "B-Y2-X1X2-1F", "type": "beam", "story": "1F",
+      "sectionId": "SEC-B300x600", "materialId": "MAT-RC-24",
+      "start": { "x": 0, "y": 6000, "z": 3000 },
+      "end": { "x": 4000, "y": 6000, "z": 3000 },
+      "rotation": 0
+    },
+    {
+      "id": "B-Y2-X2X3-1F", "type": "beam", "story": "1F",
+      "sectionId": "SEC-B300x600", "materialId": "MAT-RC-24",
+      "start": { "x": 4000, "y": 6000, "z": 3000 },
+      "end": { "x": 8000, "y": 6000, "z": 3000 },
+      "rotation": 0
+    },
+    {
+      "id": "B-X1-Y1Y2-1F", "type": "beam", "story": "1F",
+      "sectionId": "SEC-B300x600", "materialId": "MAT-RC-24",
+      "start": { "x": 0, "y": 0, "z": 3000 },
+      "end": { "x": 0, "y": 6000, "z": 3000 },
+      "rotation": 0
+    },
+    {
+      "id": "W-X3-Y1Y2-1F", "type": "wall", "story": "1F",
+      "sectionId": "SEC-WALL200", "materialId": "MAT-RC-24",
+      "start": { "x": 8000, "y": 0, "z": 0 },
+      "end": { "x": 8000, "y": 6000, "z": 0 },
+      "height": 3000, "thickness": 200,
+      "rotation": 0
+    },
+    {
+      "id": "SLAB-1F", "type": "slab", "story": "1F",
+      "sectionId": "SEC-SLAB180", "materialId": "MAT-RC-24",
+      "polygon": [
+        { "x": 0, "y": 0 },
+        { "x": 8000, "y": 0 },
+        { "x": 8000, "y": 6000 },
+        { "x": 0, "y": 6000 }
+      ],
+      "level": 3000
+    }
+  ],
+  "openings": [
+    {
+      "id": "OP-W1-1F", "memberId": "W-X3-Y1Y2-1F",
+      "type": "window",
+      "position": { "x": 8000, "y": 3000, "z": 900 },
+      "width": 1800, "height": 1200
+    }
+  ],
+  "annotations": [
+    {
+      "id": "NOTE-001", "type": "text", "story": "1F",
+      "x": 4000, "y": -1500,
+      "text": "1F 平面図"
+    }
+  ],
+  "dimensions": [
+    {
+      "id": "DIM-X-001", "story": "1F",
+      "start": { "x": 0, "y": 0 },
+      "end": { "x": 4000, "y": 0 },
+      "offset": -1000
+    },
+    {
+      "id": "DIM-X-002", "story": "1F",
+      "start": { "x": 4000, "y": 0 },
+      "end": { "x": 8000, "y": 0 },
+      "offset": -1000
+    },
+    {
+      "id": "DIM-Y-001", "story": "1F",
+      "start": { "x": 0, "y": 0 },
+      "end": { "x": 0, "y": 6000 },
+      "offset": -1000
+    }
+  ],
+  "views": [
+    {
+      "id": "VIEW-1F-PLAN", "type": "plan", "story": "1F",
+      "center": { "x": 4000, "y": 3000 },
+      "width": 14000, "height": 11000, "rotation": 0
+    },
+    {
+      "id": "VIEW-3D-001", "type": "model3d", "story": "1F"
+    }
+  ],
+  "sheets": [
+    {
+      "id": "S-001", "name": "1F平面図",
+      "paperSize": "A1", "scale": "1:100",
+      "viewIds": ["VIEW-1F-PLAN"]
+    }
+  ],
+  "issues": []
+}
