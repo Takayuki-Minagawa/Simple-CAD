@@ -4,7 +4,7 @@ import type { EditorTool } from '@/app/store';
 import { useI18n } from '@/i18n';
 import { openDxfFile, openIfcFile, openJsonFile, saveFile } from '@/libs/fileSystem';
 import { importProjectJson } from '@/domain/import/jsonImport';
-import { importDxf } from '@/domain/import/dxfImport';
+import { importDxf, getAutoSections, DXF_MATERIAL, DXF_MATERIAL_ID } from '@/domain/import/dxfImport';
 import { exportProjectJson } from '@/domain/export/jsonExport';
 import { importIfc } from '@/domain/integration/ifc';
 import { importStructuralAnalysisJson, STRUCTURAL_ANALYSIS_SCHEMA } from '@/domain/integration/structuralAnalysisJson';
@@ -23,7 +23,7 @@ interface Props {
 }
 
 export function MainToolbar({ onExport, onMasters, onAiAssist, onHelp, onTransform, onPrintPreview }: Props) {
-  const { data, isDirty, fileHandle, loadProject, newProject, setFileHandle, markClean, addAnnotations, addExternalRef } =
+  const { data, isDirty, fileHandle, loadProject, newProject, setFileHandle, markClean, addAnnotations, addExternalRef, addMember, addMaterial, addSection, addDimension } =
     useProjectStore();
   const { viewMode, setViewMode, activeTool, setActiveTool, setSelectedIds, selectedIds, theme, toggleTheme, activeStory } =
     useEditorStore();
@@ -131,19 +131,70 @@ export function MainToolbar({ onExport, onMasters, onAiAssist, onHelp, onTransfo
       return;
     }
 
+    // Ask the user whether to convert geometry
+    const convertGeometry = confirm(
+      locale === 'ja'
+        ? '形状変換ありで取り込みますか？\n\nOK: 形状変換あり（部材生成）\nキャンセル: 注記のみ取込'
+        : 'Import with geometry conversion?\n\nOK: With geometry conversion (generate members)\nCancel: Annotations only',
+    );
+
     try {
       const result = await openDxfFile();
-      const imported = importDxf(result.content, storyId);
+      const imported = importDxf(result.content, storyId, { convertGeometry });
       addAnnotations(imported.annotations);
+
+      if (convertGeometry) {
+        // Add auto-generated material if not already present
+        if (!data.materials.some((m) => m.id === DXF_MATERIAL_ID)) {
+          addMaterial(DXF_MATERIAL);
+        }
+
+        // Add auto-generated sections if not already present
+        const autoSections = getAutoSections(imported);
+        for (const section of autoSections) {
+          if (!data.sections.some((s) => s.id === section.id)) {
+            addSection(section);
+          }
+        }
+
+        // Add members
+        for (const member of imported.members) {
+          addMember(member);
+        }
+
+        // Add dimensions
+        for (const dimension of imported.dimensions) {
+          addDimension(dimension);
+        }
+      }
+
+      const memberCounts = convertGeometry
+        ? (() => {
+            const walls = imported.members.filter((m) => m.type === 'wall').length;
+            const columns = imported.members.filter((m) => m.type === 'column').length;
+            const beams = imported.members.filter((m) => m.type === 'beam').length;
+            const slabs = imported.members.filter((m) => m.type === 'slab').length;
+            const dims = imported.dimensions.length;
+            const parts: string[] = [];
+            if (walls > 0) parts.push(locale === 'ja' ? `壁: ${walls}` : `Walls: ${walls}`);
+            if (columns > 0) parts.push(locale === 'ja' ? `柱: ${columns}` : `Columns: ${columns}`);
+            if (beams > 0) parts.push(locale === 'ja' ? `梁: ${beams}` : `Beams: ${beams}`);
+            if (slabs > 0) parts.push(locale === 'ja' ? `スラブ: ${slabs}` : `Slabs: ${slabs}`);
+            if (dims > 0) parts.push(locale === 'ja' ? `寸法: ${dims}` : `Dimensions: ${dims}`);
+            return parts.length > 0 ? parts.join(', ') : '';
+          })()
+        : '';
 
       const summary = locale === 'ja'
         ? [
             `${imported.annotations.length} 件の注記を ${storyId} に追加しました。`,
+            memberCounts ? `部材: ${memberCounts}` : '',
             `検出プリミティブ: ${imported.primitiveCount}`,
             imported.warnings.length > 0 ? `警告:\n${imported.warnings.slice(0, 8).join('\n')}` : '',
           ].filter(Boolean).join('\n')
         : [
             `Imported ${imported.annotations.length} annotations into ${storyId}.`,
+            memberCounts ? `Members: ${memberCounts}` : '',
             `Detected primitives: ${imported.primitiveCount}`,
             imported.warnings.length > 0 ? `Warnings:\n${imported.warnings.slice(0, 8).join('\n')}` : '',
           ].filter(Boolean).join('\n');
