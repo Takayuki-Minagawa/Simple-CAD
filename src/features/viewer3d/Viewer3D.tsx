@@ -1,5 +1,7 @@
+import { useEffect, useMemo, useState } from 'react';
 import { Canvas } from '@react-three/fiber';
 import { OrbitControls, OrthographicCamera, PerspectiveCamera, GizmoHelper, GizmoViewport } from '@react-three/drei';
+import * as THREE from 'three';
 import { useProjectStore, useEditorStore } from '@/app/store';
 import { useI18n } from '@/i18n';
 import { MemberMesh } from './MemberMesh';
@@ -9,7 +11,7 @@ export function Viewer3D() {
   const data = useProjectStore((s) => s.data);
   const { activeStory, selectedIds, wireframe, orthographic, setWireframe, setOrthographic, setSelectedIds } =
     useEditorStore();
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
 
   if (!data) return null;
 
@@ -30,6 +32,19 @@ export function Viewer3D() {
 
   // Scale everything to reasonable Three.js units (mm -> m conversion via scale)
   const scale = 0.001;
+  const [clipEnabled, setClipEnabled] = useState(false);
+  const [clipHeight, setClipHeight] = useState(topStory);
+  const clipLabel = locale === 'ja' ? '断面' : 'Clip';
+  const clipOffLabel = locale === 'ja' ? 'OFF' : 'OFF';
+
+  useEffect(() => {
+    setClipHeight((prev) => Math.min(prev, topStory || 0));
+  }, [topStory]);
+
+  const clippingPlanes = useMemo(() => {
+    if (!clipEnabled) return undefined;
+    return [new THREE.Plane(new THREE.Vector3(0, -1, 0), clipHeight * scale)];
+  }, [clipEnabled, clipHeight, scale]);
 
   return (
     <div style={{ width: '100%', height: '100%', position: 'relative' }}>
@@ -60,9 +75,48 @@ export function Viewer3D() {
         </button>
       </div>
 
+      <div
+        style={{
+          position: 'absolute',
+          top: 48,
+          right: 8,
+          zIndex: 10,
+          width: 190,
+          padding: 10,
+          borderRadius: 8,
+          background: 'rgba(16, 24, 40, 0.72)',
+          color: '#fff',
+          display: 'grid',
+          gap: 8,
+        }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+          <span style={{ fontSize: 11, letterSpacing: 0.3 }}>{clipLabel}</span>
+          <button
+            className={`toolbar-btn ${clipEnabled ? 'active' : ''}`}
+            style={{ minHeight: 24, fontSize: 11 }}
+            onClick={() => setClipEnabled((prev) => !prev)}
+          >
+            {clipEnabled ? `${Math.round(clipHeight)} mm` : clipOffLabel}
+          </button>
+        </div>
+        <input
+          type="range"
+          min={0}
+          max={Math.max(topStory, 1)}
+          step={100}
+          value={clipHeight}
+          disabled={!clipEnabled}
+          onChange={(event) => setClipHeight(Number(event.target.value))}
+        />
+      </div>
+
       <Canvas
         gl={{ antialias: true }}
         onPointerMissed={() => setSelectedIds([])}
+        onCreated={({ gl }) => {
+          gl.localClippingEnabled = true;
+        }}
       >
         {orthographic ? (
           <OrthographicCamera
@@ -102,6 +156,7 @@ export function Viewer3D() {
                 section={data.sections.find((s) => s.id === member.sectionId)}
                 selected={selectedIds.includes(member.id)}
                 wireframe={wireframe}
+                clippingPlanes={clippingPlanes}
                 onClick={() => setSelectedIds([member.id])}
               />
             ))}

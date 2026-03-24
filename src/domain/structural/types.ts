@@ -179,6 +179,17 @@ export type View = PlanView | Model3DView;
 // ── Sheet ────────────────────────────────────────────────────
 
 export type PaperSize = 'A0' | 'A1' | 'A2' | 'A3' | 'A4';
+export type TitleBlockTemplate = 'standard' | 'compact' | 'minimal';
+
+export interface SheetTitleBlock {
+  projectName?: string;
+  drawingTitle?: string;
+  drawnBy?: string;
+  checkedBy?: string;
+  issueDate?: string;
+  revision?: string;
+  note?: string;
+}
 
 export interface Sheet {
   id: string;
@@ -186,6 +197,8 @@ export interface Sheet {
   paperSize: PaperSize;
   scale: string;
   viewIds: string[];
+  titleBlockTemplate?: TitleBlockTemplate;
+  titleBlock?: SheetTitleBlock;
 }
 
 // ── Issue ────────────────────────────────────────────────────

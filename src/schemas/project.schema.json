@@ -351,7 +351,25 @@
         "viewIds": {
           "type": "array",
           "items": { "type": "string", "minLength": 1 }
-        }
+        },
+        "titleBlockTemplate": {
+          "type": "string",
+          "enum": ["standard", "compact", "minimal"]
+        },
+        "titleBlock": { "$ref": "#/$defs/SheetTitleBlock" }
+      }
+    },
+    "SheetTitleBlock": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "projectName": { "type": "string" },
+        "drawingTitle": { "type": "string" },
+        "drawnBy": { "type": "string" },
+        "checkedBy": { "type": "string" },
+        "issueDate": { "type": "string" },
+        "revision": { "type": "string" },
+        "note": { "type": "string" }
       }
     },
     "Issue": {

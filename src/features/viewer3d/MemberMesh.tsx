@@ -7,6 +7,7 @@ interface Props {
   section: Section | undefined;
   selected: boolean;
   wireframe: boolean;
+  clippingPlanes?: THREE.Plane[];
   onClick: () => void;
 }
 
@@ -18,7 +19,7 @@ const COLORS = {
   selected: '#3b82f6',
 };
 
-export function MemberMesh({ member, section, selected, wireframe, onClick }: Props) {
+export function MemberMesh({ member, section, selected, wireframe, clippingPlanes, onClick }: Props) {
   const color = selected ? COLORS.selected : COLORS[member.type];
 
   switch (member.type) {
@@ -29,6 +30,7 @@ export function MemberMesh({ member, section, selected, wireframe, onClick }: Pr
           section={section}
           color={color}
           wireframe={wireframe}
+          clippingPlanes={clippingPlanes}
           onClick={onClick}
         />
       );
@@ -39,6 +41,7 @@ export function MemberMesh({ member, section, selected, wireframe, onClick }: Pr
           section={section}
           color={color}
           wireframe={wireframe}
+          clippingPlanes={clippingPlanes}
           onClick={onClick}
         />
       );
@@ -49,6 +52,7 @@ export function MemberMesh({ member, section, selected, wireframe, onClick }: Pr
           section={section}
           color={color}
           wireframe={wireframe}
+          clippingPlanes={clippingPlanes}
           onClick={onClick}
         />
       );
@@ -59,6 +63,7 @@ export function MemberMesh({ member, section, selected, wireframe, onClick }: Pr
           section={section}
           color={color}
           wireframe={wireframe}
+          clippingPlanes={clippingPlanes}
           onClick={onClick}
         />
       );
@@ -70,12 +75,14 @@ function ColumnMesh({
   section,
   color,
   wireframe,
+  clippingPlanes,
   onClick,
 }: {
   member: Member & { type: 'column' };
   section: Section | undefined;
   color: string;
   wireframe: boolean;
+  clippingPlanes?: THREE.Plane[];
   onClick: () => void;
 }) {
   const w = section && 'width' in section ? section.width : 600;
@@ -93,7 +100,7 @@ function ColumnMesh({
       }}
     >
       <boxGeometry args={[w, d, h]} />
-      <meshStandardMaterial color={color} wireframe={wireframe} transparent opacity={0.85} />
+      <meshStandardMaterial color={color} wireframe={wireframe} transparent opacity={0.85} clippingPlanes={clippingPlanes} />
     </mesh>
   );
 }
@@ -103,12 +110,14 @@ function BeamMesh({
   section,
   color,
   wireframe,
+  clippingPlanes,
   onClick,
 }: {
   member: Member & { type: 'beam' };
   section: Section | undefined;
   color: string;
   wireframe: boolean;
+  clippingPlanes?: THREE.Plane[];
   onClick: () => void;
 }) {
   const w = section && 'width' in section ? section.width : 300;
@@ -140,7 +149,7 @@ function BeamMesh({
       }}
     >
       <boxGeometry args={[w, d, length]} />
-      <meshStandardMaterial color={color} wireframe={wireframe} transparent opacity={0.75} />
+      <meshStandardMaterial color={color} wireframe={wireframe} transparent opacity={0.75} clippingPlanes={clippingPlanes} />
     </mesh>
   );
 }
@@ -150,12 +159,14 @@ function WallMesh({
   section,
   color,
   wireframe,
+  clippingPlanes,
   onClick,
 }: {
   member: Member & { type: 'wall' };
   section: Section | undefined;
   color: string;
   wireframe: boolean;
+  clippingPlanes?: THREE.Plane[];
   onClick: () => void;
 }) {
   const thickness = section && 'thickness' in section ? section.thickness : member.thickness;
@@ -186,6 +197,7 @@ function WallMesh({
         transparent
         opacity={0.6}
         side={THREE.DoubleSide}
+        clippingPlanes={clippingPlanes}
       />
     </mesh>
   );
@@ -196,12 +208,14 @@ function SlabMesh({
   section,
   color,
   wireframe,
+  clippingPlanes,
   onClick,
 }: {
   member: Member & { type: 'slab' };
   section: Section | undefined;
   color: string;
   wireframe: boolean;
+  clippingPlanes?: THREE.Plane[];
   onClick: () => void;
 }) {
   const thickness = section && 'thickness' in section ? section.thickness : 180;
@@ -238,6 +252,7 @@ function SlabMesh({
         transparent
         opacity={0.5}
         side={THREE.DoubleSide}
+        clippingPlanes={clippingPlanes}
       />
     </mesh>
   );

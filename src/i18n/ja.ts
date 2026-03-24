@@ -102,10 +102,10 @@ export const ja: Translations = {
   helpClose: '閉じる',
   helpSectionOverview: '概要',
   helpOverviewText:
-    'Structural Web CAD は、構造設計（建築構造）に特化した静的 Web アプリケーションです。ブラウザだけで動作し、サーバーは不要です。2D 平面図の作図・編集、Three.js による 3D 確認ビュー、SVG / PDF / DXF へのエクスポートが可能です。',
+    'Structural Web CAD は、構造設計（建築構造）に特化した静的 Web アプリケーションです。ブラウザだけで動作し、サーバーは不要です。2D 平面図の作図・編集、Three.js による 3D 確認ビュー、断面クリップ、SVG / PDF / DXF へのエクスポート、DXF 注記取り込みが可能です。',
   helpSectionGettingStarted: 'はじめに',
   helpGettingStartedText:
-    '1. ツールバーの「サンプル」をクリックしてデモデータを読み込みます\n2. 左パネルで階(Story)を切り替えます\n3. 描画ツールで部材を追加します\n4. 「選択」ツールでオブジェクトを選択し、右パネルでプロパティを編集します\n5. 「2D / 3D」ボタンで表示を切り替えます\n6. 「出力」ボタンで SVG / PDF / DXF にエクスポートします',
+    '1. ツールバーの「サンプル」をクリックしてデモデータを読み込みます\n2. 左パネルで階(Story)を切り替え、必要なら「複製」で上階を作ります\n3. 描画ツールで部材を追加します\n4. 「マスタ」から materials / sections / sheets とタイトルブロックを編集します\n5. 「2D / 3D」ボタンで表示を切り替え、3D では断面スライダでクリップ表示できます\n6. 「出力」ボタンで SVG / PDF / DXF にエクスポートします',
   helpSectionTools: '描画ツール',
   helpToolsText:
     '- 柱: クリックした位置に柱を配置\n- 梁: 2 点をクリックして梁を配置\n- 壁: 2 点をクリックして壁を配置\n- スラブ: 複数点をクリック → ダブルクリックで確定\n- 寸法: 2 点をクリックして寸法線を配置\n- 注記: クリックした位置にテキストを配置',
@@ -114,7 +114,7 @@ export const ja: Translations = {
     'V: 選択  |  H: パン  |  C: 柱  |  B: 梁  |  W: 壁  |  S: スラブ\nD: 寸法  |  T: 注記  |  Escape: キャンセル\nCtrl+Z: 元に戻す  |  Ctrl+Shift+Z: やり直し\nCtrl+D: 複製  |  Delete: 削除\nマウスホイール: ズーム  |  中ボタンドラッグ: パン',
   helpSectionExport: 'エクスポート',
   helpExportText:
-    'ツールバーの「出力」からエクスポートダイアログを開き、SVG / PDF / DXF を選択して出力します。SVG / PDF はシート単位、DXF は階単位で出力されます。',
+    'ツールバーの「出力」からエクスポートダイアログを開き、SVG / PDF / DXF を選択して出力します。PDF は全シートを1つの複数ページ PDF にまとめて出力できます。SVG / PDF はシート単位、DXF は階単位で出力されます。',
   helpSectionJson: 'JSON データ形式',
   helpJsonText:
     '本アプリはすべてのデータを JSON で管理します。JSON Schema 2020-12 に準拠しており、読み込み時に自動バリデーションが行われます。部材タイプ: column (柱), beam (梁), wall (壁), slab (スラブ)。単位は mm 固定です。',

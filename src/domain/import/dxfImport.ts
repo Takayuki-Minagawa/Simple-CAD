@@ -11,6 +11,10 @@ interface DxfEntity {
   textHeight?: number;
   center?: { x: number; y: number; z?: number };
   radius?: number;
+  majorRadius?: number;
+  minorRadius?: number;
+  startAngle?: number;
+  endAngle?: number;
 }
 
 export interface DxfImportResult {
@@ -21,7 +25,7 @@ export interface DxfImportResult {
 
 /**
  * Import DXF using a simple line-based parser.
- * Supports: LINE, LWPOLYLINE, CIRCLE, ARC, TEXT
+ * Supports: LINE, LWPOLYLINE, POLYLINE, CIRCLE, ARC, TEXT, MTEXT, SPLINE, HATCH, ELLIPSE
  * Unsupported entities are skipped with warnings.
  */
 export function importDxf(content: string, defaultStory: string): DxfImportResult {
@@ -45,6 +49,9 @@ export function importDxf(content: string, defaultStory: string): DxfImportResul
           primitiveCount++;
           break;
         case 'ARC':
+        case 'SPLINE':
+        case 'HATCH':
+        case 'ELLIPSE':
           primitiveCount++;
           break;
         case 'TEXT':
@@ -118,30 +125,88 @@ function parseDxfEntities(content: string): DxfEntity[] {
         current.layer = value;
         break;
       case 10:
-        current.startPoint = { ...current.startPoint, x: parseFloat(value), y: current.startPoint?.y ?? 0 };
+        assignPrimaryX(current, parseFloat(value));
         break;
       case 20:
-        current.startPoint = { ...current.startPoint, x: current.startPoint?.x ?? 0, y: parseFloat(value) };
+        assignPrimaryY(current, parseFloat(value));
         break;
       case 11:
-        current.endPoint = { ...current.endPoint, x: parseFloat(value), y: current.endPoint?.y ?? 0 };
+        if (current.type === 'ELLIPSE') {
+          current.majorRadius = parseFloat(value);
+        } else {
+          current.endPoint = { ...current.endPoint, x: parseFloat(value), y: current.endPoint?.y ?? 0 };
+        }
         break;
       case 21:
-        current.endPoint = { ...current.endPoint, x: current.endPoint?.x ?? 0, y: parseFloat(value) };
+        if (current.type === 'ELLIPSE') {
+          current.minorRadius = parseFloat(value);
+        } else {
+          current.endPoint = { ...current.endPoint, x: current.endPoint?.x ?? 0, y: parseFloat(value) };
+        }
         break;
       case 1:
-        current.text = value;
+        current.text = current.text ? `${current.text} ${normalizeDxfText(value)}` : normalizeDxfText(value);
+        break;
+      case 3:
+        current.text = current.text ? `${current.text} ${normalizeDxfText(value)}` : normalizeDxfText(value);
         break;
       case 40:
         if (current.type === 'CIRCLE' || current.type === 'ARC') {
           current.radius = parseFloat(value);
+        } else if (current.type === 'ELLIPSE') {
+          current.minorRadius = parseFloat(value) * (current.majorRadius ?? 0);
         } else {
           current.textHeight = parseFloat(value);
         }
+        break;
+      case 50:
+        current.startAngle = parseFloat(value);
+        break;
+      case 51:
+        current.endAngle = parseFloat(value);
         break;
     }
   }
 
   if (current) entities.push(current);
   return entities;
+}
+
+function isVertexEntity(type: string): boolean {
+  return type === 'LWPOLYLINE' || type === 'POLYLINE' || type === 'SPLINE' || type === 'HATCH';
+}
+
+function assignPrimaryX(entity: DxfEntity, value: number) {
+  if (entity.type === 'CIRCLE' || entity.type === 'ARC' || entity.type === 'ELLIPSE') {
+    entity.center = { ...entity.center, x: value, y: entity.center?.y ?? 0 };
+    return;
+  }
+  if (isVertexEntity(entity.type)) {
+    entity.vertices ??= [];
+    entity.vertices.push({ x: value, y: 0 });
+    return;
+  }
+  entity.startPoint = { ...entity.startPoint, x: value, y: entity.startPoint?.y ?? 0 };
+}
+
+function assignPrimaryY(entity: DxfEntity, value: number) {
+  if (entity.type === 'CIRCLE' || entity.type === 'ARC' || entity.type === 'ELLIPSE') {
+    entity.center = { ...entity.center, x: entity.center?.x ?? 0, y: value };
+    return;
+  }
+  if (isVertexEntity(entity.type)) {
+    entity.vertices ??= [];
+    const last = entity.vertices[entity.vertices.length - 1];
+    if (last) {
+      last.y = value;
+    } else {
+      entity.vertices.push({ x: 0, y: value });
+    }
+    return;
+  }
+  entity.startPoint = { ...entity.startPoint, x: entity.startPoint?.x ?? 0, y: value };
+}
+
+function normalizeDxfText(value: string): string {
+  return value.replace(/\\P/g, ' ').trim();
 }

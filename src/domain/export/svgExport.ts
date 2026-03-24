@@ -1,4 +1,4 @@
-import type { ProjectData, Member, Section } from '@/domain/structural/types';
+import type { ProjectData, Member, Section, Sheet, TitleBlockTemplate } from '@/domain/structural/types';
 import { sub2D, normalize2D, perpendicular2D, distance2D } from '@/domain/geometry/point';
 
 const PAPER_SIZES: Record<string, { width: number; height: number }> = {
@@ -36,16 +36,13 @@ export function exportSvg(data: ProjectData, sheetId: string): string {
   svgLines.push(`</g>`);
 
   // Title block
-  svgLines.push(`<g class="title-block">`);
-  svgLines.push(`  <rect x="${paper.width - 180}" y="${paper.height - 40}" width="170" height="30" fill="none" stroke="#000" stroke-width="0.3"/>`);
-  svgLines.push(`  <text x="${paper.width - 175}" y="${paper.height - 22}" font-size="5" font-family="sans-serif">${sheet.name}</text>`);
-  svgLines.push(`  <text x="${paper.width - 175}" y="${paper.height - 14}" font-size="3.5" font-family="sans-serif">Scale: ${sheet.scale}</text>`);
-  svgLines.push(`</g>`);
+  svgLines.push(renderTitleBlockSvg(sheet, data.project.name, paper.width, paper.height));
 
   // Content area - transform world coords to paper coords
+  const titleBlockSpace = getTitleBlockReservedHeight(sheet.titleBlockTemplate ?? 'standard');
   const margin = 30;
   const drawAreaW = paper.width - 2 * margin;
-  const drawAreaH = paper.height - 2 * margin - 40; // reserve title block space
+  const drawAreaH = paper.height - 2 * margin - titleBlockSpace;
   const scale = 1 / scaleNum;
 
   const offsetX = margin + drawAreaW / 2 - viewCenter.x * scale;
@@ -146,6 +143,77 @@ function renderDimensionSvg(d: { start: { x: number; y: number }; end: { x: numb
 function parseScale(scale: string): number {
   const match = scale.match(/^1:(\d+)$/);
   return match ? parseInt(match[1], 10) : 100;
+}
+
+function getTitleBlockReservedHeight(template: TitleBlockTemplate): number {
+  switch (template) {
+    case 'compact':
+      return 34;
+    case 'minimal':
+      return 22;
+    default:
+      return 44;
+  }
+}
+
+function renderTitleBlockSvg(sheet: Sheet, projectName: string, paperWidth: number, paperHeight: number): string {
+  const template = sheet.titleBlockTemplate ?? 'standard';
+  const titleBlock = {
+    projectName: sheet.titleBlock?.projectName ?? projectName,
+    drawingTitle: sheet.titleBlock?.drawingTitle ?? sheet.name,
+    drawnBy: sheet.titleBlock?.drawnBy ?? '',
+    checkedBy: sheet.titleBlock?.checkedBy ?? '',
+    issueDate: sheet.titleBlock?.issueDate ?? '',
+    revision: sheet.titleBlock?.revision ?? '',
+    note: sheet.titleBlock?.note ?? '',
+  };
+
+  switch (template) {
+    case 'compact':
+      return [
+        `<g class="title-block compact">`,
+        `  <rect x="10" y="${paperHeight - 24}" width="${paperWidth - 20}" height="14" fill="none" stroke="#000" stroke-width="0.3"/>`,
+        `  <line x1="${paperWidth - 150}" y1="${paperHeight - 24}" x2="${paperWidth - 150}" y2="${paperHeight - 10}" stroke="#000" stroke-width="0.3"/>`,
+        `  <line x1="${paperWidth - 95}" y1="${paperHeight - 24}" x2="${paperWidth - 95}" y2="${paperHeight - 10}" stroke="#000" stroke-width="0.3"/>`,
+        `  <line x1="${paperWidth - 50}" y1="${paperHeight - 24}" x2="${paperWidth - 50}" y2="${paperHeight - 10}" stroke="#000" stroke-width="0.3"/>`,
+        `  <text x="16" y="${paperHeight - 15}" font-size="5" font-family="sans-serif">${escapeXml(titleBlock.projectName)}</text>`,
+        `  <text x="${paperWidth - 144}" y="${paperHeight - 15}" font-size="4.2" font-family="sans-serif">${escapeXml(titleBlock.drawingTitle)}</text>`,
+        `  <text x="${paperWidth - 89}" y="${paperHeight - 15}" font-size="3.2" font-family="sans-serif">Scale ${escapeXml(sheet.scale)}</text>`,
+        `  <text x="${paperWidth - 44}" y="${paperHeight - 15}" font-size="3.2" font-family="sans-serif">Rev ${escapeXml(titleBlock.revision)}</text>`,
+        titleBlock.note
+          ? `  <text x="16" y="${paperHeight - 11}" font-size="2.8" font-family="sans-serif">${escapeXml(titleBlock.note)}</text>`
+          : '',
+        `</g>`,
+      ].filter(Boolean).join('\n');
+    case 'minimal':
+      return [
+        `<g class="title-block minimal">`,
+        `  <text x="12" y="${paperHeight - 12}" font-size="5" font-family="sans-serif">${escapeXml(titleBlock.drawingTitle)}</text>`,
+        `  <text x="${paperWidth - 70}" y="${paperHeight - 12}" font-size="3.5" font-family="sans-serif">${escapeXml(sheet.scale)}</text>`,
+        `</g>`,
+      ].join('\n');
+    default:
+      return [
+        `<g class="title-block standard">`,
+        `  <rect x="${paperWidth - 190}" y="${paperHeight - 44}" width="180" height="34" fill="none" stroke="#000" stroke-width="0.3"/>`,
+        `  <line x1="${paperWidth - 95}" y1="${paperHeight - 44}" x2="${paperWidth - 95}" y2="${paperHeight - 10}" stroke="#000" stroke-width="0.3"/>`,
+        `  <line x1="${paperWidth - 190}" y1="${paperHeight - 24}" x2="${paperWidth - 10}" y2="${paperHeight - 24}" stroke="#000" stroke-width="0.3"/>`,
+        `  <line x1="${paperWidth - 140}" y1="${paperHeight - 24}" x2="${paperWidth - 140}" y2="${paperHeight - 10}" stroke="#000" stroke-width="0.3"/>`,
+        `  <line x1="${paperWidth - 60}" y1="${paperHeight - 24}" x2="${paperWidth - 60}" y2="${paperHeight - 10}" stroke="#000" stroke-width="0.3"/>`,
+        `  <text x="${paperWidth - 184}" y="${paperHeight - 33}" font-size="3" font-family="sans-serif">${escapeXml(titleBlock.projectName)}</text>`,
+        `  <text x="${paperWidth - 184}" y="${paperHeight - 27}" font-size="5" font-family="sans-serif">${escapeXml(titleBlock.drawingTitle)}</text>`,
+        `  <text x="${paperWidth - 184}" y="${paperHeight - 17}" font-size="3" font-family="sans-serif">Drawn ${escapeXml(titleBlock.drawnBy)}</text>`,
+        `  <text x="${paperWidth - 134}" y="${paperHeight - 17}" font-size="3" font-family="sans-serif">Checked ${escapeXml(titleBlock.checkedBy)}</text>`,
+        `  <text x="${paperWidth - 89}" y="${paperHeight - 17}" font-size="3" font-family="sans-serif">Date ${escapeXml(titleBlock.issueDate)}</text>`,
+        `  <text x="${paperWidth - 54}" y="${paperHeight - 17}" font-size="3" font-family="sans-serif">Scale ${escapeXml(sheet.scale)}</text>`,
+        `  <text x="${paperWidth - 184}" y="${paperHeight - 12}" font-size="3" font-family="sans-serif">Sheet ${escapeXml(sheet.id)}</text>`,
+        `  <text x="${paperWidth - 134}" y="${paperHeight - 12}" font-size="3" font-family="sans-serif">Rev ${escapeXml(titleBlock.revision)}</text>`,
+        titleBlock.note
+          ? `  <text x="${paperWidth - 89}" y="${paperHeight - 12}" font-size="3" font-family="sans-serif">${escapeXml(titleBlock.note)}</text>`
+          : '',
+        `</g>`,
+      ].filter(Boolean).join('\n');
+  }
 }
 
 function escapeXml(s: string): string {

@@ -1,24 +1,28 @@
 import { useEditorStore, useProjectStore } from '@/app/store';
 import type { EditorTool } from '@/app/store';
 import { useI18n } from '@/i18n';
-import { openJsonFile, saveFile } from '@/libs/fileSystem';
+import { openDxfFile, openJsonFile, saveFile } from '@/libs/fileSystem';
 import { importProjectJson } from '@/domain/import/jsonImport';
+import { importDxf } from '@/domain/import/dxfImport';
 import { exportProjectJson } from '@/domain/export/jsonExport';
 import sampleProject from '@/samples/sample-project.json';
 import type { ProjectData } from '@/domain/structural/types';
 
 interface Props {
   onExport: () => void;
+  onMasters: () => void;
   onAiAssist: () => void;
   onHelp: () => void;
 }
 
-export function MainToolbar({ onExport, onAiAssist, onHelp }: Props) {
-  const { data, isDirty, fileHandle, loadProject, newProject, setFileHandle, markClean } =
+export function MainToolbar({ onExport, onMasters, onAiAssist, onHelp }: Props) {
+  const { data, isDirty, fileHandle, loadProject, newProject, setFileHandle, markClean, addAnnotations } =
     useProjectStore();
-  const { viewMode, setViewMode, activeTool, setActiveTool, setSelectedIds, theme, toggleTheme } =
+  const { viewMode, setViewMode, activeTool, setActiveTool, setSelectedIds, theme, toggleTheme, activeStory } =
     useEditorStore();
   const { t, locale, setLocale } = useI18n();
+  const mastersLabel = locale === 'ja' ? 'マスタ' : 'Masters';
+  const importDxfLabel = locale === 'ja' ? 'DXF取込' : 'DXF Import';
 
   const handleNew = () => {
     if (isDirty && !confirm(t.confirmUnsaved)) return;
@@ -57,6 +61,36 @@ export function MainToolbar({ onExport, onAiAssist, onHelp }: Props) {
     loadProject(sampleProject as unknown as ProjectData);
   };
 
+  const handleImportDxf = async () => {
+    if (!data) return;
+    const storyId = activeStory ?? data.stories[0]?.id;
+    if (!storyId) {
+      alert(locale === 'ja' ? '取込先の階がありません。' : 'No target story is available.');
+      return;
+    }
+
+    try {
+      const result = await openDxfFile();
+      const imported = importDxf(result.content, storyId);
+      addAnnotations(imported.annotations);
+
+      const summary = locale === 'ja'
+        ? [
+            `${imported.annotations.length} 件の注記を ${storyId} に追加しました。`,
+            `検出プリミティブ: ${imported.primitiveCount}`,
+            imported.warnings.length > 0 ? `警告:\n${imported.warnings.slice(0, 8).join('\n')}` : '',
+          ].filter(Boolean).join('\n')
+        : [
+            `Imported ${imported.annotations.length} annotations into ${storyId}.`,
+            `Detected primitives: ${imported.primitiveCount}`,
+            imported.warnings.length > 0 ? `Warnings:\n${imported.warnings.slice(0, 8).join('\n')}` : '',
+          ].filter(Boolean).join('\n');
+      alert(summary);
+    } catch {
+      // User cancelled
+    }
+  };
+
   const handleUndo = () => useProjectStore.temporal.getState().undo();
   const handleRedo = () => useProjectStore.temporal.getState().redo();
 
@@ -82,6 +116,7 @@ export function MainToolbar({ onExport, onAiAssist, onHelp }: Props) {
           {t.fileSave}{isDirty ? ' *' : ''}
         </button>
         <button className="toolbar-btn" onClick={handleSample}>{t.fileSample}</button>
+        <button className="toolbar-btn" onClick={handleImportDxf} disabled={!data}>{importDxfLabel}</button>
       </div>
 
       <div className="toolbar-group">
@@ -110,6 +145,7 @@ export function MainToolbar({ onExport, onAiAssist, onHelp }: Props) {
 
       <div className="toolbar-group">
         <button className="toolbar-btn" onClick={onExport} disabled={!data}>{t.fileExport}</button>
+        <button className="toolbar-btn" onClick={onMasters} disabled={!data}>{mastersLabel}</button>
         <button className="toolbar-btn" onClick={onAiAssist}>{t.btnAi}</button>
         <button className="toolbar-btn" onClick={onHelp}>{t.btnHelp}</button>
       </div>
