@@ -1,3 +1,4 @@
+import { v5 as uuidv5 } from 'uuid';
 import type { Point2D, Point3D } from '@/domain/geometry/types';
 import type {
   Member,
@@ -10,6 +11,8 @@ import type {
 } from '@/domain/structural/types';
 import { validateProject } from '@/domain/validation';
 import type { ValidationError } from '@/domain/validation';
+
+const IFC_UUID_NAMESPACE = '6ba7b810-9dad-11d1-80b4-00c04fd430c8';
 
 type Vector3 = Point3D;
 
@@ -547,12 +550,17 @@ function resolveProfile(entities: Map<number, StepEntity>, profileRef: number): 
   return null;
 }
 
-function resolveLocalPlacement(entities: Map<number, StepEntity>, placementRef: number | null): Transform3D {
-  if (!placementRef) return DEFAULT_TRANSFORM;
+function resolveLocalPlacement(
+  entities: Map<number, StepEntity>,
+  placementRef: number | null,
+  visited: Set<number> = new Set(),
+): Transform3D {
+  if (!placementRef || visited.has(placementRef)) return DEFAULT_TRANSFORM;
+  visited.add(placementRef);
   const placement = entities.get(placementRef);
   if (!placement || placement.type !== 'IFCLOCALPLACEMENT') return DEFAULT_TRANSFORM;
 
-  const parent = resolveLocalPlacement(entities, asRef(placement.args[0]));
+  const parent = resolveLocalPlacement(entities, asRef(placement.args[0]), visited);
   const local = resolveAxisPlacementTransform(entities, asRef(placement.args[1]));
   return composeTransform(parent, local);
 }
@@ -971,23 +979,8 @@ class IfcWriter {
 
 function toIfcGlobalId(seed: string): string {
   const chars = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz_$';
-  let h1 = 0x12345678;
-  let h2 = 0x87654321;
-  let h3 = 0x13572468;
-  let h4 = 0x24681357;
-
-  for (let index = 0; index < seed.length; index++) {
-    const code = seed.charCodeAt(index);
-    h1 = Math.imul(h1 ^ code, 2654435761) >>> 0;
-    h2 = Math.imul(h2 ^ code, 2246822519) >>> 0;
-    h3 = Math.imul(h3 ^ code, 3266489917) >>> 0;
-    h4 = Math.imul(h4 ^ code, 668265263) >>> 0;
-  }
-
-  let state = BigInt(h1) << 96n;
-  state |= BigInt(h2) << 64n;
-  state |= BigInt(h3) << 32n;
-  state |= BigInt(h4);
+  const hex = uuidv5(seed, IFC_UUID_NAMESPACE).replace(/-/g, '');
+  let state = BigInt(`0x${hex}`);
 
   let value = '';
   for (let index = 0; index < 22; index++) {

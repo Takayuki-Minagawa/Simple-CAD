@@ -43,6 +43,11 @@ function buildWithOpenCascadeRuntime(input: GeometryBuildInput): THREE.BufferGeo
 
   const output = runtime.buildMemberGeometry(input);
   if (!output || output.positions.length === 0) return null;
+  if (output.positions.length % 3 !== 0) return null;
+  if (!output.positions.every(Number.isFinite)) return null;
+
+  const vertexCount = output.positions.length / 3;
+  if (output.indices && output.indices.some((i) => i < 0 || i >= vertexCount)) return null;
 
   const geometry = new THREE.BufferGeometry();
   geometry.setAttribute('position', new THREE.Float32BufferAttribute(output.positions, 3));
