@@ -107,7 +107,7 @@ function renderMemberSvg(m: Member, sections: Section[]): string {
       return `  <polygon class="layer-member-beam" points="${pts}" fill="rgba(243,156,18,0.2)" stroke="#f39c12" stroke-width="20"/>`;
     }
     case 'wall': {
-      const t = m.thickness;
+      const t = sec && 'thickness' in sec ? sec.thickness : m.thickness;
       const dx = m.end.x - m.start.x;
       const dy = m.end.y - m.start.y;
       const len = Math.sqrt(dx * dx + dy * dy);

@@ -32,10 +32,13 @@ export function App() {
     document.documentElement.setAttribute('data-theme', theme);
   }, [theme]);
 
-  // Auto-select first story when project loads
+  // Auto-select first story when project loads or activeStory becomes invalid
   useEffect(() => {
-    if (data && data.stories.length > 0 && !activeStory) {
+    if (!data || data.stories.length === 0) return;
+    const storyExists = data.stories.some((s) => s.id === activeStory);
+    if (!activeStory || !storyExists) {
       setActiveStory(data.stories[0].id);
+      useEditorStore.getState().setSelectedIds([]);
     }
   }, [data, activeStory, setActiveStory]);
 

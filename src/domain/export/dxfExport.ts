@@ -125,7 +125,7 @@ function renderMemberDxf(lines: string[], m: Member, sections: Section[]) {
       break;
     }
     case 'wall': {
-      const t = m.thickness;
+      const t = sec && 'thickness' in sec ? sec.thickness : m.thickness;
       const dx = m.end.x - m.start.x;
       const dy = m.end.y - m.start.y;
       const len = Math.sqrt(dx * dx + dy * dy);

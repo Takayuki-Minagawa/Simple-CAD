@@ -46,6 +46,7 @@ export function MemberMesh({ member, section, selected, wireframe, onClick }: Pr
       return (
         <WallMesh
           member={member}
+          section={section}
           color={color}
           wireframe={wireframe}
           onClick={onClick}
@@ -146,15 +147,18 @@ function BeamMesh({
 
 function WallMesh({
   member,
+  section,
   color,
   wireframe,
   onClick,
 }: {
   member: Member & { type: 'wall' };
+  section: Section | undefined;
   color: string;
   wireframe: boolean;
   onClick: () => void;
 }) {
+  const thickness = section && 'thickness' in section ? section.thickness : member.thickness;
   const start = new THREE.Vector3(member.start.x, member.start.y, member.start.z);
   const end = new THREE.Vector3(member.end.x, member.end.y, member.end.z);
   const dir = new THREE.Vector3().subVectors(end, start);
@@ -175,7 +179,7 @@ function WallMesh({
         onClick();
       }}
     >
-      <boxGeometry args={[length, member.thickness, member.height]} />
+      <boxGeometry args={[length, thickness, member.height]} />
       <meshStandardMaterial
         color={color}
         wireframe={wireframe}

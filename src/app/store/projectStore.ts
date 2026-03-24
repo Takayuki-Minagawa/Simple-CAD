@@ -87,6 +87,7 @@ export const useProjectStore = create<ProjectState>()(
         set((state) => {
           state.data = data;
           state.isDirty = false;
+          state.fileHandle = null;
         }),
 
       newProject: () =>
