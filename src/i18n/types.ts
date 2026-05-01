@@ -85,6 +85,7 @@ export interface Translations {
   // Status bar
   statusZoom: string;
   statusSnap: string;
+  statusSnapModes: string;
   statusTool: string;
   statusStory: string;
   statusSelected: string;
@@ -181,10 +182,17 @@ export interface Translations {
   zoomSelection: string;
   inputAssist: string;
   memberSnap: string;
+  snapModeGrid: string;
+  snapModeEndpoint: string;
+  snapModeMidpoint: string;
+  snapModeIntersection: string;
+  snapModePerpendicular: string;
+  snapModeNearest: string;
   columnZDown: string;
   columnZUp: string;
   inputAssistTooltip: string;
   memberSnapTooltip: string;
+  snapModeTooltip: string;
   columnZDownTooltip: string;
   columnZUpTooltip: string;
 

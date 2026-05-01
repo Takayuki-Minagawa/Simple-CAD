@@ -6,6 +6,7 @@ export function StatusBar() {
   const cursorWorld = useEditorStore((s) => s.cursorWorld);
   const zoom = useEditorStore((s) => s.zoom);
   const snapEnabled = useEditorStore((s) => s.snapEnabled);
+  const activeSnapModes = useEditorStore((s) => s.activeSnapModes);
   const selectedIds = useEditorStore((s) => s.selectedIds);
   const activeStory = useEditorStore((s) => s.activeStory);
   const activeTool = useEditorStore((s) => s.activeTool);
@@ -20,6 +21,7 @@ export function StatusBar() {
       </span>
       <span className="status-item">{t.statusZoom}: {(zoom * 1000).toFixed(0)}%</span>
       <span className="status-item">{t.statusSnap}: {snapEnabled ? t.statusOn : t.statusOff}</span>
+      <span className="status-item">{t.statusSnapModes}: {activeSnapModes.length > 0 ? activeSnapModes.join(', ') : '---'}</span>
       <span className="status-item">{t.statusTool}: {getToolStatusLabel(activeTool, t)}</span>
       <span className="status-item">{t.statusStory}: {activeStory ?? '---'}</span>
       <span className="status-item">{t.statusSelected}: {selectedIds.length}</span>

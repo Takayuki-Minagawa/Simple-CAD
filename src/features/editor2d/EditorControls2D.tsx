@@ -1,4 +1,5 @@
 import { isCreationTool, useEditorStore } from '@/app/store';
+import type { SnapMode } from '@/app/store';
 import { useI18n } from '@/i18n';
 
 interface Props {
@@ -9,14 +10,26 @@ interface Props {
 
 export function EditorControls2D({ canZoomSelection, onZoomExtents, onZoomSelection }: Props) {
   const activeTool = useEditorStore((s) => s.activeTool);
+  const snapEnabled = useEditorStore((s) => s.snapEnabled);
+  const activeSnapModes = useEditorStore((s) => s.activeSnapModes);
   const drawInputAssist = useEditorStore((s) => s.drawInputAssist);
   const snapToMembersWhileDrawing = useEditorStore((s) => s.snapToMembersWhileDrawing);
   const columnPlacementDirection = useEditorStore((s) => s.columnPlacementDirection);
+  const setSnapEnabled = useEditorStore((s) => s.setSnapEnabled);
+  const toggleSnapMode = useEditorStore((s) => s.toggleSnapMode);
   const setDrawInputAssist = useEditorStore((s) => s.setDrawInputAssist);
   const setSnapToMembersWhileDrawing = useEditorStore((s) => s.setSnapToMembersWhileDrawing);
   const setColumnPlacementDirection = useEditorStore((s) => s.setColumnPlacementDirection);
   const { t } = useI18n();
   const isDrawing = isCreationTool(activeTool);
+  const snapModeLabels: Array<[SnapMode, string]> = [
+    ['grid', t.snapModeGrid],
+    ['endpoint', t.snapModeEndpoint],
+    ['midpoint', t.snapModeMidpoint],
+    ['intersection', t.snapModeIntersection],
+    ['perpendicular', t.snapModePerpendicular],
+    ['nearest', t.snapModeNearest],
+  ];
 
   return (
     <div className="editor-floating-controls">
@@ -31,6 +44,25 @@ export function EditorControls2D({ canZoomSelection, onZoomExtents, onZoomSelect
       >
         {t.zoomSelection}
       </button>
+      <span className="floating-control-divider" />
+      <button
+        className={`floating-control-btn ${snapEnabled ? 'active' : ''}`}
+        onClick={() => setSnapEnabled(!snapEnabled)}
+        title={t.statusSnap}
+      >
+        {t.statusSnap}
+      </button>
+      {snapModeLabels.map(([mode, label]) => (
+        <button
+          key={mode}
+          className={`floating-control-btn compact ${activeSnapModes.includes(mode) ? 'active' : ''}`}
+          onClick={() => toggleSnapMode(mode)}
+          disabled={!snapEnabled}
+          title={`${t.snapModeTooltip}: ${label}`}
+        >
+          {label}
+        </button>
+      ))}
       <span className="floating-control-divider" />
       <button
         className={`floating-control-btn ${drawInputAssist ? 'active' : ''}`}
