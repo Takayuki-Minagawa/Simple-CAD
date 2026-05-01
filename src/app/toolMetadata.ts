@@ -18,6 +18,10 @@ export const TOOL_SHORTCUTS = Object.fromEntries(
   Object.entries(TOOL_SHORTCUTS_BY_KEY).map(([key, tool]) => [tool, key.toUpperCase()]),
 ) as Record<ShortcutBackedTool, string>;
 
+export function getToolForShortcutKey(key: string): ShortcutBackedTool | undefined {
+  return (TOOL_SHORTCUTS_BY_KEY as Partial<Record<string, ShortcutBackedTool>>)[key.toLowerCase()];
+}
+
 export function getToolLabel(tool: EditorTool, t: Translations): string {
   switch (tool) {
     case 'select':
