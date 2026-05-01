@@ -1,16 +1,22 @@
 import type { EditorTool } from '@/app/store';
 import type { Translations } from '@/i18n';
 
-export const TOOL_SHORTCUTS: Partial<Record<EditorTool, string>> = {
-  select: 'V',
-  pan: 'H',
-  column: 'C',
-  beam: 'B',
-  wall: 'W',
-  slab: 'S',
-  dimension: 'D',
-  annotation: 'T',
-};
+export const TOOL_SHORTCUTS_BY_KEY = {
+  v: 'select',
+  h: 'pan',
+  c: 'column',
+  b: 'beam',
+  w: 'wall',
+  s: 'slab',
+  d: 'dimension',
+  t: 'annotation',
+} as const satisfies Record<string, EditorTool>;
+
+type ShortcutBackedTool = (typeof TOOL_SHORTCUTS_BY_KEY)[keyof typeof TOOL_SHORTCUTS_BY_KEY];
+
+export const TOOL_SHORTCUTS = Object.fromEntries(
+  Object.entries(TOOL_SHORTCUTS_BY_KEY).map(([key, tool]) => [tool, key.toUpperCase()]),
+) as Record<ShortcutBackedTool, string>;
 
 export function getToolLabel(tool: EditorTool, t: Translations): string {
   switch (tool) {
@@ -43,6 +49,6 @@ export function getToolLabel(tool: EditorTool, t: Translations): string {
 
 export function getToolStatusLabel(tool: EditorTool, t: Translations): string {
   const label = getToolLabel(tool, t);
-  const shortcut = TOOL_SHORTCUTS[tool];
+  const shortcut = (TOOL_SHORTCUTS as Partial<Record<EditorTool, string>>)[tool];
   return shortcut ? `${label} (${shortcut})` : label;
 }

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { en } from '@/i18n/en';
 import { ja } from '@/i18n/ja';
-import { getToolLabel, getToolStatusLabel, TOOL_SHORTCUTS } from '../toolMetadata';
+import { getToolLabel, getToolStatusLabel, TOOL_SHORTCUTS, TOOL_SHORTCUTS_BY_KEY } from '../toolMetadata';
 
 describe('tool metadata', () => {
   it('localizes active tool labels', () => {
@@ -11,6 +11,7 @@ describe('tool metadata', () => {
   });
 
   it('adds shortcut hints only for shortcut-backed tools', () => {
+    expect(TOOL_SHORTCUTS_BY_KEY.b).toBe('beam');
     expect(TOOL_SHORTCUTS.beam).toBe('B');
     expect(getToolStatusLabel('beam', en)).toBe('Beam (B)');
     expect(getToolStatusLabel('trim', en)).toBe('Trim');
