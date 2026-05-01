@@ -177,7 +177,7 @@ export const en: Translations = {
   transformArrayRowSpacing: 'Row Spacing',
   transformArrayColSpacing: 'Column Spacing',
 
-  coordInputPlaceholder: 'x,y / x y or @dx,dy / @dx dy or @dist<angle',
+  coordInputPlaceholder: 'x,y | @dx,dy | @d | @d<angle',
   coordInputLabel: 'Coordinate',
 
   zoomExtents: 'Zoom Extents',

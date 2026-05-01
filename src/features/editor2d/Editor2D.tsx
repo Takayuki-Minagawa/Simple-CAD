@@ -254,7 +254,7 @@ export function Editor2D() {
         </SvgCanvas>
       </div>
       {isDrawingTool && (
-        <CoordinateInputBar lastPoint={lastPoint} onSubmit={injectCoordinate} />
+        <CoordinateInputBar lastPoint={lastPoint} previewPoint={drawState.previewPos} onSubmit={injectCoordinate} />
       )}
     </div>
   );

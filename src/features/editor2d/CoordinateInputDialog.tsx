@@ -5,10 +5,11 @@ import { parseCoordinate } from './coordinateInput';
 
 interface Props {
   lastPoint: Point2D | null;
+  previewPoint: Point2D | null;
   onSubmit: (pos: Point2D) => void;
 }
 
-export function CoordinateInputBar({ lastPoint, onSubmit }: Props) {
+export function CoordinateInputBar({ lastPoint, previewPoint, onSubmit }: Props) {
   const [value, setValue] = useState('');
   const inputRef = useRef<HTMLInputElement>(null);
   const { t } = useI18n();
@@ -16,13 +17,13 @@ export function CoordinateInputBar({ lastPoint, onSubmit }: Props) {
   const handleSubmit = useCallback(
     (e: React.FormEvent) => {
       e.preventDefault();
-      const pos = parseCoordinate(value, lastPoint);
+      const pos = parseCoordinate(value, lastPoint, previewPoint);
       if (pos) {
         onSubmit(pos);
         setValue('');
       }
     },
-    [value, lastPoint, onSubmit],
+    [value, lastPoint, previewPoint, onSubmit],
   );
 
   // Focus when a digit or @ is pressed and this bar is visible
