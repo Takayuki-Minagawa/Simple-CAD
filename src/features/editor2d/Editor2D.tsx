@@ -29,6 +29,7 @@ export function Editor2D() {
     handleMouseDown,
     handleMouseUp,
     injectCoordinate,
+    completeDrawing,
     resetDrawing,
   } = useEditorInteraction();
 
@@ -71,6 +72,18 @@ export function Editor2D() {
           setActiveTool('select');
         }
       }
+      if (e.key === 'Enter') {
+        const target = e.target as HTMLElement;
+        if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT') return;
+        const canComplete =
+          (activeTool === 'slab' && drawState.points.length >= 3) ||
+          (activeTool === 'spline' && drawState.points.length >= 2);
+        if (canComplete) {
+          e.preventDefault();
+          completeDrawing();
+          return;
+        }
+      }
       if (e.key === 'Delete' || e.key === 'Backspace') {
         const target = e.target as HTMLElement;
         if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA') return;
@@ -93,7 +106,7 @@ export function Editor2D() {
         }
       }
     },
-    [drawState.points.length, resetDrawing, setActiveTool, zoomToExtents, zoomToSelection],
+    [activeTool, completeDrawing, drawState.points.length, resetDrawing, setActiveTool, zoomToExtents, zoomToSelection],
   );
 
   useEffect(() => {
