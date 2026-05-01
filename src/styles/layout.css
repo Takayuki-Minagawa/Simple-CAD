@@ -229,6 +229,10 @@
   cursor: pointer;
 }
 
+.floating-control-btn.compact {
+  padding-inline: 6px;
+}
+
 .floating-control-btn:hover {
   border-color: var(--accent);
 }

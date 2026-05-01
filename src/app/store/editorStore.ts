@@ -15,7 +15,9 @@ export type EditorTool =
   | 'xline'
   | 'spline';
 
-export type SnapMode = 'grid' | 'endpoint' | 'midpoint' | 'intersection' | 'perpendicular' | 'nearest';
+export const SNAP_MODES = ['grid', 'endpoint', 'midpoint', 'intersection', 'perpendicular', 'nearest'] as const;
+
+export type SnapMode = (typeof SNAP_MODES)[number];
 
 export const LAYER_NAMES = [
   'grid',
@@ -85,6 +87,7 @@ interface EditorState {
   toggleSelection: (id: string) => void;
   setActiveTool: (tool: EditorTool) => void;
   setSnapEnabled: (enabled: boolean) => void;
+  toggleSnapMode: (mode: SnapMode) => void;
   setDrawInputAssist: (enabled: boolean) => void;
   setSnapToMembersWhileDrawing: (enabled: boolean) => void;
   setColumnPlacementDirection: (direction: ColumnPlacementDirection) => void;
@@ -136,6 +139,13 @@ export const useEditorStore = create<EditorState>()((set) => ({
     })),
   setActiveTool: (tool) => set({ activeTool: tool }),
   setSnapEnabled: (enabled) => set({ snapEnabled: enabled }),
+  toggleSnapMode: (mode) =>
+    set((state) => {
+      const activeSnapModes = state.activeSnapModes.includes(mode)
+        ? state.activeSnapModes.filter((item) => item !== mode)
+        : [...state.activeSnapModes, mode];
+      return { activeSnapModes };
+    }),
   setDrawInputAssist: (enabled) => set({ drawInputAssist: enabled }),
   setSnapToMembersWhileDrawing: (enabled) => set({ snapToMembersWhileDrawing: enabled }),
   setColumnPlacementDirection: (direction) => set({ columnPlacementDirection: direction }),
