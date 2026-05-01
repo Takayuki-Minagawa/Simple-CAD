@@ -243,14 +243,14 @@ export function MainToolbar({ onExport, onMasters, onAiAssist, onHelp, onTransfo
   const handleUndo = () => useProjectStore.temporal.getState().undo();
   const handleRedo = () => useProjectStore.temporal.getState().redo();
 
-  const toolBtn = (tool: EditorTool, label: string) => (
+  const toolBtn = (tool: EditorTool, label: string, shortcut?: string) => (
     <button
       className={`toolbar-btn ${activeTool === tool ? 'active' : ''}`}
       onClick={() => {
         setActiveTool(tool);
         if (tool !== 'select') setSelectedIds([]);
       }}
-      title={label}
+      title={shortcut ? `${label} (${shortcut})` : label}
     >
       {label}
     </button>
@@ -423,8 +423,18 @@ export function MainToolbar({ onExport, onMasters, onAiAssist, onHelp, onTransfo
 
       {/* ── Direct tool buttons (Select / Pan) ── */}
       <div className="toolbar-group">
-        {toolBtn('select', t.toolSelect)}
-        {toolBtn('pan', t.toolPan)}
+        {toolBtn('select', t.toolSelect, 'V')}
+        {toolBtn('pan', t.toolPan, 'H')}
+      </div>
+
+      {/* ── Direct drawing tools ── */}
+      <div className="toolbar-group">
+        {toolBtn('column', t.toolColumn, 'C')}
+        {toolBtn('beam', t.toolBeam, 'B')}
+        {toolBtn('wall', t.toolWall, 'W')}
+        {toolBtn('slab', t.toolSlab, 'S')}
+        {toolBtn('dimension', t.toolDimension, 'D')}
+        {toolBtn('annotation', t.toolAnnotation, 'T')}
       </div>
 
       {/* ── Right side: theme & locale ── */}
