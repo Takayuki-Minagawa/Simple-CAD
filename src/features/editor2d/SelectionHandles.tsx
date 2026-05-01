@@ -1,6 +1,6 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useEditorStore, useProjectStore } from '@/app/store';
-import { screenToWorld } from '@/domain/geometry/transform';
+import { screenToWorld, snapPointToGrid } from '@/domain/geometry/transform';
 import type { Point2D } from '@/domain/geometry/types';
 import type { Member } from '@/domain/structural/types';
 import { getSelectionHandles, type SelectionHandle } from './editableHandles';
@@ -18,6 +18,16 @@ function updateLinearMemberPoint(member: Exclude<Member, { type: 'slab' }>, kind
   return { end: { ...member.end, x: point.x, y: point.y } } as Partial<Member>;
 }
 
+function getHandleKey(handle: SelectionHandle): string {
+  return `${handle.kind}-${handle.id}-${'vertexIndex' in handle ? handle.vertexIndex : 'point'}`;
+}
+
+function snapDragPoint(point: Point2D): Point2D {
+  const { activeSnapModes, gridSpacing, snapEnabled } = useEditorStore.getState();
+  if (!snapEnabled || !activeSnapModes.includes('grid')) return point;
+  return snapPointToGrid(point, gridSpacing);
+}
+
 export function SelectionHandles() {
   const data = useProjectStore((s) => s.data);
   const updateMember = useProjectStore((s) => s.updateMember);
@@ -28,6 +38,8 @@ export function SelectionHandles() {
   const activeStory = useEditorStore((s) => s.activeStory);
   const zoom = useEditorStore((s) => s.zoom);
   const [dragging, setDragging] = useState<{ handle: SelectionHandle; svg: SVGSVGElement } | null>(null);
+  const [dragPreviewPoint, setDragPreviewPoint] = useState<Point2D | null>(null);
+  const dragPreviewPointRef = useRef<Point2D | null>(null);
 
   const handles = data ? getSelectionHandles(data, selectedIds, activeStory) : [];
   const radius = Math.max(35, 6 / zoom);
@@ -81,10 +93,20 @@ export function SelectionHandles() {
 
     const handleMove = (e: MouseEvent) => {
       const point = toWorld(e);
-      if (point) applyDrag(point);
+      if (!point) return;
+      const snapped = snapDragPoint(point);
+      dragPreviewPointRef.current = snapped;
+      setDragPreviewPoint(snapped);
     };
 
-    const handleUp = () => setDragging(null);
+    const handleUp = (e: MouseEvent) => {
+      const currentPoint = toWorld(e);
+      const point = dragPreviewPointRef.current && currentPoint ? snapDragPoint(currentPoint) : dragPreviewPointRef.current;
+      if (point) applyDrag(point);
+      dragPreviewPointRef.current = null;
+      setDragPreviewPoint(null);
+      setDragging(null);
+    };
 
     window.addEventListener('mousemove', handleMove);
     window.addEventListener('mouseup', handleUp);
@@ -98,26 +120,35 @@ export function SelectionHandles() {
 
   return (
     <g className="selection-handles">
-      {handles.map((handle) => (
-        <circle
-          key={`${handle.kind}-${handle.id}-${'vertexIndex' in handle ? handle.vertexIndex : 'point'}`}
-          cx={handle.point.x}
-          cy={handle.point.y}
-          r={radius}
-          fill="#fff"
-          stroke="var(--accent)"
-          strokeWidth={Math.max(12, 2 / zoom)}
-          vectorEffect="non-scaling-stroke"
-          style={{ cursor: 'move', pointerEvents: 'all' }}
-          onMouseDown={(e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            const svg = e.currentTarget.ownerSVGElement;
-            if (svg) setDragging({ handle, svg });
-          }}
-          onClick={(e) => e.stopPropagation()}
-        />
-      ))}
+      {handles.map((handle) => {
+        const key = getHandleKey(handle);
+        const isDraggingHandle = dragging && getHandleKey(dragging.handle) === key;
+        const point = isDraggingHandle && dragPreviewPoint ? dragPreviewPoint : handle.point;
+        return (
+          <circle
+            key={key}
+            cx={point.x}
+            cy={point.y}
+            r={radius}
+            fill="#fff"
+            stroke="var(--accent)"
+            strokeWidth={Math.max(12, 2 / zoom)}
+            vectorEffect="non-scaling-stroke"
+            style={{ cursor: 'move', pointerEvents: 'all' }}
+            onMouseDown={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              const svg = e.currentTarget.ownerSVGElement;
+              if (svg) {
+                dragPreviewPointRef.current = null;
+                setDragPreviewPoint(null);
+                setDragging({ handle, svg });
+              }
+            }}
+            onClick={(e) => e.stopPropagation()}
+          />
+        );
+      })}
     </g>
   );
 }

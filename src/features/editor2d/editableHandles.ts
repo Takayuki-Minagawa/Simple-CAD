@@ -29,6 +29,7 @@ export function getSelectionHandles(
       handles.push({ kind: 'member-point', id: member.id, point: { x: member.start.x, y: member.start.y } });
       continue;
     }
+    // TODO: Merge coincident endpoint handles so shared joints can be moved together.
     handles.push({ kind: 'member-start', id: member.id, point: { x: member.start.x, y: member.start.y } });
     handles.push({ kind: 'member-end', id: member.id, point: { x: member.end.x, y: member.end.y } });
   }
