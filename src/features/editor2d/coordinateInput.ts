@@ -10,6 +10,7 @@ export function parseCoordinate(input: string, lastPoint: Point2D | null): Point
   const trimmed = input.trim();
   if (!trimmed) return null;
 
+  // Commas take precedence; otherwise a coordinate pair may be separated by whitespace.
   const parsePair = (value: string): [number, number] | null => {
     const parts = value.includes(',') ? value.split(',') : value.trim().split(/\s+/);
     if (parts.length !== 2) return null;

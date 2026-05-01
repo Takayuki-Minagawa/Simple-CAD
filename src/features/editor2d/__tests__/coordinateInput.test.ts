@@ -5,6 +5,9 @@ describe('parseCoordinate', () => {
   it('parses absolute comma and space separated coordinates', () => {
     expect(parseCoordinate('1000,2000', null)).toEqual({ x: 1000, y: 2000 });
     expect(parseCoordinate('1000 2000', null)).toEqual({ x: 1000, y: 2000 });
+    expect(parseCoordinate('-1000 -2000', null)).toEqual({ x: -1000, y: -2000 });
+    expect(parseCoordinate('1.5 2.5', null)).toEqual({ x: 1.5, y: 2.5 });
+    expect(parseCoordinate('  1000   2000  ', null)).toEqual({ x: 1000, y: 2000 });
   });
 
   it('parses relative comma and space separated coordinates', () => {
@@ -22,5 +25,6 @@ describe('parseCoordinate', () => {
   it('rejects incomplete coordinate pairs', () => {
     expect(parseCoordinate('1000', null)).toBeNull();
     expect(parseCoordinate('@100 200 300', null)).toBeNull();
+    expect(parseCoordinate('abc def', null)).toBeNull();
   });
 });
