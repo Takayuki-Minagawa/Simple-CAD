@@ -6,7 +6,7 @@ import { MemberLayer } from './layers/MemberLayer';
 import { DimensionLayer } from './layers/DimensionLayer';
 import { AnnotationLayer } from './layers/AnnotationLayer';
 import { DrawPreview } from './DrawPreview';
-import { useEditorInteraction } from './useEditorInteraction';
+import { canCompleteDrawing, useEditorInteraction } from './useEditorInteraction';
 import { CoordinateInputBar } from './CoordinateInputDialog';
 import { EditorControls2D } from './EditorControls2D';
 import { DrawingGuide } from './DrawingGuide';
@@ -29,6 +29,7 @@ export function Editor2D() {
     handleMouseDown,
     handleMouseUp,
     injectCoordinate,
+    completeDrawing,
     resetDrawing,
   } = useEditorInteraction();
 
@@ -71,6 +72,15 @@ export function Editor2D() {
           setActiveTool('select');
         }
       }
+      if (e.key === 'Enter') {
+        const target = e.target as HTMLElement;
+        if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT') return;
+        if (canCompleteDrawing(activeTool, drawState.points.length)) {
+          e.preventDefault();
+          completeDrawing();
+          return;
+        }
+      }
       if (e.key === 'Delete' || e.key === 'Backspace') {
         const target = e.target as HTMLElement;
         if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA') return;
@@ -93,7 +103,7 @@ export function Editor2D() {
         }
       }
     },
-    [drawState.points.length, resetDrawing, setActiveTool, zoomToExtents, zoomToSelection],
+    [activeTool, completeDrawing, drawState.points.length, resetDrawing, setActiveTool, zoomToExtents, zoomToSelection],
   );
 
   useEffect(() => {

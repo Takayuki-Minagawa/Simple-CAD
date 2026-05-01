@@ -28,6 +28,13 @@ export interface RectSelectState {
   end: Point2D | null;
 }
 
+export function canCompleteDrawing(tool: EditorTool, pointCount: number): boolean {
+  return (
+    (tool === 'slab' && pointCount >= 3) ||
+    (tool === 'spline' && pointCount >= 2)
+  );
+}
+
 function supportsAngleConstraint(tool: EditorTool): boolean {
   return tool === 'beam' || tool === 'wall' || tool === 'slab' || tool === 'dimension' || tool === 'xline' || tool === 'spline';
 }
@@ -373,60 +380,61 @@ export function useEditorInteraction() {
     [drawState.points, getSnapPos, handleDrawingClick],
   );
 
-  const handleDoubleClick = useCallback(
-    () => {
-      const { activeTool } = useEditorStore.getState();
-      // Close slab polygon on double-click
-      if (activeTool === 'slab') {
-        setDrawState((prev) => {
-          if (prev.points.length < 3) return prev;
-          const store = useProjectStore.getState();
-          const { activeStory } = useEditorStore.getState();
-          if (!store.data || !activeStory) return prev;
-          const story = store.data.stories.find((s) => s.id === activeStory);
-          if (!story) return prev;
+  const completeDrawing = useCallback(() => {
+    const { activeTool } = useEditorStore.getState();
+    // Close slab polygon on double-click or Enter
+    if (activeTool === 'slab') {
+      setDrawState((prev) => {
+        if (!canCompleteDrawing(activeTool, prev.points.length)) return prev;
+        const store = useProjectStore.getState();
+        const { activeStory } = useEditorStore.getState();
+        if (!store.data || !activeStory) return prev;
+        const story = store.data.stories.find((s) => s.id === activeStory);
+        if (!story) return prev;
 
-          const usedIds = collectAllIds(store.data);
-          const defaultSection = store.data.sections.find((s) => s.kind === 'rc_slab')?.id ?? store.data.sections[0]?.id ?? '';
-          const member: SlabMember = {
-            id: generateId('slab', usedIds),
-            type: 'slab',
-            story: activeStory,
-            sectionId: defaultSection,
-            materialId: store.data.materials[0]?.id ?? '',
-            polygon: prev.points.map((p) => ({ x: p.x, y: p.y })),
-            level: story.elevation + story.height,
-          };
-          store.addMember(member);
-          return { points: [], previewPos: null, snapResult: null };
-        });
-      }
+        const usedIds = collectAllIds(store.data);
+        const defaultSection = store.data.sections.find((s) => s.kind === 'rc_slab')?.id ?? store.data.sections[0]?.id ?? '';
+        const member: SlabMember = {
+          id: generateId('slab', usedIds),
+          type: 'slab',
+          story: activeStory,
+          sectionId: defaultSection,
+          materialId: store.data.materials[0]?.id ?? '',
+          polygon: prev.points.map((p) => ({ x: p.x, y: p.y })),
+          level: story.elevation + story.height,
+        };
+        store.addMember(member);
+        return { points: [], previewPos: null, snapResult: null };
+      });
+    }
 
-      // Close spline on double-click
-      if (activeTool === 'spline') {
-        setDrawState((prev) => {
-          if (prev.points.length < 2) return prev;
-          const store = useProjectStore.getState();
-          const { activeStory } = useEditorStore.getState();
-          if (!store.data || !activeStory) return prev;
+    // Close spline on double-click or Enter
+    if (activeTool === 'spline') {
+      setDrawState((prev) => {
+        if (!canCompleteDrawing(activeTool, prev.points.length)) return prev;
+        const store = useProjectStore.getState();
+        const { activeStory } = useEditorStore.getState();
+        if (!store.data || !activeStory) return prev;
 
-          const usedIds2 = collectAllIds(store.data);
-          const ann: Annotation = {
-            id: generateId('spl', usedIds2),
-            type: 'spline',
-            story: activeStory,
-            x: prev.points[0].x,
-            y: prev.points[0].y,
-            text: '',
-            points: prev.points.map((p) => ({ x: p.x, y: p.y })),
-          };
-          store.addAnnotation(ann);
-          return { points: [], previewPos: null, snapResult: null };
-        });
-      }
-    },
-    [],
-  );
+        const usedIds2 = collectAllIds(store.data);
+        const ann: Annotation = {
+          id: generateId('spl', usedIds2),
+          type: 'spline',
+          story: activeStory,
+          x: prev.points[0].x,
+          y: prev.points[0].y,
+          text: '',
+          points: prev.points.map((p) => ({ x: p.x, y: p.y })),
+        };
+        store.addAnnotation(ann);
+        return { points: [], previewPos: null, snapResult: null };
+      });
+    }
+  }, []);
+
+  const handleDoubleClick = useCallback(() => {
+    completeDrawing();
+  }, [completeDrawing]);
 
   const handleMouseMove = useCallback(
     (worldPos: Point2D, e: React.MouseEvent) => {
@@ -519,6 +527,7 @@ export function useEditorInteraction() {
     handleMouseDown,
     handleMouseUp,
     injectCoordinate,
+    completeDrawing,
     resetDrawing,
   };
 }
