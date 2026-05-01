@@ -25,6 +25,9 @@ describe('parseCoordinate', () => {
   it('uses distance-only input along the preview direction', () => {
     const point = parseCoordinate('@500', { x: 100, y: 200 }, { x: 1100, y: 200 });
     expect(point).toEqual({ x: 600, y: 200 });
+
+    const negativePoint = parseCoordinate('@-500', { x: 100, y: 200 }, { x: 1100, y: 200 });
+    expect(negativePoint).toEqual({ x: -400, y: 200 });
   });
 
   it('rejects distance-only input without a usable direction', () => {
