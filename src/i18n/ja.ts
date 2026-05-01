@@ -190,6 +190,23 @@ export const ja: Translations = {
   columnZDownTooltip: '柱を現階レベルから下向きに配置します',
   columnZUpTooltip: '柱を現階レベルから上向きに配置します',
 
+  guideColumnPlace: '柱の配置位置をクリック',
+  guideBeamStart: '梁の始点をクリック',
+  guideBeamEnd: '梁の終点をクリック',
+  guideWallStart: '壁の始点をクリック',
+  guideWallEnd: '壁の終点をクリック',
+  guideSlabStart: 'スラブの1点目をクリック',
+  guideSlabNext: '次の頂点をクリック、ダブルクリックで確定',
+  guideDimensionStart: '寸法の始点をクリック',
+  guideDimensionEnd: '寸法の終点をクリック',
+  guideAnnotationPlace: '注記を配置する位置をクリック',
+  guideXlineStart: '補助線の基点をクリック',
+  guideXlineDirection: '補助線の方向点をクリック',
+  guideSplineStart: 'スプラインの1点目をクリック',
+  guideSplineNext: '次の点をクリック、ダブルクリックで確定',
+  guideExtendSource: '延長する部材をクリック',
+  guideExtendTarget: '延長先の部材をクリック',
+
   selectionWindow: 'ウィンドウ選択',
   selectionCrossing: 'クロス選択',
 

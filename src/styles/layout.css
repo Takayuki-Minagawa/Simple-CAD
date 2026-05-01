@@ -240,6 +240,23 @@
   background: var(--border-color);
 }
 
+.drawing-guide {
+  position: absolute;
+  top: 52px;
+  left: 10px;
+  z-index: 20;
+  max-width: min(460px, calc(100% - 20px));
+  padding: 6px 10px;
+  border: 1px solid color-mix(in srgb, var(--accent) 45%, var(--border-color));
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--bg-panel) 94%, transparent);
+  color: var(--text-primary);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.14);
+  font-size: 12px;
+  line-height: 1.35;
+  pointer-events: none;
+}
+
 .responsive-panel-controls {
   display: none;
 }
@@ -268,6 +285,11 @@
     right: 10px;
     flex-wrap: wrap;
     overflow-x: visible;
+  }
+
+  .drawing-guide {
+    right: 10px;
+    max-width: none;
   }
 
   .responsive-panel-controls {

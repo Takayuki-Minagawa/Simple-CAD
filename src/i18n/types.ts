@@ -188,6 +188,24 @@ export interface Translations {
   columnZDownTooltip: string;
   columnZUpTooltip: string;
 
+  // Drawing guide
+  guideColumnPlace: string;
+  guideBeamStart: string;
+  guideBeamEnd: string;
+  guideWallStart: string;
+  guideWallEnd: string;
+  guideSlabStart: string;
+  guideSlabNext: string;
+  guideDimensionStart: string;
+  guideDimensionEnd: string;
+  guideAnnotationPlace: string;
+  guideXlineStart: string;
+  guideXlineDirection: string;
+  guideSplineStart: string;
+  guideSplineNext: string;
+  guideExtendSource: string;
+  guideExtendTarget: string;
+
   // Rectangle selection
   selectionWindow: string;
   selectionCrossing: string;

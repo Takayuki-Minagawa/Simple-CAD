@@ -9,6 +9,7 @@ import { DrawPreview } from './DrawPreview';
 import { useEditorInteraction } from './useEditorInteraction';
 import { CoordinateInputBar } from './CoordinateInputDialog';
 import { EditorControls2D } from './EditorControls2D';
+import { DrawingGuide } from './DrawingGuide';
 import { getAllEntityBounds, getSelectionBounds } from '@/domain/structural/editTransform';
 
 export function Editor2D() {
@@ -154,6 +155,7 @@ export function Editor2D() {
         onZoomExtents={zoomToExtents}
         onZoomSelection={zoomToSelection}
       />
+      <DrawingGuide activeTool={activeTool} pointCount={drawState.points.length} />
       <div style={{ flex: 1, overflow: 'hidden' }}>
         <SvgCanvas
           onWorldClick={handleClick}
