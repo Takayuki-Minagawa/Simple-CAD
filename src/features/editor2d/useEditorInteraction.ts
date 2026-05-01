@@ -11,6 +11,7 @@ import type { SnapResult } from '@/domain/geometry/snap';
 import { snapPointToGrid } from '@/domain/geometry/transform';
 import { constrainPointToAngle } from '@/domain/geometry/angleConstraint';
 import { getEntityBoundsList, selectByRectangle } from '@/domain/structural/editTransform';
+import { getEventCandidateIds, pickSelectionCandidate } from './selectionCycle';
 
 export interface DrawState {
   /** Points collected so far for multi-click tools */
@@ -52,6 +53,16 @@ function applyAngleConstraint(
   pos: Point2D,
 ): Point2D {
   return constrainPointToAngle(points[points.length - 1], pos);
+}
+
+function isSelectableId(id: string, layerLocked: Record<string, boolean>): boolean {
+  const data = useProjectStore.getState().data;
+  if (!data) return true;
+  const member = data.members.find((m) => m.id === id);
+  if (member) return !layerLocked[`member-${member.type}`];
+  if (data.annotations.some((a) => a.id === id)) return !layerLocked.annotation;
+  if (data.dimensions.some((d) => d.id === id)) return !layerLocked.dimension;
+  return true;
 }
 
 export function useEditorInteraction() {
@@ -296,23 +307,13 @@ export function useEditorInteraction() {
       const { activeTool, setSelectedIds, toggleSelection, layerLocked } = useEditorStore.getState();
 
       if (activeTool === 'select') {
-        const target = (e.target as SVGElement).closest('[data-id]');
-        if (!target) {
+        const candidateIds = getEventCandidateIds(e).filter((id) => isSelectableId(id, layerLocked));
+        const id = pickSelectionCandidate(candidateIds, useEditorStore.getState().selectedIds);
+        if (!id) {
           setSelectedIds([]);
           return;
         }
-        const id = target.getAttribute('data-id')!;
-
-        // Check if entity's layer is locked
         const data = useProjectStore.getState().data;
-        if (data) {
-          const member = data.members.find((m) => m.id === id);
-          if (member && layerLocked[`member-${member.type}`]) return;
-          const annotation = data.annotations.find((a) => a.id === id);
-          if (annotation && layerLocked['annotation']) return;
-          const dimension = data.dimensions.find((d) => d.id === id);
-          if (dimension && layerLocked['dimension']) return;
-        }
 
         // Group selection: if member belongs to a group, select all group members
         if (data) {
