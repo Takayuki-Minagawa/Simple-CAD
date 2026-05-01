@@ -27,7 +27,7 @@ export function getDrawingGuideText(
     case 'spline':
       return pointCount === 0 ? t.guideSplineStart : t.guideSplineNext;
     case 'trim':
-      return t.trimPrompt;
+      return t.guideTrimPrompt;
     case 'extend':
       return pointCount === 0 ? t.guideExtendSource : t.guideExtendTarget;
   }

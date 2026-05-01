@@ -21,4 +21,10 @@ describe('getDrawingGuideText', () => {
     expect(getDrawingGuideText('spline', 0, en)).toBe(en.guideSplineStart);
     expect(getDrawingGuideText('spline', 1, en)).toBe(en.guideSplineNext);
   });
+
+  it('uses guide-specific keys for edit tools', () => {
+    expect(getDrawingGuideText('trim', 0, en)).toBe(en.guideTrimPrompt);
+    expect(getDrawingGuideText('extend', 0, en)).toBe(en.guideExtendSource);
+    expect(getDrawingGuideText('extend', 1, en)).toBe(en.guideExtendTarget);
+  });
 });

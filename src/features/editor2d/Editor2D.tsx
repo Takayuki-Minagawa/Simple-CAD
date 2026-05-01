@@ -150,12 +150,14 @@ export function Editor2D() {
 
   return (
     <div ref={containerRef} style={{ display: 'flex', flexDirection: 'column', height: '100%', position: 'relative' }}>
-      <EditorControls2D
-        canZoomSelection={selectedIds.length > 0}
-        onZoomExtents={zoomToExtents}
-        onZoomSelection={zoomToSelection}
-      />
-      <DrawingGuide activeTool={activeTool} pointCount={drawState.points.length} />
+      <div className="editor-canvas-overlay">
+        <EditorControls2D
+          canZoomSelection={selectedIds.length > 0}
+          onZoomExtents={zoomToExtents}
+          onZoomSelection={zoomToSelection}
+        />
+        <DrawingGuide activeTool={activeTool} pointCount={drawState.points.length} />
+      </div>
       <div style={{ flex: 1, overflow: 'hidden' }}>
         <SvgCanvas
           onWorldClick={handleClick}

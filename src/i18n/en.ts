@@ -204,6 +204,7 @@ export const en: Translations = {
   guideXlineDirection: 'Click the construction line direction point',
   guideSplineStart: 'Click the first spline point',
   guideSplineNext: 'Click the next point, double-click to finish',
+  guideTrimPrompt: 'Click near the end of a member to trim',
   guideExtendSource: 'Click the member to extend',
   guideExtendTarget: 'Click the target member',
 

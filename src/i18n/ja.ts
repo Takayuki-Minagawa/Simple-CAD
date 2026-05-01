@@ -204,6 +204,7 @@ export const ja: Translations = {
   guideXlineDirection: '補助線の方向点をクリック',
   guideSplineStart: 'スプラインの1点目をクリック',
   guideSplineNext: '次の点をクリック、ダブルクリックで確定',
+  guideTrimPrompt: '部材の端付近をクリックしてトリム',
   guideExtendSource: '延長する部材をクリック',
   guideExtendTarget: '延長先の部材をクリック',
 

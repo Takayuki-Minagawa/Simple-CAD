@@ -203,6 +203,7 @@ export interface Translations {
   guideXlineDirection: string;
   guideSplineStart: string;
   guideSplineNext: string;
+  guideTrimPrompt: string;
   guideExtendSource: string;
   guideExtendTarget: string;
 
