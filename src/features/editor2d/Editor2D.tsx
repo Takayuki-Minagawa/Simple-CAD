@@ -10,6 +10,7 @@ import { canCompleteDrawing, useEditorInteraction } from './useEditorInteraction
 import { CoordinateInputBar } from './CoordinateInputDialog';
 import { EditorControls2D } from './EditorControls2D';
 import { DrawingGuide } from './DrawingGuide';
+import { SelectionHandles } from './SelectionHandles';
 import { getAllEntityBounds, getSelectionBounds } from '@/domain/structural/editTransform';
 
 export function Editor2D() {
@@ -249,6 +250,7 @@ export function Editor2D() {
               </g>
             );
           })}
+          {activeTool === 'select' && <SelectionHandles />}
           <DrawPreview drawState={drawState} activeTool={activeTool} />
           {selectionRectOverlay}
         </SvgCanvas>
