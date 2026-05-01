@@ -1,6 +1,6 @@
 import { useEffect } from 'react';
 import { useProjectStore, useEditorStore } from '@/app/store';
-import type { EditorTool } from '@/app/store';
+import { getToolForShortcutKey } from '@/app/toolMetadata';
 
 export function useKeyboardShortcuts() {
   useEffect(() => {
@@ -60,18 +60,7 @@ export function useKeyboardShortcuts() {
 
       // Tool shortcuts (single key)
       if (!ctrl && !e.altKey) {
-        const toolMap: Record<string, EditorTool> = {
-          v: 'select',
-          h: 'pan',
-          c: 'column',
-          b: 'beam',
-          w: 'wall',
-          s: 'slab',
-          d: 'dimension',
-          t: 'annotation',
-        };
-
-        const tool = toolMap[e.key.toLowerCase()];
+        const tool = getToolForShortcutKey(e.key);
         if (tool) {
           useEditorStore.getState().setActiveTool(tool);
           return;
