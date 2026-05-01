@@ -140,7 +140,7 @@ export const en: Translations = {
     '- Column: Click to place a column\n- Beam: Click 2 points to place a beam\n- Wall: Click 2 points to place a wall\n- Slab: Click multiple points → double-click to close\n- Dim: Click 2 points to place a dimension line\n- Text: Click to place an annotation\n- Transform: Apply numeric move / copy / scale / parametric deformation to the current selection',
   helpSectionShortcuts: 'Keyboard Shortcuts',
   helpShortcutsText:
-    'V: Select  |  H: Pan  |  C: Column  |  B: Beam  |  W: Wall  |  S: Slab\nD: Dimension  |  T: Text  |  Escape: Cancel\nZ: Zoom Extents  |  Shift+Z: Zoom Selection\nCtrl+Z: Undo  |  Ctrl+Shift+Z: Redo\nCtrl+D: Copy with 1000 mm offset  |  Delete: Delete\nToolbar "Transform": Numeric move / copy / scale / parametric deformation\nMouse wheel: Zoom  |  Middle button drag: Pan',
+    'V: Select  |  H: Pan  |  C: Column  |  B: Beam  |  W: Wall  |  S: Slab\nD: Dimension  |  T: Text  |  Escape: Cancel\nZ: Zoom Extents  |  Shift+Z: Zoom Selection  |  Shift while drawing: 45-degree constraint\nCtrl+Z: Undo  |  Ctrl+Shift+Z: Redo\nCtrl+D: Copy with 1000 mm offset  |  Delete: Delete\nToolbar "Transform": Numeric move / copy / scale / parametric deformation\nMouse wheel: Zoom  |  Middle button drag: Pan',
   helpSectionExport: 'Export',
   helpExportText:
     'Open the export dialog from the "Export" button in the toolbar. Choose SVG / PDF / DXF format. PDF can export all sheets into a single multi-page file. SVG/PDF export by sheet, DXF exports by story.',

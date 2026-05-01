@@ -9,6 +9,7 @@ import type { Point2D } from '@/domain/geometry/types';
 import { findSnap, buildSnapCandidatesFromMembers } from '@/domain/geometry/snap';
 import type { SnapResult } from '@/domain/geometry/snap';
 import { snapPointToGrid } from '@/domain/geometry/transform';
+import { constrainPointToAngle } from '@/domain/geometry/angleConstraint';
 import { getEntityBoundsList, selectByRectangle } from '@/domain/structural/editTransform';
 
 export interface DrawState {
@@ -25,6 +26,20 @@ export interface RectSelectState {
   start: Point2D | null;
   /** Current end point in world coords */
   end: Point2D | null;
+}
+
+function supportsAngleConstraint(tool: EditorTool): boolean {
+  return tool === 'beam' || tool === 'wall' || tool === 'slab' || tool === 'dimension' || tool === 'xline' || tool === 'spline';
+}
+
+function applyAngleConstraint(
+  tool: EditorTool,
+  points: Point2D[],
+  pos: Point2D,
+  enabled: boolean,
+): Point2D {
+  if (!enabled || points.length === 0 || !supportsAngleConstraint(tool)) return pos;
+  return constrainPointToAngle(points[points.length - 1], pos);
 }
 
 export function useEditorInteraction() {
@@ -346,9 +361,10 @@ export function useEditorInteraction() {
       }
 
       const { pos } = getSnapPos(worldPos);
-      handleDrawingClick(activeTool, pos);
+      const drawPos = applyAngleConstraint(activeTool, drawState.points, pos, e.shiftKey);
+      handleDrawingClick(activeTool, drawPos);
     },
-    [getSnapPos, handleDrawingClick],
+    [drawState.points, getSnapPos, handleDrawingClick],
   );
 
   const handleDoubleClick = useCallback(
@@ -407,13 +423,17 @@ export function useEditorInteraction() {
   );
 
   const handleMouseMove = useCallback(
-    (worldPos: Point2D) => {
+    (worldPos: Point2D, e: React.MouseEvent) => {
       const { pos, snap } = getSnapPos(worldPos);
-      setDrawState((prev) => ({
-        ...prev,
-        previewPos: pos,
-        snapResult: snap,
-      }));
+      const { activeTool } = useEditorStore.getState();
+      setDrawState((prev) => {
+        const previewPos = applyAngleConstraint(activeTool, prev.points, pos, e.shiftKey);
+        return {
+          ...prev,
+          previewPos,
+          snapResult: snap,
+        };
+      });
       // Update rect select end if dragging
       setRectSelect((prev) => {
         if (prev.start) {
