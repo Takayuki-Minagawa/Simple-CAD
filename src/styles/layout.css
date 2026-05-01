@@ -11,6 +11,7 @@
   grid-template-columns: var(--left-panel-width) 1fr var(--right-panel-width);
   overflow: hidden;
   min-height: 0;
+  position: relative;
 }
 
 /* ── Toolbar ── */
@@ -183,6 +184,150 @@
   position: relative;
   overflow: hidden;
   background: var(--bg-canvas);
+}
+
+.editor-floating-controls {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  max-width: calc(100% - 20px);
+  padding: 4px;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--bg-panel) 92%, transparent);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.14);
+  overflow-x: auto;
+}
+
+.floating-control-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 26px;
+  padding: 3px 8px;
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  font-size: 11px;
+  line-height: 1.2;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.floating-control-btn:hover {
+  border-color: var(--accent);
+}
+
+.floating-control-btn.active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
+.floating-control-btn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.floating-control-divider {
+  width: 1px;
+  align-self: stretch;
+  background: var(--border-color);
+}
+
+.responsive-panel-controls {
+  display: none;
+}
+
+@media (max-width: 900px) {
+  :root {
+    --left-panel-width: 190px;
+    --right-panel-width: 220px;
+  }
+
+  .main-toolbar {
+    overflow-x: auto;
+  }
+}
+
+@media (max-width: 680px) {
+  .app-body {
+    grid-template-columns: minmax(180px, 42vw) 1fr;
+  }
+
+  .right-panel {
+    display: none;
+  }
+
+  .editor-floating-controls {
+    right: 10px;
+    flex-wrap: wrap;
+    overflow-x: visible;
+  }
+
+  .responsive-panel-controls {
+    position: absolute;
+    right: 10px;
+    bottom: 10px;
+    z-index: 70;
+    display: flex;
+    gap: 6px;
+  }
+
+  .responsive-panel-btn {
+    min-height: 28px;
+    padding: 4px 10px;
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    background: var(--bg-panel);
+    color: var(--text-primary);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.16);
+    font-size: 11px;
+    cursor: pointer;
+  }
+
+  .responsive-panel-btn.active {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: #fff;
+  }
+
+  .app-body.show-right-panel .right-panel {
+    position: absolute;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 60;
+    display: flex;
+    width: min(var(--right-panel-width), calc(100vw - 40px));
+    box-shadow: -8px 0 18px rgba(0, 0, 0, 0.22);
+  }
+}
+
+@media (max-width: 520px) {
+  .app-body {
+    grid-template-columns: 1fr;
+  }
+
+  .left-panel {
+    display: none;
+  }
+
+  .app-body.show-left-panel .left-panel {
+    position: absolute;
+    top: 0;
+    left: 0;
+    bottom: 0;
+    z-index: 60;
+    display: flex;
+    width: min(var(--left-panel-width), calc(100vw - 40px));
+    box-shadow: 8px 0 18px rgba(0, 0, 0, 0.22);
+  }
 }
 
 /* ── Status Bar ── */

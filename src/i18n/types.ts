@@ -47,6 +47,9 @@ export interface Translations {
   panelProperties: string;
   panelStory: string;
   panelValidation: string;
+  panelControls: string;
+  panelLeftToggle: string;
+  panelRightToggle: string;
   allStories: string;
   noSelection: string;
   objectsSelected: string;
@@ -176,6 +179,14 @@ export interface Translations {
   // Zoom
   zoomExtents: string;
   zoomSelection: string;
+  inputAssist: string;
+  memberSnap: string;
+  columnZDown: string;
+  columnZUp: string;
+  inputAssistTooltip: string;
+  memberSnapTooltip: string;
+  columnZDownTooltip: string;
+  columnZUpTooltip: string;
 
   // Rectangle selection
   selectionWindow: string;

@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import type { ColumnPlacementDirection } from '@/domain/structural/placement';
 
 export type EditorTool =
   | 'select'
@@ -32,6 +33,10 @@ export type LayerName = (typeof LAYER_NAMES)[number];
 
 export type ThemeMode = 'light' | 'dark';
 
+export function isCreationTool(tool: EditorTool): boolean {
+  return tool !== 'select' && tool !== 'pan' && tool !== 'trim' && tool !== 'extend';
+}
+
 interface EditorState {
   // Theme
   theme: ThemeMode;
@@ -50,6 +55,9 @@ interface EditorState {
   snapEnabled: boolean;
   activeSnapModes: SnapMode[];
   gridSpacing: number;
+  drawInputAssist: boolean;
+  snapToMembersWhileDrawing: boolean;
+  columnPlacementDirection: ColumnPlacementDirection;
 
   // 2D viewport
   pan: { x: number; y: number };
@@ -77,6 +85,9 @@ interface EditorState {
   toggleSelection: (id: string) => void;
   setActiveTool: (tool: EditorTool) => void;
   setSnapEnabled: (enabled: boolean) => void;
+  setDrawInputAssist: (enabled: boolean) => void;
+  setSnapToMembersWhileDrawing: (enabled: boolean) => void;
+  setColumnPlacementDirection: (direction: ColumnPlacementDirection) => void;
   setPan: (pan: { x: number; y: number }) => void;
   setZoom: (zoom: number) => void;
   setCursorWorld: (pos: { x: number; y: number } | null) => void;
@@ -101,6 +112,9 @@ export const useEditorStore = create<EditorState>()((set) => ({
   snapEnabled: true,
   activeSnapModes: ['grid', 'endpoint', 'midpoint', 'intersection'],
   gridSpacing: 1000,
+  drawInputAssist: true,
+  snapToMembersWhileDrawing: false,
+  columnPlacementDirection: 'down',
   pan: { x: 0, y: 0 },
   zoom: 0.05,
   cursorWorld: null,
@@ -122,6 +136,9 @@ export const useEditorStore = create<EditorState>()((set) => ({
     })),
   setActiveTool: (tool) => set({ activeTool: tool }),
   setSnapEnabled: (enabled) => set({ snapEnabled: enabled }),
+  setDrawInputAssist: (enabled) => set({ drawInputAssist: enabled }),
+  setSnapToMembersWhileDrawing: (enabled) => set({ snapToMembersWhileDrawing: enabled }),
+  setColumnPlacementDirection: (direction) => set({ columnPlacementDirection: direction }),
   setPan: (pan) => set({ pan }),
   setZoom: (zoom) => set({ zoom: Math.max(0.001, Math.min(10, zoom)) }),
   setCursorWorld: (pos) => set({ cursorWorld: pos }),

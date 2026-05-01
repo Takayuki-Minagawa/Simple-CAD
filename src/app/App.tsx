@@ -22,7 +22,8 @@ export function App() {
   const viewMode = useEditorStore((s) => s.viewMode);
   const theme = useEditorStore((s) => s.theme);
   const data = useProjectStore((s) => s.data);
-  const { activeStory, setActiveStory } = useEditorStore();
+  const activeStory = useEditorStore((s) => s.activeStory);
+  const setActiveStory = useEditorStore((s) => s.setActiveStory);
   const { t } = useI18n();
   const [showExport, setShowExport] = useState(false);
   const [showMasters, setShowMasters] = useState(false);
@@ -30,6 +31,7 @@ export function App() {
   const [showHelp, setShowHelp] = useState(false);
   const [showTransform, setShowTransform] = useState(false);
   const [showPrintPreview, setShowPrintPreview] = useState(false);
+  const [responsivePanel, setResponsivePanel] = useState<'left' | 'right' | null>(null);
 
   useKeyboardShortcuts();
 
@@ -58,7 +60,7 @@ export function App() {
         onTransform={() => setShowTransform(true)}
         onPrintPreview={() => setShowPrintPreview(true)}
       />
-      <div className="app-body">
+      <div className={`app-body ${responsivePanel ? `show-${responsivePanel}-panel` : ''}`}>
         <div className="left-panel">
           <StorySelector />
           <ObjectTreePanel />
@@ -87,6 +89,22 @@ export function App() {
         <div className="right-panel">
           <PropertyPanel />
           <ValidationPanel />
+        </div>
+        <div className="responsive-panel-controls" aria-label={t.panelControls}>
+          <button
+            className={`responsive-panel-btn ${responsivePanel === 'left' ? 'active' : ''}`}
+            onClick={() => setResponsivePanel(responsivePanel === 'left' ? null : 'left')}
+            title={t.panelLeftToggle}
+          >
+            {t.panelStory}
+          </button>
+          <button
+            className={`responsive-panel-btn ${responsivePanel === 'right' ? 'active' : ''}`}
+            onClick={() => setResponsivePanel(responsivePanel === 'right' ? null : 'right')}
+            title={t.panelRightToggle}
+          >
+            {t.panelProperties}
+          </button>
         </div>
       </div>
       <StatusBar />

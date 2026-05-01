@@ -81,8 +81,15 @@ export function MainToolbar({ onExport, onMasters, onAiAssist, onHelp, onTransfo
         alert(imported.errors.map((e) => e.message).join('\n'));
         return;
       }
+      const existingRefIds = new Set(data.externalRefs?.map((existingRef) => existingRef.id));
+      let nextRefIndex = (data.externalRefs?.length ?? 0) + 1;
+      let refId = `xref-${String(nextRefIndex).padStart(3, '0')}`;
+      while (existingRefIds.has(refId)) {
+        nextRefIndex += 1;
+        refId = `xref-${String(nextRefIndex).padStart(3, '0')}`;
+      }
       const ref = {
-        id: `xref-${Date.now()}`,
+        id: refId,
         name: imported.data.project.name || 'Xref',
         data: imported.data,
         offsetX: 0,

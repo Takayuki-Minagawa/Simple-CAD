@@ -1,4 +1,5 @@
 import { useEffect, useMemo } from 'react';
+import { Edges } from '@react-three/drei';
 import * as THREE from 'three';
 import type { Member, Opening, Section } from '@/domain/structural/types';
 import { buildMemberGeometry, type GeometryEngine } from './memberGeometry';
@@ -55,6 +56,7 @@ export function MemberMesh({
       }}
     >
       <meshStandardMaterial {...materialProps} />
+      {selected && <Edges color="#f8fafc" linewidth={2} />}
     </mesh>
   );
 }
