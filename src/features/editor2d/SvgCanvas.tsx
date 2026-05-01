@@ -5,7 +5,7 @@ import { screenToWorld } from '@/domain/geometry/transform';
 interface Props {
   children: ReactNode;
   onWorldClick?: (worldPos: { x: number; y: number }, e: React.MouseEvent) => void;
-  onWorldMouseMove?: (worldPos: { x: number; y: number }) => void;
+  onWorldMouseMove?: (worldPos: { x: number; y: number }, e: React.MouseEvent) => void;
   onWorldMouseDown?: (worldPos: { x: number; y: number }, e: React.MouseEvent) => void;
   onWorldMouseUp?: (worldPos: { x: number; y: number }, e: React.MouseEvent) => void;
   onWorldDoubleClick?: (worldPos: { x: number; y: number }) => void;
@@ -80,7 +80,7 @@ export function SvgCanvas({
       }
       const world = getWorldPos(e);
       setCursorWorld(world);
-      onWorldMouseMove?.(world);
+      onWorldMouseMove?.(world, e);
     },
     [pan, setPan, getWorldPos, setCursorWorld, onWorldMouseMove],
   );

@@ -9,6 +9,7 @@ import type { Point2D } from '@/domain/geometry/types';
 import { findSnap, buildSnapCandidatesFromMembers } from '@/domain/geometry/snap';
 import type { SnapResult } from '@/domain/geometry/snap';
 import { snapPointToGrid } from '@/domain/geometry/transform';
+import { constrainPointToAngle } from '@/domain/geometry/angleConstraint';
 import { getEntityBoundsList, selectByRectangle } from '@/domain/structural/editTransform';
 
 export interface DrawState {
@@ -25,6 +26,25 @@ export interface RectSelectState {
   start: Point2D | null;
   /** Current end point in world coords */
   end: Point2D | null;
+}
+
+function supportsAngleConstraint(tool: EditorTool): boolean {
+  return tool === 'beam' || tool === 'wall' || tool === 'slab' || tool === 'dimension' || tool === 'xline' || tool === 'spline';
+}
+
+function shouldConstrainAngle(
+  tool: EditorTool,
+  points: Point2D[],
+  enabled: boolean,
+): boolean {
+  return enabled && points.length > 0 && supportsAngleConstraint(tool);
+}
+
+function applyAngleConstraint(
+  points: Point2D[],
+  pos: Point2D,
+): Point2D {
+  return constrainPointToAngle(points[points.length - 1], pos);
 }
 
 export function useEditorInteraction() {
@@ -345,10 +365,12 @@ export function useEditorInteraction() {
         return;
       }
 
-      const { pos } = getSnapPos(worldPos);
-      handleDrawingClick(activeTool, pos);
+      const constrainAngle = shouldConstrainAngle(activeTool, drawState.points, e.shiftKey);
+      const { pos } = constrainAngle ? { pos: worldPos } : getSnapPos(worldPos);
+      const drawPos = constrainAngle ? applyAngleConstraint(drawState.points, pos) : pos;
+      handleDrawingClick(activeTool, drawPos);
     },
-    [getSnapPos, handleDrawingClick],
+    [drawState.points, getSnapPos, handleDrawingClick],
   );
 
   const handleDoubleClick = useCallback(
@@ -407,13 +429,17 @@ export function useEditorInteraction() {
   );
 
   const handleMouseMove = useCallback(
-    (worldPos: Point2D) => {
-      const { pos, snap } = getSnapPos(worldPos);
-      setDrawState((prev) => ({
-        ...prev,
-        previewPos: pos,
-        snapResult: snap,
-      }));
+    (worldPos: Point2D, e: React.MouseEvent) => {
+      const { activeTool } = useEditorStore.getState();
+      setDrawState((prev) => {
+        const constrainAngle = shouldConstrainAngle(activeTool, prev.points, e.shiftKey);
+        const { pos, snap } = constrainAngle ? { pos: worldPos, snap: null } : getSnapPos(worldPos);
+        return {
+          ...prev,
+          previewPos: constrainAngle ? applyAngleConstraint(prev.points, pos) : pos,
+          snapResult: snap,
+        };
+      });
       // Update rect select end if dragging
       setRectSelect((prev) => {
         if (prev.start) {
