@@ -186,21 +186,31 @@
   background: var(--bg-canvas);
 }
 
-.editor-floating-controls {
+.editor-canvas-overlay {
   position: absolute;
   top: 10px;
   left: 10px;
+  right: 10px;
   z-index: 20;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  pointer-events: none;
+}
+
+.editor-floating-controls {
   display: flex;
   align-items: center;
   gap: 4px;
-  max-width: calc(100% - 20px);
+  max-width: 100%;
   padding: 4px;
   border: 1px solid var(--border-color);
   border-radius: 6px;
   background: color-mix(in srgb, var(--bg-panel) 92%, transparent);
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.14);
   overflow-x: auto;
+  pointer-events: auto;
 }
 
 .floating-control-btn {
@@ -240,6 +250,19 @@
   background: var(--border-color);
 }
 
+.drawing-guide {
+  max-width: min(460px, 100%);
+  padding: 6px 10px;
+  border: 1px solid color-mix(in srgb, var(--accent) 45%, var(--border-color));
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--bg-panel) 94%, transparent);
+  color: var(--text-primary);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.14);
+  font-size: 12px;
+  line-height: 1.35;
+  pointer-events: none;
+}
+
 .responsive-panel-controls {
   display: none;
 }
@@ -265,9 +288,13 @@
   }
 
   .editor-floating-controls {
-    right: 10px;
     flex-wrap: wrap;
     overflow-x: visible;
+  }
+
+  .drawing-guide {
+    align-self: stretch;
+    max-width: none;
   }
 
   .responsive-panel-controls {
