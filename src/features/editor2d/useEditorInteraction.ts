@@ -32,13 +32,18 @@ function supportsAngleConstraint(tool: EditorTool): boolean {
   return tool === 'beam' || tool === 'wall' || tool === 'slab' || tool === 'dimension' || tool === 'xline' || tool === 'spline';
 }
 
-function applyAngleConstraint(
+function shouldConstrainAngle(
   tool: EditorTool,
   points: Point2D[],
-  pos: Point2D,
   enabled: boolean,
+): boolean {
+  return enabled && points.length > 0 && supportsAngleConstraint(tool);
+}
+
+function applyAngleConstraint(
+  points: Point2D[],
+  pos: Point2D,
 ): Point2D {
-  if (!enabled || points.length === 0 || !supportsAngleConstraint(tool)) return pos;
   return constrainPointToAngle(points[points.length - 1], pos);
 }
 
@@ -360,8 +365,9 @@ export function useEditorInteraction() {
         return;
       }
 
-      const { pos } = getSnapPos(worldPos);
-      const drawPos = applyAngleConstraint(activeTool, drawState.points, pos, e.shiftKey);
+      const constrainAngle = shouldConstrainAngle(activeTool, drawState.points, e.shiftKey);
+      const { pos } = constrainAngle ? { pos: worldPos } : getSnapPos(worldPos);
+      const drawPos = constrainAngle ? applyAngleConstraint(drawState.points, pos) : pos;
       handleDrawingClick(activeTool, drawPos);
     },
     [drawState.points, getSnapPos, handleDrawingClick],
@@ -424,13 +430,13 @@ export function useEditorInteraction() {
 
   const handleMouseMove = useCallback(
     (worldPos: Point2D, e: React.MouseEvent) => {
-      const { pos, snap } = getSnapPos(worldPos);
       const { activeTool } = useEditorStore.getState();
       setDrawState((prev) => {
-        const previewPos = applyAngleConstraint(activeTool, prev.points, pos, e.shiftKey);
+        const constrainAngle = shouldConstrainAngle(activeTool, prev.points, e.shiftKey);
+        const { pos, snap } = constrainAngle ? { pos: worldPos, snap: null } : getSnapPos(worldPos);
         return {
           ...prev,
-          previewPos,
+          previewPos: constrainAngle ? applyAngleConstraint(prev.points, pos) : pos,
           snapResult: snap,
         };
       });
