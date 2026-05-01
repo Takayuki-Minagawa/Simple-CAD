@@ -6,7 +6,7 @@ import { MemberLayer } from './layers/MemberLayer';
 import { DimensionLayer } from './layers/DimensionLayer';
 import { AnnotationLayer } from './layers/AnnotationLayer';
 import { DrawPreview } from './DrawPreview';
-import { useEditorInteraction } from './useEditorInteraction';
+import { canCompleteDrawing, useEditorInteraction } from './useEditorInteraction';
 import { CoordinateInputBar } from './CoordinateInputDialog';
 import { EditorControls2D } from './EditorControls2D';
 import { DrawingGuide } from './DrawingGuide';
@@ -75,10 +75,7 @@ export function Editor2D() {
       if (e.key === 'Enter') {
         const target = e.target as HTMLElement;
         if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT') return;
-        const canComplete =
-          (activeTool === 'slab' && drawState.points.length >= 3) ||
-          (activeTool === 'spline' && drawState.points.length >= 2);
-        if (canComplete) {
+        if (canCompleteDrawing(activeTool, drawState.points.length)) {
           e.preventDefault();
           completeDrawing();
           return;

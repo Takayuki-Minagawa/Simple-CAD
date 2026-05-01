@@ -28,6 +28,13 @@ export interface RectSelectState {
   end: Point2D | null;
 }
 
+export function canCompleteDrawing(tool: EditorTool, pointCount: number): boolean {
+  return (
+    (tool === 'slab' && pointCount >= 3) ||
+    (tool === 'spline' && pointCount >= 2)
+  );
+}
+
 function supportsAngleConstraint(tool: EditorTool): boolean {
   return tool === 'beam' || tool === 'wall' || tool === 'slab' || tool === 'dimension' || tool === 'xline' || tool === 'spline';
 }
@@ -378,7 +385,7 @@ export function useEditorInteraction() {
     // Close slab polygon on double-click or Enter
     if (activeTool === 'slab') {
       setDrawState((prev) => {
-        if (prev.points.length < 3) return prev;
+        if (!canCompleteDrawing(activeTool, prev.points.length)) return prev;
         const store = useProjectStore.getState();
         const { activeStory } = useEditorStore.getState();
         if (!store.data || !activeStory) return prev;
@@ -404,7 +411,7 @@ export function useEditorInteraction() {
     // Close spline on double-click or Enter
     if (activeTool === 'spline') {
       setDrawState((prev) => {
-        if (prev.points.length < 2) return prev;
+        if (!canCompleteDrawing(activeTool, prev.points.length)) return prev;
         const store = useProjectStore.getState();
         const { activeStory } = useEditorStore.getState();
         if (!store.data || !activeStory) return prev;
