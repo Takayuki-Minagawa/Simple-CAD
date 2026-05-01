@@ -169,6 +169,7 @@ export function filletWalls(
   wallId2: string,
   _radius: number = 0,
 ): boolean {
+  // Reserved for future rounded fillets; current implementation only cleans to the intersection.
   void _radius;
   const wall1 = data.members.find((m) => m.id === wallId1);
   const wall2 = data.members.find((m) => m.id === wallId2);

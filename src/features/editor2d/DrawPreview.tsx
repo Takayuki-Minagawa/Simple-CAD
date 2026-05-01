@@ -1,5 +1,5 @@
 import type { DrawState } from './useEditorInteraction';
-import type { EditorTool } from '@/app/store';
+import { isCreationTool, type EditorTool } from '@/app/store';
 
 interface Props {
   drawState: DrawState;
@@ -103,7 +103,7 @@ export function DrawPreview({ drawState, activeTool }: Props) {
       )}
 
       {/* Cursor crosshair */}
-      {activeTool !== 'select' && activeTool !== 'pan' && (
+      {isCreationTool(activeTool) && (
         <g>
           <circle cx={previewPos.x} cy={previewPos.y} r={60} fill="var(--color-selection)" />
         </g>

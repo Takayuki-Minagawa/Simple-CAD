@@ -11,6 +11,7 @@
   grid-template-columns: var(--left-panel-width) 1fr var(--right-panel-width);
   overflow: hidden;
   min-height: 0;
+  position: relative;
 }
 
 /* ── Toolbar ── */
@@ -239,6 +240,10 @@
   background: var(--border-color);
 }
 
+.responsive-panel-controls {
+  display: none;
+}
+
 @media (max-width: 900px) {
   :root {
     --left-panel-width: 190px;
@@ -264,6 +269,44 @@
     flex-wrap: wrap;
     overflow-x: visible;
   }
+
+  .responsive-panel-controls {
+    position: absolute;
+    right: 10px;
+    bottom: 10px;
+    z-index: 70;
+    display: flex;
+    gap: 6px;
+  }
+
+  .responsive-panel-btn {
+    min-height: 28px;
+    padding: 4px 10px;
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    background: var(--bg-panel);
+    color: var(--text-primary);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.16);
+    font-size: 11px;
+    cursor: pointer;
+  }
+
+  .responsive-panel-btn.active {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: #fff;
+  }
+
+  .app-body.show-right-panel .right-panel {
+    position: absolute;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 60;
+    display: flex;
+    width: min(var(--right-panel-width), calc(100vw - 40px));
+    box-shadow: -8px 0 18px rgba(0, 0, 0, 0.22);
+  }
 }
 
 @media (max-width: 520px) {
@@ -273,6 +316,17 @@
 
   .left-panel {
     display: none;
+  }
+
+  .app-body.show-left-panel .left-panel {
+    position: absolute;
+    top: 0;
+    left: 0;
+    bottom: 0;
+    z-index: 60;
+    display: flex;
+    width: min(var(--left-panel-width), calc(100vw - 40px));
+    box-shadow: 8px 0 18px rgba(0, 0, 0, 0.22);
   }
 }
 

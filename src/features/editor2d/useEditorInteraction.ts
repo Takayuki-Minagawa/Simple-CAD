@@ -1,5 +1,5 @@
 import { useState, useCallback } from 'react';
-import { useProjectStore, useEditorStore } from '@/app/store';
+import { isCreationTool, useProjectStore, useEditorStore } from '@/app/store';
 import { collectAllIds, generateId } from '@/domain/idGenerator';
 import type { EditorTool } from '@/app/store';
 import { useI18n } from '@/i18n';
@@ -25,10 +25,6 @@ export interface RectSelectState {
   start: Point2D | null;
   /** Current end point in world coords */
   end: Point2D | null;
-}
-
-function isCreationTool(tool: EditorTool): boolean {
-  return tool !== 'select' && tool !== 'pan' && tool !== 'trim' && tool !== 'extend';
 }
 
 export function useEditorInteraction() {
@@ -477,7 +473,7 @@ export function useEditorInteraction() {
   const injectCoordinate = useCallback(
     (pos: Point2D) => {
       const { activeTool } = useEditorStore.getState();
-      if (activeTool !== 'select' && activeTool !== 'pan') {
+      if (isCreationTool(activeTool)) {
         handleDrawingClick(activeTool, pos);
       }
     },

@@ -33,6 +33,10 @@ export type LayerName = (typeof LAYER_NAMES)[number];
 
 export type ThemeMode = 'light' | 'dark';
 
+export function isCreationTool(tool: EditorTool): boolean {
+  return tool !== 'select' && tool !== 'pan' && tool !== 'trim' && tool !== 'extend';
+}
+
 interface EditorState {
   // Theme
   theme: ThemeMode;

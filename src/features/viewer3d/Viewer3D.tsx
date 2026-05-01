@@ -576,6 +576,7 @@ function computeModelExtents(
     xMax: xMax + Math.max((xMax - xMin) * 0.05, 1000),
     yMin: yMin - Math.max((yMax - yMin) * 0.05, 1000),
     yMax: yMax + Math.max((yMax - yMin) * 0.05, 1000),
+    // Keep negative Z in view so columns placed downward from the active level are not clipped.
     zMin: zMin - 500,
     zMax: zMax + 500,
   };

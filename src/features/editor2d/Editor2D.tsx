@@ -1,5 +1,5 @@
 import { useEffect, useCallback, useRef } from 'react';
-import { useProjectStore, useEditorStore } from '@/app/store';
+import { isCreationTool, useProjectStore, useEditorStore } from '@/app/store';
 import { SvgCanvas } from './SvgCanvas';
 import { GridLayer } from './layers/GridLayer';
 import { MemberLayer } from './layers/MemberLayer';
@@ -13,8 +13,12 @@ import { getAllEntityBounds, getSelectionBounds } from '@/domain/structural/edit
 
 export function Editor2D() {
   const data = useProjectStore((s) => s.data);
-  const { activeStory, selectedIds, layerVisibility, activeTool, setActiveTool, drawInputAssist } =
-    useEditorStore();
+  const activeStory = useEditorStore((s) => s.activeStory);
+  const selectedIds = useEditorStore((s) => s.selectedIds);
+  const layerVisibility = useEditorStore((s) => s.layerVisibility);
+  const activeTool = useEditorStore((s) => s.activeTool);
+  const setActiveTool = useEditorStore((s) => s.setActiveTool);
+  const drawInputAssist = useEditorStore((s) => s.drawInputAssist);
   const {
     drawState,
     rectSelect,
@@ -114,7 +118,7 @@ export function Editor2D() {
   const isVisible = (layer: string) => layerVisibility[layer] !== false;
 
   // Determine if a drawing tool is active (for coord input bar)
-  const isDrawingTool = activeTool !== 'select' && activeTool !== 'pan' && activeTool !== 'trim' && activeTool !== 'extend';
+  const isDrawingTool = isCreationTool(activeTool);
 
   // Last point for coordinate input (relative coordinates)
   const lastPoint = drawState.points.length > 0 ? drawState.points[drawState.points.length - 1] : null;
