@@ -10,5 +10,8 @@ describe('editorStore', () => {
 
     useEditorStore.getState().toggleSnapMode('nearest');
     expect(useEditorStore.getState().activeSnapModes).toEqual(['grid', 'nearest']);
+
+    useEditorStore.getState().toggleSnapMode('nearest');
+    expect(useEditorStore.getState().activeSnapModes).toEqual(['grid']);
   });
 });

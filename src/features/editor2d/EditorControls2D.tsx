@@ -1,5 +1,5 @@
 import { isCreationTool, useEditorStore } from '@/app/store';
-import type { SnapMode } from '@/app/store';
+import { getSnapModeLabels } from '@/app/snapMetadata';
 import { useI18n } from '@/i18n';
 
 interface Props {
@@ -22,14 +22,7 @@ export function EditorControls2D({ canZoomSelection, onZoomExtents, onZoomSelect
   const setColumnPlacementDirection = useEditorStore((s) => s.setColumnPlacementDirection);
   const { t } = useI18n();
   const isDrawing = isCreationTool(activeTool);
-  const snapModeLabels: Array<[SnapMode, string]> = [
-    ['grid', t.snapModeGrid],
-    ['endpoint', t.snapModeEndpoint],
-    ['midpoint', t.snapModeMidpoint],
-    ['intersection', t.snapModeIntersection],
-    ['perpendicular', t.snapModePerpendicular],
-    ['nearest', t.snapModeNearest],
-  ];
+  const snapModeLabels = getSnapModeLabels(t);
 
   return (
     <div className="editor-floating-controls">

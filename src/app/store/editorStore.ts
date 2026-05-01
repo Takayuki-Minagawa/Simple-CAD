@@ -15,7 +15,9 @@ export type EditorTool =
   | 'xline'
   | 'spline';
 
-export type SnapMode = 'grid' | 'endpoint' | 'midpoint' | 'intersection' | 'perpendicular' | 'nearest';
+export const SNAP_MODES = ['grid', 'endpoint', 'midpoint', 'intersection', 'perpendicular', 'nearest'] as const;
+
+export type SnapMode = (typeof SNAP_MODES)[number];
 
 export const LAYER_NAMES = [
   'grid',

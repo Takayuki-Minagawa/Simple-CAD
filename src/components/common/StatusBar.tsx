@@ -1,4 +1,5 @@
 import { useEditorStore } from '@/app/store';
+import { getSnapModeLabel } from '@/app/snapMetadata';
 import { getToolStatusLabel } from '@/app/toolMetadata';
 import { useI18n } from '@/i18n';
 
@@ -11,6 +12,7 @@ export function StatusBar() {
   const activeStory = useEditorStore((s) => s.activeStory);
   const activeTool = useEditorStore((s) => s.activeTool);
   const { t } = useI18n();
+  const activeSnapModeLabels = activeSnapModes.map((mode) => getSnapModeLabel(mode, t));
 
   return (
     <div className="status-bar">
@@ -21,7 +23,7 @@ export function StatusBar() {
       </span>
       <span className="status-item">{t.statusZoom}: {(zoom * 1000).toFixed(0)}%</span>
       <span className="status-item">{t.statusSnap}: {snapEnabled ? t.statusOn : t.statusOff}</span>
-      <span className="status-item">{t.statusSnapModes}: {activeSnapModes.length > 0 ? activeSnapModes.join(', ') : '---'}</span>
+      <span className="status-item">{t.statusSnapModes}: {activeSnapModeLabels.length > 0 ? activeSnapModeLabels.join(', ') : '---'}</span>
       <span className="status-item">{t.statusTool}: {getToolStatusLabel(activeTool, t)}</span>
       <span className="status-item">{t.statusStory}: {activeStory ?? '---'}</span>
       <span className="status-item">{t.statusSelected}: {selectedIds.length}</span>
