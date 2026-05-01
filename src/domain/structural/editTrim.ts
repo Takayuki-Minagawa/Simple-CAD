@@ -169,6 +169,7 @@ export function filletWalls(
   wallId2: string,
   _radius: number = 0,
 ): boolean {
+  void _radius;
   const wall1 = data.members.find((m) => m.id === wallId1);
   const wall2 = data.members.find((m) => m.id === wallId2);
   if (!wall1 || !wall2 || !isLinearMember(wall1) || !isLinearMember(wall2)) return false;

@@ -8,11 +8,12 @@ import { AnnotationLayer } from './layers/AnnotationLayer';
 import { DrawPreview } from './DrawPreview';
 import { useEditorInteraction } from './useEditorInteraction';
 import { CoordinateInputBar } from './CoordinateInputDialog';
+import { EditorControls2D } from './EditorControls2D';
 import { getAllEntityBounds, getSelectionBounds } from '@/domain/structural/editTransform';
 
 export function Editor2D() {
   const data = useProjectStore((s) => s.data);
-  const { activeStory, selectedIds, layerVisibility, activeTool, setActiveTool } =
+  const { activeStory, selectedIds, layerVisibility, activeTool, setActiveTool, drawInputAssist } =
     useEditorStore();
   const {
     drawState,
@@ -27,6 +28,32 @@ export function Editor2D() {
   } = useEditorInteraction();
 
   const containerRef = useRef<HTMLDivElement>(null);
+
+  const zoomToExtents = useCallback(() => {
+    const projectData = useProjectStore.getState().data;
+    const editorState = useEditorStore.getState();
+    if (!projectData) return;
+    const el = containerRef.current;
+    if (!el) return;
+    const allBounds = getAllEntityBounds(projectData, editorState.activeStory);
+    if (!allBounds) return;
+    editorState.zoomToFit(allBounds, el.clientWidth, el.clientHeight);
+  }, []);
+
+  const zoomToSelection = useCallback(() => {
+    const projectData = useProjectStore.getState().data;
+    const editorState = useEditorStore.getState();
+    if (!projectData || editorState.selectedIds.length === 0) return;
+    const el = containerRef.current;
+    if (!el) return;
+    const bounds = getSelectionBounds(projectData, editorState.selectedIds);
+    if (!bounds) return;
+    editorState.zoomToFit(
+      { minX: bounds.min.x, minY: bounds.min.y, maxX: bounds.max.x, maxY: bounds.max.y },
+      el.clientWidth,
+      el.clientHeight,
+    );
+  }, []);
 
   // ESC to cancel drawing or deselect
   const handleKeyDown = useCallback(
@@ -54,34 +81,14 @@ export function Editor2D() {
         const target = e.target as HTMLElement;
         if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT') return;
 
-        const projectData = useProjectStore.getState().data;
-        const editorState = useEditorStore.getState();
-        if (!projectData) return;
-
-        const el = containerRef.current;
-        if (!el) return;
-        const vw = el.clientWidth;
-        const vh = el.clientHeight;
-
         if (e.shiftKey) {
-          // Zoom to selection
-          if (editorState.selectedIds.length === 0) return;
-          const bounds = getSelectionBounds(projectData, editorState.selectedIds);
-          if (!bounds) return;
-          editorState.zoomToFit(
-            { minX: bounds.min.x, minY: bounds.min.y, maxX: bounds.max.x, maxY: bounds.max.y },
-            vw,
-            vh,
-          );
+          zoomToSelection();
         } else {
-          // Zoom extents
-          const allBounds = getAllEntityBounds(projectData, editorState.activeStory);
-          if (!allBounds) return;
-          editorState.zoomToFit(allBounds, vw, vh);
+          zoomToExtents();
         }
       }
     },
-    [drawState.points.length, resetDrawing, setActiveTool],
+    [drawState.points.length, resetDrawing, setActiveTool, zoomToExtents, zoomToSelection],
   );
 
   useEffect(() => {
@@ -107,7 +114,7 @@ export function Editor2D() {
   const isVisible = (layer: string) => layerVisibility[layer] !== false;
 
   // Determine if a drawing tool is active (for coord input bar)
-  const isDrawingTool = activeTool !== 'select' && activeTool !== 'pan';
+  const isDrawingTool = activeTool !== 'select' && activeTool !== 'pan' && activeTool !== 'trim' && activeTool !== 'extend';
 
   // Last point for coordinate input (relative coordinates)
   const lastPoint = drawState.points.length > 0 ? drawState.points[drawState.points.length - 1] : null;
@@ -137,7 +144,12 @@ export function Editor2D() {
   }
 
   return (
-    <div ref={containerRef} style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+    <div ref={containerRef} style={{ display: 'flex', flexDirection: 'column', height: '100%', position: 'relative' }}>
+      <EditorControls2D
+        canZoomSelection={selectedIds.length > 0}
+        onZoomExtents={zoomToExtents}
+        onZoomSelection={zoomToSelection}
+      />
       <div style={{ flex: 1, overflow: 'hidden' }}>
         <SvgCanvas
           onWorldClick={handleClick}
@@ -152,6 +164,7 @@ export function Editor2D() {
               members={filteredMembers.filter((m) => isVisible(`member-${m.type}`))}
               sections={data.sections}
               selectedIds={selectedIds}
+              muted={isDrawingTool && drawInputAssist}
             />
           ) : null}
           {isVisible('dimension') && (

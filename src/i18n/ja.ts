@@ -137,7 +137,7 @@ export const ja: Translations = {
     '- 柱: クリックした位置に柱を配置\n- 梁: 2 点をクリックして梁を配置\n- 壁: 2 点をクリックして壁を配置\n- スラブ: 複数点をクリック → ダブルクリックで確定\n- 寸法: 2 点をクリックして寸法線を配置\n- 注記: クリックした位置にテキストを配置\n- 変形: 選択した要素へ移動 / 複写 / 縮尺 / パラメトリック変形を数値指定で適用',
   helpSectionShortcuts: 'キーボードショートカット',
   helpShortcutsText:
-    'V: 選択  |  H: パン  |  C: 柱  |  B: 梁  |  W: 壁  |  S: スラブ\nD: 寸法  |  T: 注記  |  Escape: キャンセル\nCtrl+Z: 元に戻す  |  Ctrl+Shift+Z: やり直し\nCtrl+D: 1000mm オフセットで複写  |  Delete: 削除\nツールバー「変形」: 数値指定の移動 / 複写 / 縮尺 / パラメトリック変形\nマウスホイール: ズーム  |  中ボタンドラッグ: パン',
+    'V: 選択  |  H: パン  |  C: 柱  |  B: 梁  |  W: 壁  |  S: スラブ\nD: 寸法  |  T: 注記  |  Escape: キャンセル\nZ: 全体表示  |  Shift+Z: 選択範囲表示\nCtrl+Z: 元に戻す  |  Ctrl+Shift+Z: やり直し\nCtrl+D: 1000mm オフセットで複写  |  Delete: 削除\nツールバー「変形」: 数値指定の移動 / 複写 / 縮尺 / パラメトリック変形\nマウスホイール: ズーム  |  中ボタンドラッグ: パン',
   helpSectionExport: 'エクスポート',
   helpExportText:
     'ツールバーの「出力」からエクスポートダイアログを開き、SVG / PDF / DXF を選択して出力します。PDF は全シートを1つの複数ページ PDF にまとめて出力できます。SVG / PDF はシート単位、DXF は階単位で出力されます。',
@@ -178,6 +178,10 @@ export const ja: Translations = {
 
   zoomExtents: '全体表示',
   zoomSelection: '選択範囲表示',
+  inputAssist: '入力補助',
+  memberSnap: '部材スナップ',
+  columnZDown: '柱Z: 下',
+  columnZUp: '柱Z: 上',
 
   selectionWindow: 'ウィンドウ選択',
   selectionCrossing: 'クロス選択',

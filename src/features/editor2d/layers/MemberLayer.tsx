@@ -1,3 +1,4 @@
+import type { CSSProperties } from 'react';
 import type { Member, Section } from '@/domain/structural/types';
 import { lineTypeToDashArray } from '@/domain/rendering/lineStyle';
 
@@ -5,13 +6,19 @@ interface Props {
   members: Member[];
   sections: Section[];
   selectedIds: string[];
+  muted?: boolean;
 }
 
-export function MemberLayer({ members, sections, selectedIds }: Props) {
+export function MemberLayer({ members, sections, selectedIds, muted = false }: Props) {
+  const layerProps = {
+    opacity: muted ? 0.28 : 1,
+    style: { pointerEvents: muted ? 'none' : 'auto' } as CSSProperties,
+  };
+
   return (
     <>
       {/* Slabs first (back) */}
-      <g className="layer-member-slab">
+      <g className="layer-member-slab" {...layerProps}>
         {members
           .filter((m) => m.type === 'slab')
           .map((m) => (
@@ -19,7 +26,7 @@ export function MemberLayer({ members, sections, selectedIds }: Props) {
           ))}
       </g>
       {/* Walls */}
-      <g className="layer-member-wall">
+      <g className="layer-member-wall" {...layerProps}>
         {members
           .filter((m) => m.type === 'wall')
           .map((m) => {
@@ -35,7 +42,7 @@ export function MemberLayer({ members, sections, selectedIds }: Props) {
           })}
       </g>
       {/* Beams */}
-      <g className="layer-member-beam">
+      <g className="layer-member-beam" {...layerProps}>
         {members
           .filter((m) => m.type === 'beam')
           .map((m) => {
@@ -52,7 +59,7 @@ export function MemberLayer({ members, sections, selectedIds }: Props) {
           })}
       </g>
       {/* Columns (front) */}
-      <g className="layer-member-column">
+      <g className="layer-member-column" {...layerProps}>
         {members
           .filter((m) => m.type === 'column')
           .map((m) => {

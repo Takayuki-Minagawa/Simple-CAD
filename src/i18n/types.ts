@@ -176,6 +176,10 @@ export interface Translations {
   // Zoom
   zoomExtents: string;
   zoomSelection: string;
+  inputAssist: string;
+  memberSnap: string;
+  columnZDown: string;
+  columnZUp: string;
 
   // Rectangle selection
   selectionWindow: string;

@@ -4,6 +4,7 @@ import { collectAllIds, generateId } from '@/domain/idGenerator';
 import type { EditorTool } from '@/app/store';
 import { useI18n } from '@/i18n';
 import type { Annotation, Dimension, ColumnMember, BeamMember, WallMember, SlabMember, ConstructionLine } from '@/domain/structural/types';
+import { getColumnVerticalSpan } from '@/domain/structural/placement';
 import type { Point2D } from '@/domain/geometry/types';
 import { findSnap, buildSnapCandidatesFromMembers } from '@/domain/geometry/snap';
 import type { SnapResult } from '@/domain/geometry/snap';
@@ -26,6 +27,10 @@ export interface RectSelectState {
   end: Point2D | null;
 }
 
+function isCreationTool(tool: EditorTool): boolean {
+  return tool !== 'select' && tool !== 'pan' && tool !== 'trim' && tool !== 'extend';
+}
+
 export function useEditorInteraction() {
   const [drawState, setDrawState] = useState<DrawState>({
     points: [],
@@ -41,22 +46,35 @@ export function useEditorInteraction() {
   const getSnapPos = useCallback(
     (worldPos: Point2D): { pos: Point2D; snap: SnapResult | null } => {
       const data = useProjectStore.getState().data;
-      const { snapEnabled, activeSnapModes, gridSpacing, zoom, activeStory } =
+      const {
+        snapEnabled,
+        activeSnapModes,
+        gridSpacing,
+        zoom,
+        activeStory,
+        activeTool,
+        drawInputAssist,
+        snapToMembersWhileDrawing,
+      } =
         useEditorStore.getState();
 
       if (!snapEnabled || !data) return { pos: worldPos, snap: null };
 
-      const members = data.members
-        .filter((m) => !activeStory || m.story === activeStory)
-        .map((m) => ({
-          id: m.id,
-          type: m.type,
-          start: m.type !== 'slab' ? m.start : undefined,
-          end: m.type !== 'slab' ? m.end : undefined,
-          polygon: m.type === 'slab' ? m.polygon : undefined,
-        }));
-
-      const candidates = buildSnapCandidatesFromMembers(members);
+      const useMemberSnaps =
+        !drawInputAssist || snapToMembersWhileDrawing || !isCreationTool(activeTool);
+      const candidates = useMemberSnaps
+        ? buildSnapCandidatesFromMembers(
+            data.members
+              .filter((m) => !activeStory || m.story === activeStory)
+              .map((m) => ({
+                id: m.id,
+                type: m.type,
+                start: m.type !== 'slab' ? m.start : undefined,
+                end: m.type !== 'slab' ? m.end : undefined,
+                polygon: m.type === 'slab' ? m.polygon : undefined,
+              })),
+          )
+        : [];
       // Also add grid intersections as endpoints
       for (const gx of data.grids.filter((g) => g.axis === 'X')) {
         for (const gy of data.grids.filter((g) => g.axis === 'Y')) {
@@ -81,7 +99,7 @@ export function useEditorInteraction() {
   const handleDrawingClick = useCallback(
     (tool: EditorTool, pos: Point2D) => {
       const store = useProjectStore.getState();
-      const { activeStory } = useEditorStore.getState();
+      const { activeStory, columnPlacementDirection } = useEditorStore.getState();
       if (!store.data || !activeStory) return;
 
       const story = store.data.stories.find((s) => s.id === activeStory);
@@ -103,14 +121,21 @@ export function useEditorInteraction() {
 
       switch (tool) {
         case 'column': {
+          const span = getColumnVerticalSpan(
+            store.data.stories,
+            activeStory,
+            columnPlacementDirection,
+          );
+          if (!span) return;
+
           const member: ColumnMember = {
             id: generateId('col', usedIds),
             type: 'column',
             story: activeStory,
             sectionId: defaultSection('column'),
             materialId: defaultMaterial,
-            start: { x: pos.x, y: pos.y, z: story.elevation },
-            end: { x: pos.x, y: pos.y, z: story.elevation + story.height },
+            start: { x: pos.x, y: pos.y, z: span.startZ },
+            end: { x: pos.x, y: pos.y, z: span.endZ },
             rotation: 0,
           };
           store.addMember(member);
@@ -419,7 +444,7 @@ export function useEditorInteraction() {
   );
 
   const handleMouseUp = useCallback(
-    (_worldPos: Point2D, _e: React.MouseEvent) => {
+    () => {
       setRectSelect((prev) => {
         if (prev.start && prev.end) {
           const minX = Math.min(prev.start.x, prev.end.x);

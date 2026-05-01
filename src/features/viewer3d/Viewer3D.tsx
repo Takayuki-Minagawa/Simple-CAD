@@ -44,10 +44,12 @@ export function Viewer3D() {
   const [sectionThickness, setSectionThickness] = useState<number | null>(null);
   const [sectionBox, setSectionBox] = useState<SectionBoxState | null>(null);
   const [geometryEngine, setGeometryEngine] = useState<GeometryEngine>('native');
+  const [showAllStories, setShowAllStories] = useState(true);
 
   const filteredMembers = useMemo(
-    () => data?.members.filter((member) => !activeStory || member.story === activeStory) ?? [],
-    [data?.members, activeStory],
+    () =>
+      data?.members.filter((member) => showAllStories || !activeStory || member.story === activeStory) ?? [],
+    [data?.members, activeStory, showAllStories],
   );
 
   const sectionMap = useMemo(
@@ -137,9 +139,29 @@ export function Viewer3D() {
     z: Math.max(effectiveBox.zMax - effectiveBox.zMin, 1),
   };
 
+  const activeStoryRecord = data.stories.find((story) => story.id === activeStory) ?? null;
+  const memberCounts = filteredMembers.reduce(
+    (counts, member) => {
+      counts.total += 1;
+      counts[member.type] += 1;
+      return counts;
+    },
+    { total: 0, column: 0, beam: 0, wall: 0, slab: 0 },
+  );
+
   const labels = locale === 'ja'
     ? {
         section: '断面',
+        display: '表示',
+        allStories: '全階',
+        currentStory: '現階',
+        story: '階',
+        zRange: 'Z範囲',
+        members: '部材',
+        columns: '柱',
+        beams: '梁',
+        walls: '壁',
+        slabs: 'スラブ',
         mode: 'モード',
         axis: '軸',
         position: '位置',
@@ -155,6 +177,16 @@ export function Viewer3D() {
       }
     : {
         section: 'Section',
+        display: 'Display',
+        allStories: 'All',
+        currentStory: 'Current',
+        story: 'Story',
+        zRange: 'Z Range',
+        members: 'Members',
+        columns: 'Columns',
+        beams: 'Beams',
+        walls: 'Walls',
+        slabs: 'Slabs',
         mode: 'Mode',
         axis: 'Axis',
         position: 'Position',
@@ -184,6 +216,14 @@ export function Viewer3D() {
       >
         <button
           className="toolbar-btn"
+          style={{ background: showAllStories ? 'var(--accent)' : '#555', color: '#fff', fontSize: 11 }}
+          onClick={() => setShowAllStories(!showAllStories)}
+          disabled={!activeStory}
+        >
+          {showAllStories ? labels.allStories : labels.currentStory}
+        </button>
+        <button
+          className="toolbar-btn"
           style={{ background: orthographic ? 'var(--accent)' : '#555', color: '#fff', fontSize: 11 }}
           onClick={() => setOrthographic(!orthographic)}
         >
@@ -196,6 +236,49 @@ export function Viewer3D() {
         >
           {t.viewWire}
         </button>
+      </div>
+
+      <div
+        style={{
+          position: 'absolute',
+          top: 8,
+          left: 8,
+          zIndex: 10,
+          minWidth: 188,
+          padding: '8px 10px',
+          borderRadius: 8,
+          background: 'rgba(16, 24, 40, 0.78)',
+          color: '#fff',
+          display: 'grid',
+          gap: 4,
+          fontSize: 11,
+          lineHeight: 1.35,
+        }}
+      >
+        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10 }}>
+          <span style={{ color: 'rgba(255,255,255,0.72)' }}>{labels.display}</span>
+          <strong>{showAllStories ? labels.allStories : labels.currentStory}</strong>
+        </div>
+        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10 }}>
+          <span style={{ color: 'rgba(255,255,255,0.72)' }}>{labels.story}</span>
+          <strong>{activeStoryRecord ? `${activeStoryRecord.name} EL ${Math.round(activeStoryRecord.elevation)}` : labels.allStories}</strong>
+        </div>
+        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10 }}>
+          <span style={{ color: 'rgba(255,255,255,0.72)' }}>{labels.zRange}</span>
+          <strong>{Math.round(extents.zMin)} - {Math.round(extents.zMax)}</strong>
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: '2px 10px', paddingTop: 3, borderTop: '1px solid rgba(255,255,255,0.12)' }}>
+          <span style={{ color: 'rgba(255,255,255,0.72)' }}>{labels.members}</span>
+          <strong>{memberCounts.total}</strong>
+          <span>{labels.columns}</span>
+          <span>{memberCounts.column}</span>
+          <span>{labels.beams}</span>
+          <span>{memberCounts.beam}</span>
+          <span>{labels.walls}</span>
+          <span>{memberCounts.wall}</span>
+          <span>{labels.slabs}</span>
+          <span>{memberCounts.slab}</span>
+        </div>
       </div>
 
       <div
@@ -347,6 +430,7 @@ export function Viewer3D() {
 
       <Canvas
         gl={{ antialias: true }}
+        style={{ width: '100%', height: '100%' }}
         onPointerMissed={() => setSelectedIds([])}
         onCreated={({ gl }) => {
           gl.localClippingEnabled = true;
@@ -378,7 +462,7 @@ export function Viewer3D() {
 
         <group scale={[SCALE, SCALE, SCALE]}>
           <group rotation={[-Math.PI / 2, 0, 0]}>
-            <GridHelper3D grids={data.grids} stories={data.stories} />
+            <GridHelper3D grids={data.grids} stories={data.stories} activeStoryId={activeStory} />
 
             {sectionMode === 'box' && (
               <mesh position={[boxCenter.x, boxCenter.y, boxCenter.z]}>
@@ -492,7 +576,7 @@ function computeModelExtents(
     xMax: xMax + Math.max((xMax - xMin) * 0.05, 1000),
     yMin: yMin - Math.max((yMax - yMin) * 0.05, 1000),
     yMax: yMax + Math.max((yMax - yMin) * 0.05, 1000),
-    zMin: Math.max(zMin - 500, 0),
+    zMin: zMin - 500,
     zMax: zMax + 500,
   };
 }
