@@ -308,7 +308,10 @@ export function useEditorInteraction() {
 
       if (activeTool === 'select') {
         const candidateIds = getEventCandidateIds(e).filter((id) => isSelectableId(id, layerLocked));
-        const id = pickSelectionCandidate(candidateIds, useEditorStore.getState().selectedIds);
+        const useCycle = !(e.shiftKey || e.ctrlKey || e.metaKey);
+        const id = useCycle
+          ? pickSelectionCandidate(candidateIds, useEditorStore.getState().selectedIds)
+          : candidateIds[0] ?? null;
         if (!id) {
           setSelectedIds([]);
           return;
