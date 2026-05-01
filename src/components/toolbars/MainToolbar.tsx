@@ -12,6 +12,7 @@ import sampleProject from '@/samples/sample-project.json';
 import type { ProjectData } from '@/domain/structural/types';
 import { getAllEntityBounds, getSelectionBounds } from '@/domain/structural/editTransform';
 import { drawingTemplates } from '@/domain/templates/drawingTemplates';
+import { getToolStatusLabel } from '@/app/toolMetadata';
 
 interface Props {
   onExport: () => void;
@@ -243,14 +244,14 @@ export function MainToolbar({ onExport, onMasters, onAiAssist, onHelp, onTransfo
   const handleUndo = () => useProjectStore.temporal.getState().undo();
   const handleRedo = () => useProjectStore.temporal.getState().redo();
 
-  const toolBtn = (tool: EditorTool, label: string, shortcut?: string) => (
+  const toolBtn = (tool: EditorTool, label: string) => (
     <button
       className={`toolbar-btn ${activeTool === tool ? 'active' : ''}`}
       onClick={() => {
         setActiveTool(tool);
         if (tool !== 'select') setSelectedIds([]);
       }}
-      title={shortcut ? `${label} (${shortcut})` : label}
+      title={getToolStatusLabel(tool, t)}
     >
       {label}
     </button>
@@ -423,18 +424,18 @@ export function MainToolbar({ onExport, onMasters, onAiAssist, onHelp, onTransfo
 
       {/* ── Direct tool buttons (Select / Pan) ── */}
       <div className="toolbar-group">
-        {toolBtn('select', t.toolSelect, 'V')}
-        {toolBtn('pan', t.toolPan, 'H')}
+        {toolBtn('select', t.toolSelect)}
+        {toolBtn('pan', t.toolPan)}
       </div>
 
       {/* ── Direct drawing tools ── */}
       <div className="toolbar-group">
-        {toolBtn('column', t.toolColumn, 'C')}
-        {toolBtn('beam', t.toolBeam, 'B')}
-        {toolBtn('wall', t.toolWall, 'W')}
-        {toolBtn('slab', t.toolSlab, 'S')}
-        {toolBtn('dimension', t.toolDimension, 'D')}
-        {toolBtn('annotation', t.toolAnnotation, 'T')}
+        {toolBtn('column', t.toolColumn)}
+        {toolBtn('beam', t.toolBeam)}
+        {toolBtn('wall', t.toolWall)}
+        {toolBtn('slab', t.toolSlab)}
+        {toolBtn('dimension', t.toolDimension)}
+        {toolBtn('annotation', t.toolAnnotation)}
       </div>
 
       {/* ── Right side: theme & locale ── */}
