@@ -176,7 +176,7 @@ export const ja: Translations = {
   transformArrayRowSpacing: '行間隔',
   transformArrayColSpacing: '列間隔',
 
-  coordInputPlaceholder: 'x,y または @dx,dy または @距離<角度',
+  coordInputPlaceholder: 'x,y / x y または @dx,dy / @dx dy または @距離<角度',
   coordInputLabel: '座標',
 
   zoomExtents: '全体表示',
