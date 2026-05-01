@@ -22,6 +22,16 @@ describe('parseCoordinate', () => {
     expect(point?.y).toBeCloseTo(120);
   });
 
+  it('uses distance-only input along the preview direction', () => {
+    const point = parseCoordinate('@500', { x: 100, y: 200 }, { x: 1100, y: 200 });
+    expect(point).toEqual({ x: 600, y: 200 });
+  });
+
+  it('rejects distance-only input without a usable direction', () => {
+    expect(parseCoordinate('@500', { x: 100, y: 200 }, null)).toBeNull();
+    expect(parseCoordinate('@500', { x: 100, y: 200 }, { x: 100, y: 200 })).toBeNull();
+  });
+
   it('rejects incomplete coordinate pairs', () => {
     expect(parseCoordinate('1000', null)).toBeNull();
     expect(parseCoordinate('@100 200 300', null)).toBeNull();

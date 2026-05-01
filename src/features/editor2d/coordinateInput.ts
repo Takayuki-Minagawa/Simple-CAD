@@ -5,8 +5,13 @@ import type { Point2D } from '@/domain/geometry/types';
  * - "x,y" or "x y"        -> absolute coordinate
  * - "@dx,dy" or "@dx dy"  -> relative to lastPoint
  * - "@dist<angle" -> polar relative to lastPoint (angle in degrees)
+ * - "@dist" -> relative to lastPoint along the current preview direction
  */
-export function parseCoordinate(input: string, lastPoint: Point2D | null): Point2D | null {
+export function parseCoordinate(
+  input: string,
+  lastPoint: Point2D | null,
+  previewPoint: Point2D | null = null,
+): Point2D | null {
   const trimmed = input.trim();
   if (!trimmed) return null;
 
@@ -34,6 +39,20 @@ export function parseCoordinate(input: string, lastPoint: Point2D | null): Point
       return {
         x: base.x + dist * Math.cos(rad),
         y: base.y + dist * Math.sin(rad),
+      };
+    }
+
+    // Distance along current preview direction: @distance
+    const distanceMatch = rest.match(/^([+-]?\d+\.?\d*)$/);
+    if (distanceMatch && lastPoint && previewPoint) {
+      const dist = parseFloat(distanceMatch[1]);
+      const dx = previewPoint.x - lastPoint.x;
+      const dy = previewPoint.y - lastPoint.y;
+      const length = Math.hypot(dx, dy);
+      if (!Number.isFinite(dist) || length === 0) return null;
+      return {
+        x: lastPoint.x + (dx / length) * dist,
+        y: lastPoint.y + (dy / length) * dist,
       };
     }
 
