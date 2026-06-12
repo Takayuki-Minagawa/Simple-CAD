@@ -1,0 +1,121 @@
+import { GizmoHelper, GizmoViewport, OrbitControls, OrthographicCamera, PerspectiveCamera } from '@react-three/drei';
+import * as THREE from 'three';
+import { useEditorStore } from '@/app/store';
+import type { Grid, Member, Opening, Section, Story } from '@/domain/structural/types';
+import { GridHelper3D } from './GridHelper3D';
+import { MemberMesh } from './MemberMesh';
+import type { GeometryEngine } from './memberGeometry';
+import { SCALE, type ModelExtents, type SectionBoxState, type SectionMode } from './sectionMath';
+
+interface SceneContentsProps {
+  orthographic: boolean;
+  extents: ModelExtents;
+  sectionMode: SectionMode;
+  effectiveBox: SectionBoxState;
+  grids: Grid[];
+  stories: Story[];
+  activeStory: string | null;
+  filteredMembers: Member[];
+  sectionMap: Map<string, Section>;
+  openingsMap: Map<string, Opening[]>;
+  selectedIds: string[];
+  wireframe: boolean;
+  geometryEngine: GeometryEngine;
+  clippingPlanes: THREE.Plane[] | undefined;
+  setSelectedIds: (ids: string[]) => void;
+}
+
+export function SceneContents({
+  orthographic,
+  extents,
+  sectionMode,
+  effectiveBox,
+  grids,
+  stories,
+  activeStory,
+  filteredMembers,
+  sectionMap,
+  openingsMap,
+  selectedIds,
+  wireframe,
+  geometryEngine,
+  clippingPlanes,
+  setSelectedIds,
+}: SceneContentsProps) {
+  const centerX = (extents.xMin + extents.xMax) / 2;
+  const centerY = (extents.yMin + extents.yMax) / 2;
+  const centerZ = (extents.zMin + extents.zMax) / 2;
+  const boxCenter = {
+    x: (effectiveBox.xMin + effectiveBox.xMax) / 2,
+    y: (effectiveBox.yMin + effectiveBox.yMax) / 2,
+    z: (effectiveBox.zMin + effectiveBox.zMax) / 2,
+  };
+  const boxSize = {
+    x: Math.max(effectiveBox.xMax - effectiveBox.xMin, 1),
+    y: Math.max(effectiveBox.yMax - effectiveBox.yMin, 1),
+    z: Math.max(effectiveBox.zMax - effectiveBox.zMin, 1),
+  };
+
+  return (
+    <>
+      {orthographic ? (
+        <OrthographicCamera
+          makeDefault
+          position={[centerX * SCALE + 15, centerZ * SCALE + 15, centerY * SCALE + 15]}
+          zoom={50}
+          near={0.1}
+          far={1000}
+        />
+      ) : (
+        <PerspectiveCamera
+          makeDefault
+          position={[centerX * SCALE + 15, centerZ * SCALE + 15, -(centerY * SCALE) - 15]}
+          fov={50}
+          near={0.1}
+          far={1000}
+        />
+      )}
+
+      <OrbitControls target={[centerX * SCALE, centerZ * SCALE, -(centerY * SCALE)]} enableDamping={false} />
+
+      <ambientLight intensity={0.6} />
+      <directionalLight position={[20, 30, 10]} intensity={0.8} />
+      <directionalLight position={[-10, 20, -20]} intensity={0.3} />
+
+      <group scale={[SCALE, SCALE, SCALE]}>
+        <group rotation={[-Math.PI / 2, 0, 0]}>
+          <GridHelper3D grids={grids} stories={stories} activeStoryId={activeStory} />
+
+          {sectionMode === 'box' && (
+            <mesh position={[boxCenter.x, boxCenter.y, boxCenter.z]}>
+              <boxGeometry args={[boxSize.x, boxSize.y, boxSize.z]} />
+              <meshBasicMaterial color="#93c5fd" wireframe transparent opacity={0.18} />
+            </mesh>
+          )}
+
+          {filteredMembers.map((member) => {
+            const layerLocked = useEditorStore.getState().layerLocked;
+            const locked = !!layerLocked[`member-${member.type}`];
+            return (
+              <MemberMesh
+                key={member.id}
+                member={member}
+                section={sectionMap.get(member.sectionId)}
+                openings={openingsMap.get(member.id) ?? []}
+                selected={selectedIds.includes(member.id)}
+                wireframe={wireframe}
+                engine={geometryEngine}
+                clippingPlanes={clippingPlanes}
+                onClick={() => { if (!locked) setSelectedIds([member.id]); }}
+              />
+            );
+          })}
+        </group>
+      </group>
+
+      <GizmoHelper alignment="bottom-right" margin={[60, 60]}>
+        <GizmoViewport labelColor="white" axisHeadScale={1} />
+      </GizmoHelper>
+    </>
+  );
+}

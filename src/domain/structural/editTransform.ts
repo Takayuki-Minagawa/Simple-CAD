@@ -1,7 +1,23 @@
 import type { Point2D } from '@/domain/geometry/types';
-import { dot2D, midpoint2D, normalize2D, perpendicular2D, sub2D } from '@/domain/geometry/point';
+import { normalize2D, perpendicular2D, sub2D } from '@/domain/geometry/point';
 import { collectAllIds, generateId, prefixFor } from '@/domain/idGenerator';
-import type { Annotation, Dimension, Member, Opening, ProjectData } from './types';
+import { deepClone } from '@/libs/clone';
+import type { Opening, ProjectData } from './types';
+import {
+  getAnnotationPoints,
+  getMemberPoints,
+  getSelectionPoints,
+} from './editTransformPoints';
+import {
+  applyPointTransformToSelection,
+  reflectPoint,
+  scalePoint,
+  transformAnnotation,
+  transformDimension,
+  transformMember,
+  transformOpening,
+  translatePoint,
+} from './editTransformApply';
 
 export interface ArraySelectionOptions {
   columns: number;
@@ -33,70 +49,8 @@ export interface StretchSelectionOptions {
   anchorY: TransformAnchor;
 }
 
-function deepClone<T>(value: T): T {
-  return JSON.parse(JSON.stringify(value)) as T;
-}
-
-function translatePoint(point: Point2D, dx: number, dy: number): Point2D {
-  return { x: point.x + dx, y: point.y + dy };
-}
-
-function scalePoint(point: Point2D, origin: Point2D, sx: number, sy: number): Point2D {
-  return {
-    x: origin.x + (point.x - origin.x) * sx,
-    y: origin.y + (point.y - origin.y) * sy,
-  };
-}
-
 function isPointListEmpty(points: Point2D[]): boolean {
   return points.length === 0;
-}
-
-function getMemberPoints(member: Member): Point2D[] {
-  if (member.type === 'slab') {
-    return member.polygon.map((point) => ({ x: point.x, y: point.y }));
-  }
-
-  return [
-    { x: member.start.x, y: member.start.y },
-    { x: member.end.x, y: member.end.y },
-  ];
-}
-
-function getDimensionPoints(dimension: Dimension): Point2D[] {
-  return [dimension.start, dimension.end];
-}
-
-function getAnnotationPoints(annotation: Annotation): Point2D[] {
-  if (annotation.points && annotation.points.length > 0) {
-    return annotation.points.map((p) => ({ x: p.x, y: p.y }));
-  }
-  return [{ x: annotation.x, y: annotation.y }];
-}
-
-function getSelectionPoints(data: ProjectData, ids: string[]): Point2D[] {
-  const selectedIds = new Set(ids);
-  const points: Point2D[] = [];
-
-  for (const member of data.members) {
-    if (selectedIds.has(member.id)) {
-      points.push(...getMemberPoints(member));
-    }
-  }
-
-  for (const annotation of data.annotations) {
-    if (selectedIds.has(annotation.id)) {
-      points.push(...getAnnotationPoints(annotation));
-    }
-  }
-
-  for (const dimension of data.dimensions) {
-    if (selectedIds.has(dimension.id)) {
-      points.push(...getDimensionPoints(dimension));
-    }
-  }
-
-  return points;
 }
 
 export function getSelectionBounds(data: ProjectData, ids: string[]): SelectionBounds | null {
@@ -122,121 +76,6 @@ export function getSelectionBounds(data: ProjectData, ids: string[]): SelectionB
     height: maxY - minY,
     center: { x: (minX + maxX) / 2, y: (minY + maxY) / 2 },
   };
-}
-
-function getLinearMemberLength(member: Member): number | null {
-  if (member.type === 'slab') return null;
-  return Math.hypot(member.end.x - member.start.x, member.end.y - member.start.y);
-}
-
-function transformMember(member: Member, transformPoint: (point: Point2D) => Point2D) {
-  if (member.type === 'slab') {
-    member.polygon = member.polygon.map((point) => transformPoint(point));
-    return;
-  }
-
-  const start = transformPoint({ x: member.start.x, y: member.start.y });
-  const end = transformPoint({ x: member.end.x, y: member.end.y });
-
-  member.start.x = start.x;
-  member.start.y = start.y;
-  member.end.x = end.x;
-  member.end.y = end.y;
-}
-
-function transformAnnotation(annotation: Annotation, transformPoint: (point: Point2D) => Point2D) {
-  const next = transformPoint({ x: annotation.x, y: annotation.y });
-  annotation.x = next.x;
-  annotation.y = next.y;
-  if (annotation.points && annotation.points.length > 0) {
-    annotation.points = annotation.points.map((p) => transformPoint(p));
-  }
-}
-
-function transformDimension(dimension: Dimension, transformPoint: (point: Point2D) => Point2D) {
-  const start = transformPoint(dimension.start);
-  const end = transformPoint(dimension.end);
-  let nextOffset = dimension.offset;
-
-  const originalDir = normalize2D(sub2D(dimension.end, dimension.start));
-  if (originalDir.x !== 0 || originalDir.y !== 0) {
-    const originalPerp = perpendicular2D(originalDir);
-    const originalMid = midpoint2D(dimension.start, dimension.end);
-    const controlPoint = {
-      x: originalMid.x + originalPerp.x * dimension.offset,
-      y: originalMid.y + originalPerp.y * dimension.offset,
-    };
-    const transformedControl = transformPoint(controlPoint);
-    const nextDir = normalize2D(sub2D(end, start));
-    if (nextDir.x !== 0 || nextDir.y !== 0) {
-      const nextPerp = perpendicular2D(nextDir);
-      const nextMid = midpoint2D(start, end);
-      nextOffset = dot2D(sub2D(transformedControl, nextMid), nextPerp);
-    }
-  }
-
-  dimension.start = start;
-  dimension.end = end;
-  dimension.offset = Number.isFinite(nextOffset) ? nextOffset : dimension.offset;
-}
-
-function transformOpening(
-  opening: Opening,
-  transformPoint: (point: Point2D) => Point2D,
-  widthScale = 1,
-) {
-  const next = transformPoint({ x: opening.position.x, y: opening.position.y });
-  opening.position.x = next.x;
-  opening.position.y = next.y;
-  if (Number.isFinite(widthScale) && widthScale > 0) {
-    opening.width *= widthScale;
-  }
-}
-
-function applyPointTransformToSelection(
-  data: ProjectData,
-  ids: string[],
-  transformPoint: (point: Point2D) => Point2D,
-) {
-  const selectedIds = new Set(ids);
-  const selectedMembers = data.members.filter((member) => selectedIds.has(member.id));
-  const selectedMemberMap = new Map(selectedMembers.map((member) => [member.id, member]));
-  const originalMemberLengths = new Map(
-    selectedMembers
-      .map((member) => [member.id, getLinearMemberLength(member)] as const)
-      .filter((entry): entry is [string, number] => typeof entry[1] === 'number'),
-  );
-
-  for (const member of selectedMembers) {
-    transformMember(member, transformPoint);
-  }
-
-  for (const opening of data.openings) {
-    if (!selectedMemberMap.has(opening.memberId)) continue;
-    const member = selectedMemberMap.get(opening.memberId)!;
-    const originalLength = originalMemberLengths.get(opening.memberId);
-    const nextLength = getLinearMemberLength(member);
-    const widthScale =
-      typeof originalLength === 'number' &&
-      originalLength > 0 &&
-      typeof nextLength === 'number' &&
-      nextLength > 0
-        ? nextLength / originalLength
-        : 1;
-    transformOpening(opening, transformPoint, widthScale);
-  }
-
-  for (const annotation of data.annotations) {
-    if (selectedIds.has(annotation.id)) {
-      transformAnnotation(annotation, transformPoint);
-    }
-  }
-
-  for (const dimension of data.dimensions) {
-    if (selectedIds.has(dimension.id)) {
-      transformDimension(dimension, transformPoint);
-    }
-  }
 }
 
 function getTargetRange(min: number, max: number, targetSize: number, anchor: TransformAnchor) {
@@ -419,15 +258,6 @@ export function offsetSelection(
 }
 
 // ── Mirror ──
-
-function reflectPoint(point: Point2D, axisStart: Point2D, axisDir: Point2D): Point2D {
-  const v = sub2D(point, axisStart);
-  const proj = dot2D(v, axisDir);
-  return {
-    x: 2 * (axisStart.x + axisDir.x * proj) - point.x,
-    y: 2 * (axisStart.y + axisDir.y * proj) - point.y,
-  };
-}
 
 export function mirrorSelection(
   data: ProjectData,
