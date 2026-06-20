@@ -12,6 +12,18 @@ export function useKeyboardShortcuts() {
 
       const ctrl = e.ctrlKey || e.metaKey;
 
+      // F8 = ortho toggle, F10 = polar tracking toggle (AutoCAD-style).
+      if (e.key === 'F8') {
+        e.preventDefault();
+        useEditorStore.getState().toggleOrthoMode();
+        return;
+      }
+      if (e.key === 'F10') {
+        e.preventDefault();
+        useEditorStore.getState().togglePolarTracking();
+        return;
+      }
+
       if (ctrl) {
         switch (e.key.toLowerCase()) {
           case 'z':

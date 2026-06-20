@@ -2,6 +2,8 @@ import { isCreationTool, useEditorStore } from '@/app/store';
 import { getSnapModeLabels } from '@/app/snapMetadata';
 import { useI18n } from '@/i18n';
 
+const POLAR_STEPS = [15, 30, 45, 90];
+
 interface Props {
   canZoomSelection: boolean;
   onZoomExtents: () => void;
@@ -15,14 +17,24 @@ export function EditorControls2D({ canZoomSelection, onZoomExtents, onZoomSelect
   const drawInputAssist = useEditorStore((s) => s.drawInputAssist);
   const snapToMembersWhileDrawing = useEditorStore((s) => s.snapToMembersWhileDrawing);
   const columnPlacementDirection = useEditorStore((s) => s.columnPlacementDirection);
+  const orthoMode = useEditorStore((s) => s.orthoMode);
+  const polarTrackingEnabled = useEditorStore((s) => s.polarTrackingEnabled);
+  const polarAngleStep = useEditorStore((s) => s.polarAngleStep);
+  const toggleOrthoMode = useEditorStore((s) => s.toggleOrthoMode);
+  const togglePolarTracking = useEditorStore((s) => s.togglePolarTracking);
+  const setPolarAngleStep = useEditorStore((s) => s.setPolarAngleStep);
   const setSnapEnabled = useEditorStore((s) => s.setSnapEnabled);
   const toggleSnapMode = useEditorStore((s) => s.toggleSnapMode);
   const setDrawInputAssist = useEditorStore((s) => s.setDrawInputAssist);
   const setSnapToMembersWhileDrawing = useEditorStore((s) => s.setSnapToMembersWhileDrawing);
   const setColumnPlacementDirection = useEditorStore((s) => s.setColumnPlacementDirection);
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
   const isDrawing = isCreationTool(activeTool);
   const snapModeLabels = getSnapModeLabels(t);
+  const orthoLabel = locale === 'ja' ? '直交' : 'Ortho';
+  const polarLabel = locale === 'ja' ? '極' : 'Polar';
+  const orthoTip = locale === 'ja' ? '直交モード (F8)' : 'Ortho mode (F8)';
+  const polarTip = locale === 'ja' ? '極トラッキング (F10)' : 'Polar tracking (F10)';
 
   return (
     <div className="editor-floating-controls">
@@ -56,6 +68,36 @@ export function EditorControls2D({ canZoomSelection, onZoomExtents, onZoomSelect
           {label}
         </button>
       ))}
+      <span className="floating-control-divider" />
+      <button
+        className={`floating-control-btn ${orthoMode ? 'active' : ''}`}
+        onClick={() => toggleOrthoMode()}
+        title={orthoTip}
+      >
+        {orthoLabel}
+      </button>
+      <button
+        className={`floating-control-btn ${polarTrackingEnabled ? 'active' : ''}`}
+        onClick={() => togglePolarTracking()}
+        title={polarTip}
+      >
+        {polarLabel}
+      </button>
+      {polarTrackingEnabled && (
+        <select
+          className="floating-control-btn compact"
+          value={polarAngleStep}
+          onChange={(e) => setPolarAngleStep(Number(e.target.value))}
+          title={polarTip}
+          style={{ cursor: 'pointer' }}
+        >
+          {POLAR_STEPS.map((step) => (
+            <option key={step} value={step}>
+              {step}°
+            </option>
+          ))}
+        </select>
+      )}
       <span className="floating-control-divider" />
       <button
         className={`floating-control-btn ${drawInputAssist ? 'active' : ''}`}

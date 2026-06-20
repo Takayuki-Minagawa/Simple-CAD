@@ -1,13 +1,15 @@
 import { useMemo, useState } from 'react';
 import { useEditorStore, useProjectStore } from '@/app/store';
 import { useI18n } from '@/i18n';
-import type { Material, Sheet } from '@/domain/structural/types';
+import type { Grid, LoadCase, Material, Sheet } from '@/domain/structural/types';
 import type { SectionKindDraft } from './masterDataHelpers';
 import { buildNextStory, getLabels } from './masterDataHelpers';
 import { StoriesSection } from './StoriesSection';
 import { SheetsSection } from './SheetsSection';
 import { MaterialsSection } from './MaterialsSection';
 import { SectionsSection } from './SectionsSection';
+import { GridsSection } from './GridsSection';
+import { LoadCasesSection } from './LoadCasesSection';
 
 interface Props {
   onClose: () => void;
@@ -30,6 +32,12 @@ export function MasterDataDialog({ onClose }: Props) {
     addViewport,
     removeViewport,
     updateViewport,
+    addGrid,
+    updateGrid,
+    deleteGrid,
+    addLoadCase,
+    updateLoadCase,
+    deleteLoadCase,
   } = useProjectStore();
   const { activeStory, setActiveStory } = useEditorStore();
   const { locale } = useI18n();
@@ -45,6 +53,18 @@ export function MasterDataDialog({ onClose }: Props) {
   const [newSectionWidth, setNewSectionWidth] = useState(300);
   const [newSectionDepth, setNewSectionDepth] = useState(600);
   const [newSectionThickness, setNewSectionThickness] = useState(180);
+  const [newSectionDiameter, setNewSectionDiameter] = useState(300);
+
+  const [elChainMode, setElChainMode] = useState(false);
+
+  const [newGridId, setNewGridId] = useState('G-NEW');
+  const [newGridName, setNewGridName] = useState('X1');
+  const [newGridAxis, setNewGridAxis] = useState<Grid['axis']>('X');
+  const [newGridPosition, setNewGridPosition] = useState(0);
+
+  const [newLoadCaseId, setNewLoadCaseId] = useState('LC-NEW');
+  const [newLoadCaseName, setNewLoadCaseName] = useState(locale === 'ja' ? '新規荷重' : 'New Load');
+  const [newLoadCaseType, setNewLoadCaseType] = useState<LoadCase['type']>('dead');
 
   if (!data) return null;
 
@@ -98,8 +118,33 @@ export function MasterDataDialog({ onClose }: Props) {
       case 'rc_wall':
         addSection({ id, kind: newSectionKind, thickness: newSectionThickness });
         break;
+      case 's_column_h':
+        addSection({ id, kind: newSectionKind, width: newSectionWidth, depth: newSectionDepth });
+        break;
+      case 's_beam_h':
+        addSection({ id, kind: newSectionKind, width: newSectionWidth, depth: newSectionDepth });
+        break;
+      case 's_pipe':
+        addSection({ id, kind: newSectionKind, diameter: newSectionDiameter, thickness: newSectionThickness });
+        break;
     }
     setNewSectionId(`${id}-2`);
+  };
+
+  const handleAddGrid = () => {
+    const id = newGridId.trim();
+    const name = newGridName.trim();
+    if (!id || !name) return;
+    if (data.grids.some((item) => item.id === id)) return;
+    addGrid({ id, name, axis: newGridAxis, position: newGridPosition });
+    setNewGridId(`${id}-2`);
+  };
+
+  const handleAddLoadCase = () => {
+    const id = newLoadCaseId.trim();
+    if (!id || (data.loadCases ?? []).some((item) => item.id === id)) return;
+    addLoadCase({ id, name: newLoadCaseName.trim() || id, type: newLoadCaseType });
+    setNewLoadCaseId(`${id}-2`);
   };
 
   const updateSheetTitleBlock = (sheet: Sheet, updates: NonNullable<Sheet['titleBlock']>) => {
@@ -166,11 +211,29 @@ export function MasterDataDialog({ onClose }: Props) {
             activeStory={activeStory}
             currentStory={currentStory}
             labels={labels}
+            elChainMode={elChainMode}
+            setElChainMode={setElChainMode}
             onAddStory={handleAddStory}
             onDuplicateStory={handleDuplicateStory}
             onAddSheet={handleAddSheet}
             setActiveStory={setActiveStory}
             updateStory={updateStory}
+          />
+
+          <GridsSection
+            grids={data.grids}
+            labels={labels}
+            newGridId={newGridId}
+            setNewGridId={setNewGridId}
+            newGridName={newGridName}
+            setNewGridName={setNewGridName}
+            newGridAxis={newGridAxis}
+            setNewGridAxis={setNewGridAxis}
+            newGridPosition={newGridPosition}
+            setNewGridPosition={setNewGridPosition}
+            onAddGrid={handleAddGrid}
+            updateGrid={updateGrid}
+            deleteGrid={deleteGrid}
           />
 
           <SheetsSection
@@ -210,9 +273,25 @@ export function MasterDataDialog({ onClose }: Props) {
             setNewSectionDepth={setNewSectionDepth}
             newSectionThickness={newSectionThickness}
             setNewSectionThickness={setNewSectionThickness}
+            newSectionDiameter={newSectionDiameter}
+            setNewSectionDiameter={setNewSectionDiameter}
             onAddSection={handleAddSection}
             updateSection={updateSection}
             deleteSection={deleteSection}
+          />
+
+          <LoadCasesSection
+            loadCases={data.loadCases ?? []}
+            labels={labels}
+            newLoadCaseId={newLoadCaseId}
+            setNewLoadCaseId={setNewLoadCaseId}
+            newLoadCaseName={newLoadCaseName}
+            setNewLoadCaseName={setNewLoadCaseName}
+            newLoadCaseType={newLoadCaseType}
+            setNewLoadCaseType={setNewLoadCaseType}
+            onAddLoadCase={handleAddLoadCase}
+            updateLoadCase={updateLoadCase}
+            deleteLoadCase={deleteLoadCase}
           />
         </div>
       </div>

@@ -87,3 +87,22 @@ export function normalize3(vector: Vector3): Vector3 {
 export function distance3(a: Vector3, b: Vector3): number {
   return length3(sub3(a, b));
 }
+
+/**
+ * World-space displacement for a member-local axis eccentricity (2-6).
+ *
+ * `refDirection` is the placement's local x-axis (member direction for
+ * beams/walls, rotated horizontal for columns) and `axis` is the local z (the
+ * extrusion direction). The local y-axis = axis × x. The returned vector is
+ * `dx · localX + dy · localY`, ready to add to the placement origin.
+ */
+export function localAxisOffset(
+  axis: Vector3,
+  refDirection: Vector3,
+  dx: number,
+  dy: number,
+): Vector3 {
+  const localX = normalize3(refDirection);
+  const localY = normalize3(cross3(axis, localX));
+  return add3(scale3(localX, dx), scale3(localY, dy));
+}

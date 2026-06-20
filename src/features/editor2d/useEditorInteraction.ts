@@ -25,6 +25,8 @@ export interface DrawState {
   previewPos: Point2D | null;
   /** Active snap result */
   snapResult: SnapResult | null;
+  /** Active angle-constraint step (deg) when polar/ortho/shift is engaged; null otherwise. */
+  angleStep?: number | null;
 }
 
 export interface RectSelectState {
@@ -45,19 +47,32 @@ function supportsAngleConstraint(tool: EditorTool): boolean {
   return tool === 'beam' || tool === 'wall' || tool === 'slab' || tool === 'dimension' || tool === 'xline' || tool === 'spline';
 }
 
-function shouldConstrainAngle(
+/**
+ * Resolve the active angle constraint for the current draw, combining:
+ *  - Shift key (legacy 45° rounding),
+ *  - ortho mode (90° steps),
+ *  - polar tracking (configurable step).
+ * Returns the angle step in degrees, or null when no constraint applies.
+ */
+export function resolveAngleConstraintStep(
   tool: EditorTool,
   points: Point2D[],
-  enabled: boolean,
-): boolean {
-  return enabled && points.length > 0 && supportsAngleConstraint(tool);
+  shiftKey: boolean,
+  opts: { orthoMode: boolean; polarTrackingEnabled: boolean; polarAngleStep: number },
+): number | null {
+  if (points.length === 0 || !supportsAngleConstraint(tool)) return null;
+  if (shiftKey) return 45;
+  if (opts.orthoMode) return 90;
+  if (opts.polarTrackingEnabled) return opts.polarAngleStep > 0 ? opts.polarAngleStep : 45;
+  return null;
 }
 
 function applyAngleConstraint(
   points: Point2D[],
   pos: Point2D,
+  stepDegrees = 45,
 ): Point2D {
-  return constrainPointToAngle(points[points.length - 1], pos);
+  return constrainPointToAngle(points[points.length - 1], pos, stepDegrees);
 }
 
 /**
@@ -134,6 +149,7 @@ export function useEditorInteraction() {
     points: [],
     previewPos: null,
     snapResult: null,
+    angleStep: null,
   });
 
   const [rectSelect, setRectSelect] = useState<RectSelectState>({
@@ -420,9 +436,14 @@ export function useEditorInteraction() {
         return;
       }
 
-      const constrainAngle = shouldConstrainAngle(activeTool, drawState.points, e.shiftKey);
-      const { pos } = constrainAngle ? { pos: worldPos } : getSnapPos(worldPos);
-      const drawPos = constrainAngle ? applyAngleConstraint(drawState.points, pos) : pos;
+      const { orthoMode, polarTrackingEnabled, polarAngleStep } = useEditorStore.getState();
+      const angleStep = resolveAngleConstraintStep(activeTool, drawState.points, e.shiftKey, {
+        orthoMode,
+        polarTrackingEnabled,
+        polarAngleStep,
+      });
+      const { pos } = angleStep != null ? { pos: worldPos } : getSnapPos(worldPos);
+      const drawPos = angleStep != null ? applyAngleConstraint(drawState.points, pos, angleStep) : pos;
       handleDrawingClick(activeTool, drawPos);
     },
     [drawState.points, getSnapPos, handleDrawingClick],
@@ -486,14 +507,24 @@ export function useEditorInteraction() {
 
   const handleMouseMove = useCallback(
     (worldPos: Point2D, e: React.MouseEvent) => {
-      const { activeTool } = useEditorStore.getState();
+      const { activeTool, orthoMode, polarTrackingEnabled, polarAngleStep } = useEditorStore.getState();
       setDrawState((prev) => {
-        const constrainAngle = shouldConstrainAngle(activeTool, prev.points, e.shiftKey);
-        const { pos, snap } = constrainAngle ? { pos: worldPos, snap: null } : getSnapPos(worldPos);
+        const angleStep = resolveAngleConstraintStep(activeTool, prev.points, e.shiftKey, {
+          orthoMode,
+          polarTrackingEnabled,
+          polarAngleStep,
+        });
+        const { pos, snap } = angleStep != null ? { pos: worldPos, snap: null } : getSnapPos(worldPos);
+        const previewPos = angleStep != null ? applyAngleConstraint(prev.points, pos, angleStep) : pos;
+        // Publish live draw context for the status bar (anchor / snap).
+        const editor = useEditorStore.getState();
+        editor.setDrawAnchor(prev.points.length > 0 ? prev.points[prev.points.length - 1] : null);
+        editor.setActiveSnapPoint(snap ? snap.point : null);
         return {
           ...prev,
-          previewPos: constrainAngle ? applyAngleConstraint(prev.points, pos) : pos,
+          previewPos,
           snapResult: snap,
+          angleStep,
         };
       });
       // Update rect select end if dragging
@@ -563,7 +594,10 @@ export function useEditorInteraction() {
   );
 
   const resetDrawing = useCallback(() => {
-    setDrawState({ points: [], previewPos: null, snapResult: null });
+    setDrawState({ points: [], previewPos: null, snapResult: null, angleStep: null });
+    const editor = useEditorStore.getState();
+    editor.setDrawAnchor(null);
+    editor.setActiveSnapPoint(null);
   }, []);
 
   return {

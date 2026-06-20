@@ -76,6 +76,18 @@ function buildNativeGeometry({ member, section, openings }: GeometryBuildInput):
   }
 }
 
+/**
+ * Returns the member-local axis eccentricity, or null when absent / zero.
+ * `axisOffset.dx`/`dy` are perpendicular offsets of the solid relative to the
+ * structural axis line. Members without it render unchanged.
+ */
+function getAxisOffset(member: Member): { dx: number; dy: number } | null {
+  const offset = member.axisOffset;
+  if (!offset) return null;
+  if (offset.dx === 0 && offset.dy === 0) return null;
+  return offset;
+}
+
 function buildColumnGeometry(
   member: Member & { type: 'column' },
   section: Section | undefined,
@@ -84,7 +96,14 @@ function buildColumnGeometry(
   const depth = section && 'depth' in section ? section.depth : 600;
   const height = Math.max(Math.abs(member.end.z - member.start.z), 1);
   const geometry = new THREE.BoxGeometry(width, depth, height);
-  geometry.translate(member.start.x, member.start.y, (member.start.z + member.end.z) / 2);
+  // Column runs vertically (Z); cross-section lies in the X/Y plane, so the
+  // eccentricity maps directly to X/Y offsets.
+  const offset = getAxisOffset(member);
+  geometry.translate(
+    member.start.x + (offset?.dx ?? 0),
+    member.start.y + (offset?.dy ?? 0),
+    (member.start.z + member.end.z) / 2,
+  );
   return geometry;
 }
 
@@ -106,7 +125,17 @@ function buildBeamGeometry(
     direction.clone().normalize(),
   );
   geometry.applyQuaternion(quaternion);
-  geometry.translate((member.start.x + member.end.x) / 2, (member.start.y + member.end.y) / 2, (member.start.z + member.end.z) / 2);
+  // Eccentricity in the member-local cross-section plane (local X = width axis,
+  // local Y = depth axis), rotated into world space alongside the geometry.
+  const offset = getAxisOffset(member);
+  const localOffset = offset
+    ? new THREE.Vector3(offset.dx, offset.dy, 0).applyQuaternion(quaternion)
+    : new THREE.Vector3();
+  geometry.translate(
+    (member.start.x + member.end.x) / 2 + localOffset.x,
+    (member.start.y + member.end.y) / 2 + localOffset.y,
+    (member.start.z + member.end.z) / 2 + localOffset.z,
+  );
   return geometry;
 }
 
@@ -167,8 +196,16 @@ function buildWallGeometry(
     normal.normalize();
   }
 
+  // Eccentricity: dx shifts the wall across its thickness (normal direction),
+  // dy shifts it vertically (up direction).
+  const offset = getAxisOffset(member);
+  const placement = start.clone();
+  if (offset) {
+    placement.addScaledVector(normal, offset.dx).addScaledVector(up, offset.dy);
+  }
+
   const matrix = new THREE.Matrix4().makeBasis(axis, up, normal);
-  matrix.setPosition(start);
+  matrix.setPosition(placement);
   geometry.applyMatrix4(matrix);
   return geometry;
 }
@@ -204,6 +241,8 @@ function buildSlabGeometry(
     depth: thickness,
     bevelEnabled: false,
   });
-  geometry.translate(0, 0, member.level - thickness);
+  // Slab eccentricity offsets directly in the X/Y plane.
+  const offset = getAxisOffset(member);
+  geometry.translate(offset?.dx ?? 0, offset?.dy ?? 0, member.level - thickness);
   return geometry;
 }

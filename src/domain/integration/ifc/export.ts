@@ -1,6 +1,6 @@
 import type { Point3D } from '@/domain/geometry/types';
 import type { Member, ProjectData, Section } from '@/domain/structural/types';
-import { distance3, normalize3, perpendicularHorizontal, sub3 } from './geometry';
+import { add3, distance3, localAxisOffset, normalize3, perpendicularHorizontal, sub3 } from './geometry';
 import type { Vector3 } from './types';
 import { IfcWriter, escapeIfcString, toIfcGlobalId } from './writer';
 
@@ -185,7 +185,23 @@ function writeExtrudedProduct(
 ): number {
   const solid = writer.extrudedSolid(options.profileRef, options.depth);
   const shape = writer.productShape(contextRef, solid);
-  const placement = writer.orientedPlacement(parentPlacementRef, options.origin, options.orientation);
+  // Apply member-local axis eccentricity (2-6) by shifting the placement origin
+  // along the local x (member direction) and y (perpendicular) axes. Members
+  // without an offset are untouched so existing output stays byte-identical.
+  const offset = options.member.axisOffset;
+  const origin =
+    offset && (offset.dx !== 0 || offset.dy !== 0)
+      ? add3(
+          options.origin,
+          localAxisOffset(
+            options.orientation.axis,
+            options.orientation.refDirection,
+            offset.dx,
+            offset.dy,
+          ),
+        )
+      : options.origin;
+  const placement = writer.orientedPlacement(parentPlacementRef, origin, options.orientation);
   return writer.product(
     options.type,
     `${options.member.type}:${options.member.id}`,

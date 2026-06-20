@@ -1,6 +1,7 @@
 import type { Point2D, Point3D } from '@/domain/geometry/types';
 import type {
   Grid,
+  LoadCase,
   Material,
   Member,
   PlanView,
@@ -14,6 +15,7 @@ import { validateProject } from '@/domain/validation';
 import type { ValidationError } from '@/domain/validation';
 import Ajv2020 from 'ajv/dist/2020';
 import { pointKey3D } from '@/domain/geometry/precision';
+import { computeMemberSelfWeight } from '@/domain/structural/selfWeight';
 import analysisSchema from '@/schemas/structuralAnalysis.schema.json';
 
 export const STRUCTURAL_ANALYSIS_SCHEMA = 'simple-cad.structural-analysis/v1';
@@ -46,6 +48,13 @@ export interface StructuralAnalysisLinearMember {
   thickness?: number;
   rotation?: number;
   tags?: string[];
+  /**
+   * Axis-line eccentricity in member-local coordinates (mm), passed through so
+   * the analysis model can offset the member axis from the drawn centreline
+   * (2-6). Only emitted when the source member declares an offset, so members
+   * without eccentricity stay byte-identical to before.
+   */
+  axisOffset?: { dx: number; dy: number };
 }
 
 export interface StructuralAnalysisAreaMember {
@@ -69,6 +78,32 @@ export interface StructuralAnalysisOpening {
   height: number;
 }
 
+/**
+ * Self-weight / superimposed loads derived for a member (2-7). All values are
+ * additive and optional so the analysis model stays backward-compatible.
+ */
+export interface StructuralAnalysisMemberLoad {
+  memberId: string;
+  memberType: 'column' | 'beam' | 'wall' | 'slab';
+  /** 'distributed' = kN/m along a linear member; 'area' = kN/m² over a slab/wall. */
+  kind: 'distributed' | 'area';
+  /** Load case this contribution belongs to (self-weight is a dead case). */
+  loadType: 'dead' | 'live';
+  /** Source of the load (self-weight vs. superimposed dead/live). */
+  source: 'selfWeight' | 'superimposedDead' | 'live';
+  /** Distributed intensity: kN/m for linear members, kN/m² for areas. */
+  intensity: number;
+  /** Total load over the member in kN (when computable). */
+  total?: number;
+}
+
+export interface StructuralAnalysisLoads {
+  /** Per-member self-weight (auto-computed from material unit weight × section). */
+  selfWeight: StructuralAnalysisMemberLoad[];
+  /** Slab/floor superimposed dead + live area loads (from slab section or story). */
+  areaLoads: StructuralAnalysisMemberLoad[];
+}
+
 export interface StructuralAnalysisModel {
   schema: typeof STRUCTURAL_ANALYSIS_SCHEMA;
   meta: StructuralAnalysisMeta;
@@ -80,6 +115,16 @@ export interface StructuralAnalysisModel {
   linearMembers: StructuralAnalysisLinearMember[];
   areaMembers: StructuralAnalysisAreaMember[];
   openings: StructuralAnalysisOpening[];
+  /**
+   * Load cases declared on the project, passed through for the analysis engine
+   * (2-7). Optional / only emitted when present.
+   */
+  loadCases?: LoadCase[];
+  /**
+   * Auto-computed self-weight + superimposed area loads (2-7). Optional and
+   * additive: omitted entirely when nothing could be derived.
+   */
+  loads?: StructuralAnalysisLoads;
   /**
    * Non-fatal warnings raised while exporting (e.g. a missing section that was
    * substituted with a fallback dimension). Surfaced so callers don't silently
@@ -93,6 +138,7 @@ export function exportStructuralAnalysisModel(data: ProjectData): StructuralAnal
   const nodeIds = new Map<string, string>();
   const warnings: string[] = [];
   const sectionMap = new Map(data.sections.map((s) => [s.id, s] as const));
+  const materialMap = new Map(data.materials.map((m) => [m.id, m] as const));
 
   // Tolerance-quantized node key so near-coincident nodes merge into one
   // analysis node instead of splitting the model (B3 / 2-4).
@@ -154,8 +200,13 @@ export function exportStructuralAnalysisModel(data: ProjectData): StructuralAnal
       thickness: member.type === 'wall' ? member.thickness : undefined,
       rotation: member.rotation,
       tags: member.tags,
+      // Pass member-local eccentricity through only when present so members
+      // without an offset stay byte-identical to the previous output (2-6).
+      ...(member.axisOffset ? { axisOffset: member.axisOffset } : {}),
     });
   }
+
+  const loads = computeLoads(data, materialMap);
 
   return {
     schema: STRUCTURAL_ANALYSIS_SCHEMA,
@@ -174,8 +225,80 @@ export function exportStructuralAnalysisModel(data: ProjectData): StructuralAnal
     linearMembers,
     areaMembers,
     openings: data.openings,
+    ...(data.loadCases && data.loadCases.length > 0 ? { loadCases: data.loadCases } : {}),
+    ...(loads ? { loads } : {}),
     ...(warnings.length > 0 ? { warnings } : {}),
   };
+}
+
+/**
+ * Derive the optional `loads` section (2-7):
+ *   - per-member self-weight from material unit weight × section,
+ *   - slab superimposed dead + live area loads (slab section overrides story),
+ *   - wall self-weight as a panel area load.
+ *
+ * Returns `undefined` when nothing could be derived so the field is omitted and
+ * the model stays backward-compatible.
+ */
+function computeLoads(
+  data: ProjectData,
+  materialMap: Map<string, Material>,
+): StructuralAnalysisLoads | undefined {
+  const sectionMap = new Map(data.sections.map((s) => [s.id, s] as const));
+  const storyMap = new Map(data.stories.map((s) => [s.id, s] as const));
+  const selfWeight: StructuralAnalysisMemberLoad[] = [];
+  const areaLoads: StructuralAnalysisMemberLoad[] = [];
+
+  for (const member of data.members) {
+    const section = sectionMap.get(member.sectionId);
+    const material = materialMap.get(member.materialId);
+
+    const sw = computeMemberSelfWeight(member, section, material);
+    if (sw) {
+      selfWeight.push({
+        memberId: sw.memberId,
+        memberType: sw.memberType,
+        kind: sw.kind,
+        loadType: 'dead',
+        source: 'selfWeight',
+        intensity: sw.intensity,
+        total: sw.total,
+      });
+    }
+
+    // Superimposed dead + live area loads for slabs. Slab section values take
+    // precedence over the story-level defaults.
+    if (member.type === 'slab') {
+      const story = storyMap.get(member.story);
+      const slabDead = section && 'deadLoad' in section ? section.deadLoad : undefined;
+      const slabLive = section && 'liveLoad' in section ? section.liveLoad : undefined;
+      const dead = slabDead ?? story?.deadLoad;
+      const live = slabLive ?? story?.liveLoad;
+      if (dead !== undefined) {
+        areaLoads.push({
+          memberId: member.id,
+          memberType: 'slab',
+          kind: 'area',
+          loadType: 'dead',
+          source: 'superimposedDead',
+          intensity: dead,
+        });
+      }
+      if (live !== undefined) {
+        areaLoads.push({
+          memberId: member.id,
+          memberType: 'slab',
+          kind: 'area',
+          loadType: 'live',
+          source: 'live',
+          intensity: live,
+        });
+      }
+    }
+  }
+
+  if (selfWeight.length === 0 && areaLoads.length === 0) return undefined;
+  return { selfWeight, areaLoads };
 }
 
 export function exportStructuralAnalysisJson(data: ProjectData): string {
@@ -312,6 +435,7 @@ function structuralAnalysisModelToProject(model: StructuralAnalysisModel): {
         thickness,
         rotation: member.rotation,
         tags: member.tags,
+        ...(member.axisOffset ? { axisOffset: member.axisOffset } : {}),
       });
       continue;
     }
@@ -326,6 +450,7 @@ function structuralAnalysisModelToProject(model: StructuralAnalysisModel): {
       end: { x: endNode.x, y: endNode.y, z: endNode.z },
       rotation: member.rotation,
       tags: member.tags,
+      ...(member.axisOffset ? { axisOffset: member.axisOffset } : {}),
     });
   }
 
@@ -377,6 +502,7 @@ function structuralAnalysisModelToProject(model: StructuralAnalysisModel): {
     views,
     sheets,
     issues: warnings.map((message) => ({ level: 'warning' as const, message })),
+    ...(model.loadCases && model.loadCases.length > 0 ? { loadCases: model.loadCases } : {}),
   };
 
   return { project, warnings };

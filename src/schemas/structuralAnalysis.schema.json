@@ -27,6 +27,8 @@
     "linearMembers": { "type": "array", "items": { "$ref": "#/$defs/LinearMember" } },
     "areaMembers": { "type": "array", "items": { "$ref": "#/$defs/AreaMember" } },
     "openings": { "type": "array", "items": { "$ref": "#/$defs/Opening" } },
+    "loadCases": { "type": "array", "items": { "type": "object" } },
+    "loads": { "type": "object" },
     "warnings": { "type": "array", "items": { "type": "string" } }
   },
   "$defs": {
@@ -45,12 +47,14 @@
     "Story": {
       "type": "object",
       "required": ["id", "name", "elevation", "height"],
-      "additionalProperties": false,
+      "additionalProperties": true,
       "properties": {
         "id": { "type": "string", "minLength": 1 },
         "name": { "type": "string" },
         "elevation": { "type": "number" },
-        "height": { "type": "number", "exclusiveMinimum": 0 }
+        "height": { "type": "number", "exclusiveMinimum": 0 },
+        "deadLoad": { "type": "number" },
+        "liveLoad": { "type": "number" }
       }
     },
     "Grid": {
@@ -82,7 +86,15 @@
         "id": { "type": "string", "minLength": 1 },
         "kind": {
           "type": "string",
-          "enum": ["rc_column_rect", "rc_beam_rect", "rc_slab", "rc_wall"]
+          "enum": [
+            "rc_column_rect",
+            "rc_beam_rect",
+            "rc_slab",
+            "rc_wall",
+            "s_column_h",
+            "s_beam_h",
+            "s_pipe"
+          ]
         }
       }
     },
@@ -113,7 +125,16 @@
         "height": { "type": "number" },
         "thickness": { "type": "number" },
         "rotation": { "type": "number" },
-        "tags": { "type": "array", "items": { "type": "string" } }
+        "tags": { "type": "array", "items": { "type": "string" } },
+        "axisOffset": {
+          "type": "object",
+          "required": ["dx", "dy"],
+          "additionalProperties": false,
+          "properties": {
+            "dx": { "type": "number" },
+            "dy": { "type": "number" }
+          }
+        }
       }
     },
     "AreaMember": {

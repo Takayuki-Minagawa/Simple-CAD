@@ -11,6 +11,10 @@ interface ViewerToolbarProps {
   setOrthographic: (on: boolean) => void;
   wireframe: boolean;
   setWireframe: (on: boolean) => void;
+  measureMode: boolean;
+  toggleMeasure: () => void;
+  clearMeasure: () => void;
+  measureCount: number;
 }
 
 export function ViewerToolbar({
@@ -23,6 +27,10 @@ export function ViewerToolbar({
   setOrthographic,
   wireframe,
   setWireframe,
+  measureMode,
+  toggleMeasure,
+  clearMeasure,
+  measureCount,
 }: ViewerToolbarProps) {
   return (
     <div
@@ -57,6 +65,24 @@ export function ViewerToolbar({
       >
         {t.viewWire}
       </button>
+      <button
+        className="toolbar-btn"
+        style={{ background: measureMode ? 'var(--accent)' : '#555', color: '#fff', fontSize: 11 }}
+        onClick={toggleMeasure}
+        title={labels.measureHint}
+      >
+        {labels.measure}
+      </button>
+      {measureMode && (
+        <button
+          className="toolbar-btn"
+          style={{ background: '#555', color: '#fff', fontSize: 11 }}
+          onClick={clearMeasure}
+          disabled={measureCount === 0}
+        >
+          {labels.measureClear}
+        </button>
+      )}
     </div>
   );
 }

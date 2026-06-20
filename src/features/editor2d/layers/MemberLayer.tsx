@@ -1,6 +1,31 @@
 import type { CSSProperties } from 'react';
 import type { Member, Section } from '@/domain/structural/types';
+import type { Point2D } from '@/domain/geometry/types';
 import { lineTypeToDashArray } from '@/domain/rendering/lineStyle';
+
+/**
+ * Resolve an axis-line eccentricity (member-local dx,dy) into a world-space
+ * offset. Local x runs start→end; local y is its left-hand perpendicular.
+ * Members without `axisOffset` get a zero offset (identical rendering).
+ */
+function axisOffsetWorld(
+  offset: { dx: number; dy: number } | undefined,
+  start: Point2D,
+  end: Point2D,
+): { ox: number; oy: number } {
+  if (!offset) return { ox: 0, oy: 0 };
+  const dx = end.x - start.x;
+  const dy = end.y - start.y;
+  const len = Math.hypot(dx, dy);
+  if (len === 0) return { ox: offset.dx, oy: offset.dy };
+  const ux = dx / len;
+  const uy = dy / len;
+  // local-x unit = (ux,uy); local-y unit = (-uy,ux)
+  return {
+    ox: ux * offset.dx - uy * offset.dy,
+    oy: uy * offset.dx + ux * offset.dy,
+  };
+}
 
 interface Props {
   members: Member[];
@@ -92,8 +117,9 @@ function ColumnShape({
   depth: number;
   selected: boolean;
 }) {
-  const cx = member.start.x;
-  const cy = member.start.y;
+  // Columns have no in-plane direction; treat axisOffset as world dx,dy.
+  const cx = member.start.x + (member.axisOffset?.dx ?? 0);
+  const cy = member.start.y + (member.axisOffset?.dy ?? 0);
   const hw = width / 2;
   const hd = depth / 2;
   const lw = member.lineWeight ?? 20;
@@ -133,12 +159,13 @@ function BeamShape({
   if (len === 0) return null;
   const nx = (-dy / len) * (width / 2);
   const ny = (dx / len) * (width / 2);
+  const { ox, oy } = axisOffsetWorld(member.axisOffset, start, end);
 
   const points = [
-    `${start.x + nx},${start.y + ny}`,
-    `${end.x + nx},${end.y + ny}`,
-    `${end.x - nx},${end.y - ny}`,
-    `${start.x - nx},${start.y - ny}`,
+    `${start.x + nx + ox},${start.y + ny + oy}`,
+    `${end.x + nx + ox},${end.y + ny + oy}`,
+    `${end.x - nx + ox},${end.y - ny + oy}`,
+    `${start.x - nx + ox},${start.y - ny + oy}`,
   ].join(' ');
 
   const lw = member.lineWeight ?? 20;
@@ -175,12 +202,13 @@ function WallShape({
   if (len === 0) return null;
   const nx = (-dy / len) * (thickness / 2);
   const ny = (dx / len) * (thickness / 2);
+  const { ox, oy } = axisOffsetWorld(member.axisOffset, start, end);
 
   const points = [
-    `${start.x + nx},${start.y + ny}`,
-    `${end.x + nx},${end.y + ny}`,
-    `${end.x - nx},${end.y - ny}`,
-    `${start.x - nx},${start.y - ny}`,
+    `${start.x + nx + ox},${start.y + ny + oy}`,
+    `${end.x + nx + ox},${end.y + ny + oy}`,
+    `${end.x - nx + ox},${end.y - ny + oy}`,
+    `${start.x - nx + ox},${start.y - ny + oy}`,
   ].join(' ');
 
   const lw = member.lineWeight ?? 20;
@@ -208,7 +236,11 @@ function SlabShape({
   member: Member & { type: 'slab' };
   selected: boolean;
 }) {
-  const points = member.polygon.map((p) => `${p.x},${p.y}`).join(' ');
+  // Slab axisOffset reference: first polygon edge defines local-x.
+  const poly = member.polygon;
+  const { ox, oy } =
+    poly.length >= 2 ? axisOffsetWorld(member.axisOffset, poly[0], poly[1]) : { ox: member.axisOffset?.dx ?? 0, oy: member.axisOffset?.dy ?? 0 };
+  const points = poly.map((p) => `${p.x + ox},${p.y + oy}`).join(' ');
   const lw = member.lineWeight ?? 20;
   const sw = selected ? lw * 2 : lw;
   const strokeColor = selected ? 'var(--color-selection)' : (member.color ?? 'var(--color-slab)');

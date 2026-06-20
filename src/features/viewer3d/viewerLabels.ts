@@ -26,6 +26,11 @@ export function getViewerLabels(locale: Locale) {
         native: '標準',
         opencascade: 'OpenCascade',
         runtimeMissing: '外部ランタイム未検出',
+        measure: '計測',
+        measureClear: 'クリア',
+        measureHint: '2点をクリックして距離を計測（端点優先スナップ）',
+        measureDistance: '距離',
+        measureLength: '長さ',
       }
     : {
         section: 'Section',
@@ -51,6 +56,11 @@ export function getViewerLabels(locale: Locale) {
         native: 'Native',
         opencascade: 'OpenCascade',
         runtimeMissing: 'Runtime not detected',
+        measure: 'Measure',
+        measureClear: 'Clear',
+        measureHint: 'Click two points to measure distance (snaps to endpoints)',
+        measureDistance: 'Distance',
+        measureLength: 'Length',
       };
 }
 

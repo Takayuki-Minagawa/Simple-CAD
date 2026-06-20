@@ -4,6 +4,7 @@ import { useEditorStore, useProjectStore } from '@/app/store';
 import { useI18n } from '@/i18n';
 import type { Opening } from '@/domain/structural/types';
 import { type GeometryEngine } from './memberGeometry';
+import type { MeasurePoint } from './MeasureLayer';
 import { SceneContents } from './SceneContents';
 import { SectionControls } from './SectionControls';
 import { ViewerInfoPanel } from './ViewerInfoPanel';
@@ -34,6 +35,21 @@ export function Viewer3D() {
   const [sectionBox, setSectionBox] = useState<SectionBoxState | null>(null);
   const [geometryEngine, setGeometryEngine] = useState<GeometryEngine>('native');
   const [showAllStories, setShowAllStories] = useState(true);
+
+  // ── 3D measurement tool state ──
+  const [measureMode, setMeasureMode] = useState(false);
+  const [measurePoints, setMeasurePoints] = useState<MeasurePoint[]>([]);
+
+  const addMeasurePoint = (point: MeasurePoint) => {
+    setMeasurePoints((prev) => (prev.length >= 2 ? [point] : [...prev, point]));
+  };
+  const clearMeasure = () => setMeasurePoints([]);
+  const toggleMeasure = () => {
+    setMeasureMode((on) => {
+      if (on) setMeasurePoints([]);
+      return !on;
+    });
+  };
 
   const filteredMembers = useMemo(
     () =>
@@ -128,6 +144,10 @@ export function Viewer3D() {
         setOrthographic={setOrthographic}
         wireframe={wireframe}
         setWireframe={setWireframe}
+        measureMode={measureMode}
+        toggleMeasure={toggleMeasure}
+        clearMeasure={clearMeasure}
+        measureCount={measurePoints.length}
       />
 
       <ViewerInfoPanel
@@ -181,6 +201,10 @@ export function Viewer3D() {
           geometryEngine={geometryEngine}
           clippingPlanes={clippingPlanes}
           setSelectedIds={setSelectedIds}
+          measureMode={measureMode}
+          measurePoints={measurePoints}
+          addMeasurePoint={addMeasurePoint}
+          labels={labels}
         />
       </Canvas>
     </div>
