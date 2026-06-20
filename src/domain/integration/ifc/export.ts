@@ -15,8 +15,17 @@ interface Orientation {
   refDirection: Vector3;
 }
 
-export function exportIfc(data: ProjectData): string {
+/**
+ * Export a project as IFC4 STEP text.
+ *
+ * @param warnings optional sink — when provided, non-fatal issues such as a
+ *   missing section being replaced by a fallback dimension are pushed here so
+ *   callers don't silently ship magic numbers (B7 / 2-8). Backward compatible:
+ *   existing callers that pass only `data` are unaffected.
+ */
+export function exportIfc(data: ProjectData, warnings?: string[]): string {
   const writer = new IfcWriter();
+  const sink = warnings ?? [];
   const now = new Date().toISOString().replace(/\.\d{3}Z$/, 'Z');
 
   const originPoint = writer.cartesianPoint3D({ x: 0, y: 0, z: 0 });
@@ -57,7 +66,7 @@ export function exportIfc(data: ProjectData): string {
     const storyRef = storyRefs.get(member.story);
     if (!storyRef) continue;
 
-    const elementRef = createIfcMember(writer, context, buildingPlacement, member, data.sections);
+    const elementRef = createIfcMember(writer, context, buildingPlacement, member, data.sections, sink);
     if (!elementRef) continue;
     storyMembers.get(member.story)?.push(elementRef);
   }
@@ -89,21 +98,29 @@ function createIfcMember(
   parentPlacementRef: number,
   member: Member,
   sections: Section[],
+  warnings: string[],
 ): number | null {
   const section = sections.find((item) => item.id === member.sectionId);
+  if (!section) {
+    warnings.push(
+      `部材 ${member.id} (${member.type}) の断面 ${member.sectionId} が見つからないため既定寸法で出力しました`,
+    );
+  }
 
   switch (member.type) {
     case 'column': {
       const width = section && 'width' in section ? section.width : 600;
       const depth = section && 'depth' in section ? section.depth : 600;
       const profile = writer.rectangleProfile(`PROFILE-${member.id}`, width, depth);
+      // Encode member.rotation in the placement refDirection so it round-trips
+      // (B5 / 3-8). A vertical column rotates about its z axis.
       return writeExtrudedProduct(writer, contextRef, parentPlacementRef, {
         type: 'IFCCOLUMN',
         member,
         profileRef: profile,
         depth: memberLength(member.start, member.end),
         origin: member.start,
-        orientation: VERTICAL_ORIENTATION,
+        orientation: rotatedVerticalOrientation(member.rotation),
       });
     }
     case 'beam': {
@@ -176,6 +193,15 @@ function writeExtrudedProduct(
     placement,
     shape,
   );
+}
+
+/** Vertical orientation whose refDirection is rotated by `rotation` rad in XY. */
+function rotatedVerticalOrientation(rotation: number | undefined): Orientation {
+  if (!rotation) return VERTICAL_ORIENTATION;
+  return {
+    axis: { x: 0, y: 0, z: 1 },
+    refDirection: { x: Math.cos(rotation), y: Math.sin(rotation), z: 0 },
+  };
 }
 
 function alongMemberOrientation(start: Point3D, end: Point3D): Orientation {

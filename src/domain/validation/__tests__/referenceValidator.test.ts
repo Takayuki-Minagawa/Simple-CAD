@@ -32,6 +32,64 @@ describe('validateReferences', () => {
     expect(result.errors.some((e) => e.message.includes('story'))).toBe(true);
   });
 
+  it('detects section.kind ↔ member.type mismatch', () => {
+    const data: ProjectData = {
+      ...validData,
+      members: [
+        {
+          id: 'C-BADSEC',
+          type: 'column',
+          story: '1F',
+          // rc_slab section used by a column → inconsistent
+          sectionId: 'SEC-SLAB180',
+          materialId: 'MAT-RC-24',
+          start: { x: 0, y: 0, z: 0 },
+          end: { x: 0, y: 0, z: 3000 },
+        },
+      ],
+    };
+    const result = validateReferences(data);
+    expect(result.ok).toBe(false);
+    expect(result.errors.some((e) => e.message.includes('section.kind'))).toBe(true);
+  });
+
+  it('detects group referencing a missing member', () => {
+    const data: ProjectData = {
+      ...validData,
+      groups: [{ id: 'G1', name: 'g', memberIds: ['NON_EXISTENT'] }],
+    };
+    const result = validateReferences(data);
+    expect(result.ok).toBe(false);
+    expect(result.errors.some((e) => e.message.includes('Group'))).toBe(true);
+  });
+
+  it('detects viewport referencing a missing view', () => {
+    const data: ProjectData = {
+      ...validData,
+      sheets: [
+        {
+          ...validData.sheets[0],
+          viewports: [
+            {
+              id: 'VP1',
+              sheetId: validData.sheets[0].id,
+              viewId: 'NON_EXISTENT_VIEW',
+              x: 0,
+              y: 0,
+              width: 100,
+              height: 100,
+              scale: '1:100',
+            },
+          ],
+        },
+        ...validData.sheets.slice(1),
+      ],
+    };
+    const result = validateReferences(data);
+    expect(result.ok).toBe(false);
+    expect(result.errors.some((e) => e.message.includes('Viewport'))).toBe(true);
+  });
+
   it('detects duplicate IDs', () => {
     const data: ProjectData = {
       ...validData,

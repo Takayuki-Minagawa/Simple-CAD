@@ -1,6 +1,7 @@
 import type { ProjectData } from '@/domain/structural/types';
 import { validateProject } from '@/domain/validation';
 import type { ValidationError } from '@/domain/validation';
+import { migrate } from '@/domain/migration';
 
 export function importProjectJson(
   rawContent: string,
@@ -15,10 +16,15 @@ export function importProjectJson(
     };
   }
 
-  const result = validateProject(parsed);
+  // Up-migrate older/legacy payloads to the current schema version BEFORE
+  // schema validation, so strict `additionalProperties:false` rules don't reject
+  // forward-compatible files (3-7).
+  const migrated = migrate(parsed);
+
+  const result = validateProject(migrated);
   if (!result.ok) {
     return { ok: false, errors: result.errors };
   }
 
-  return { ok: true, data: parsed as ProjectData };
+  return { ok: true, data: migrated };
 }

@@ -12,6 +12,9 @@ import type {
 } from '@/domain/structural/types';
 import { validateProject } from '@/domain/validation';
 import type { ValidationError } from '@/domain/validation';
+import Ajv2020 from 'ajv/dist/2020';
+import { pointKey3D } from '@/domain/geometry/precision';
+import analysisSchema from '@/schemas/structuralAnalysis.schema.json';
 
 export const STRUCTURAL_ANALYSIS_SCHEMA = 'simple-cad.structural-analysis/v1';
 
@@ -77,14 +80,24 @@ export interface StructuralAnalysisModel {
   linearMembers: StructuralAnalysisLinearMember[];
   areaMembers: StructuralAnalysisAreaMember[];
   openings: StructuralAnalysisOpening[];
+  /**
+   * Non-fatal warnings raised while exporting (e.g. a missing section that was
+   * substituted with a fallback dimension). Surfaced so callers don't silently
+   * ship magic numbers (B7 / 2-8).
+   */
+  warnings?: string[];
 }
 
 export function exportStructuralAnalysisModel(data: ProjectData): StructuralAnalysisModel {
   const nodes: StructuralAnalysisNode[] = [];
   const nodeIds = new Map<string, string>();
+  const warnings: string[] = [];
+  const sectionMap = new Map(data.sections.map((s) => [s.id, s] as const));
 
+  // Tolerance-quantized node key so near-coincident nodes merge into one
+  // analysis node instead of splitting the model (B3 / 2-4).
   const ensureNode = (point: Point3D, storyId?: string) => {
-    const key = `${point.x}:${point.y}:${point.z}`;
+    const key = pointKey3D(point);
     const existing = nodeIds.get(key);
     if (existing) return existing;
 
@@ -104,6 +117,14 @@ export function exportStructuralAnalysisModel(data: ProjectData): StructuralAnal
   const areaMembers: StructuralAnalysisAreaMember[] = [];
 
   for (const member of data.members) {
+    // Warn when a member references a section that doesn't exist — downstream
+    // consumers would otherwise fall back to a default thickness/dimension
+    // without any signal (B7 / 2-8).
+    if (!sectionMap.has(member.sectionId)) {
+      warnings.push(
+        `部材 ${member.id} (${member.type}) が参照する断面 ${member.sectionId} が見つかりません`,
+      );
+    }
     if (member.type === 'slab') {
       areaMembers.push({
         id: member.id,
@@ -153,6 +174,7 @@ export function exportStructuralAnalysisModel(data: ProjectData): StructuralAnal
     linearMembers,
     areaMembers,
     openings: data.openings,
+    ...(warnings.length > 0 ? { warnings } : {}),
   };
 }
 
@@ -162,7 +184,7 @@ export function exportStructuralAnalysisJson(data: ProjectData): string {
 
 export function importStructuralAnalysisJson(
   rawContent: string,
-): { ok: true; data: ProjectData } | { ok: false; errors: ValidationError[] } {
+): { ok: true; data: ProjectData; warnings?: string[] } | { ok: false; errors: ValidationError[] } {
   let parsed: unknown;
   try {
     parsed = JSON.parse(rawContent);
@@ -178,109 +200,105 @@ export function importStructuralAnalysisJson(
     return { ok: false, errors: validationErrors };
   }
 
-  const project = structuralAnalysisModelToProject(parsed as StructuralAnalysisModel);
-  const result = validateProject(project);
+  const conversion = structuralAnalysisModelToProject(parsed as StructuralAnalysisModel);
+  const result = validateProject(conversion.project);
   if (!result.ok) {
     return { ok: false, errors: result.errors };
   }
 
-  return { ok: true, data: project };
+  return {
+    ok: true,
+    data: conversion.project,
+    ...(conversion.warnings.length > 0 ? { warnings: conversion.warnings } : {}),
+  };
 }
 
+const ajv = new Ajv2020({ allErrors: true });
+const validateAnalysisSchema = ajv.compile(analysisSchema);
+
+/**
+ * Validate the structural-analysis JSON with the JSON Schema (3-6) plus
+ * reference-integrity checks that schema alone cannot express (every member's
+ * node references must resolve to a declared node).
+ */
 function validateStructuralAnalysisModel(value: unknown): ValidationError[] {
-  const errors: ValidationError[] = [];
-  if (!isRecord(value)) {
-    return [{ level: 'error', message: 'Structural analysis JSON must be an object.' }];
-  }
-
-  if (value.schema !== STRUCTURAL_ANALYSIS_SCHEMA) {
-    errors.push({
-      level: 'error',
-      message: `Unsupported structural analysis schema: ${String(value.schema)}`,
-      path: '/schema',
-    });
-  }
-
-  const collections = [
-    'stories',
-    'grids',
-    'materials',
-    'sections',
-    'nodes',
-    'linearMembers',
-    'areaMembers',
-    'openings',
-  ] as const;
-  for (const key of collections) {
-    if (!Array.isArray(value[key])) {
-      errors.push({
+  // The schema enforces the unsupported-schema message ordering expectation of
+  // the existing tests, so check the discriminator first for a friendly message.
+  if (isRecord(value) && value.schema !== STRUCTURAL_ANALYSIS_SCHEMA) {
+    return [
+      {
         level: 'error',
-        message: `${key} must be an array.`,
-        path: `/${key}`,
-      });
-    }
+        message: `Unsupported structural analysis schema: ${String(value.schema)}`,
+        path: '/schema',
+      },
+    ];
   }
 
-  if (!isRecord(value.meta)) {
-    errors.push({
-      level: 'error',
-      message: 'meta must be an object.',
-      path: '/meta',
-    });
-  } else {
-    if (typeof value.meta.projectId !== 'string' || value.meta.projectId.length === 0) {
-      errors.push({ level: 'error', message: 'meta.projectId is required.', path: '/meta/projectId' });
-    }
-    if (typeof value.meta.projectName !== 'string' || value.meta.projectName.length === 0) {
-      errors.push({ level: 'error', message: 'meta.projectName is required.', path: '/meta/projectName' });
-    }
-    if (value.meta.unit !== 'mm') {
-      errors.push({ level: 'error', message: 'meta.unit must be "mm".', path: '/meta/unit' });
-    }
+  const valid = validateAnalysisSchema(value);
+  if (!valid) {
+    return (validateAnalysisSchema.errors ?? []).map((e) => ({
+      level: 'error' as const,
+      message: `Schema: ${e.instancePath || '/'} ${e.message ?? 'unknown error'}`,
+      path: e.instancePath || undefined,
+    }));
   }
 
-  if (Array.isArray(value.nodes)) {
-    for (let index = 0; index < value.nodes.length; index++) {
-      const node = value.nodes[index];
-      if (!isRecord(node)) {
-        errors.push({ level: 'error', message: 'Node must be an object.', path: `/nodes/${index}` });
-        continue;
-      }
-      if (typeof node.id !== 'string' || node.id.length === 0) {
-        errors.push({ level: 'error', message: 'Node id is required.', path: `/nodes/${index}/id` });
-      }
-      if (!isFiniteNumber(node.x) || !isFiniteNumber(node.y) || !isFiniteNumber(node.z)) {
-        errors.push({
-          level: 'error',
-          message: 'Node coordinates must be finite numbers.',
-          path: `/nodes/${index}`,
-        });
-      }
+  // Reference integrity: node ids referenced by members must exist.
+  const model = value as unknown as StructuralAnalysisModel;
+  const errors: ValidationError[] = [];
+  const nodeIds = new Set(model.nodes.map((n) => n.id));
+  for (const m of model.linearMembers) {
+    if (!nodeIds.has(m.startNodeId)) {
+      errors.push({ level: 'error', message: `linearMember ${m.id} references missing startNode ${m.startNodeId}`, path: `/linearMembers` });
+    }
+    if (!nodeIds.has(m.endNodeId)) {
+      errors.push({ level: 'error', message: `linearMember ${m.id} references missing endNode ${m.endNodeId}`, path: `/linearMembers` });
     }
   }
 
   return errors;
 }
 
-function structuralAnalysisModelToProject(model: StructuralAnalysisModel): ProjectData {
+function structuralAnalysisModelToProject(model: StructuralAnalysisModel): {
+  project: ProjectData;
+  warnings: string[];
+} {
   const nodeMap = new Map(model.nodes.map((node) => [node.id, node]));
   const storyMap = new Map(model.stories.map((story) => [story.id, story]));
   const sectionMap = new Map(model.sections.map((section) => [section.id, section]));
+  const warnings: string[] = [];
 
   const members: Member[] = [];
 
   for (const member of model.linearMembers) {
     const startNode = nodeMap.get(member.startNodeId);
     const endNode = nodeMap.get(member.endNodeId);
-    if (!startNode || !endNode) continue;
+    if (!startNode || !endNode) {
+      // Don't silently drop: surface a warning so import counts aren't reduced
+      // without any signal (B6).
+      const missing = [!startNode ? member.startNodeId : null, !endNode ? member.endNodeId : null]
+        .filter(Boolean)
+        .join(', ');
+      warnings.push(`部材 ${member.id} を取り込めませんでした: 節点 ${missing} が存在しません`);
+      continue;
+    }
 
     if (member.type === 'wall') {
       const story = storyMap.get(member.storyId);
       const section = sectionMap.get(member.sectionId);
+      const hasThickness =
+        member.thickness !== undefined || (section && 'thickness' in section);
       const thickness =
         member.thickness ??
         (section && 'thickness' in section ? section.thickness : 200);
+      if (!hasThickness) {
+        warnings.push(`壁 ${member.id} の厚さが不明のため既定値 200mm を使用しました`);
+      }
+      const hasHeight = member.height !== undefined || story?.height !== undefined;
       const height = member.height ?? story?.height ?? Math.max(endNode.z - startNode.z, 3000);
+      if (!hasHeight) {
+        warnings.push(`壁 ${member.id} の高さが不明のため既定値を使用しました`);
+      }
 
       members.push({
         id: member.id,
@@ -312,11 +330,18 @@ function structuralAnalysisModelToProject(model: StructuralAnalysisModel): Proje
   }
 
   for (const member of model.areaMembers) {
-    const polygon = member.nodeIds
-      .map((nodeId) => nodeMap.get(nodeId))
+    const resolvedNodes = member.nodeIds.map((nodeId) => nodeMap.get(nodeId));
+    const missing = member.nodeIds.filter((_, i) => !resolvedNodes[i]);
+    if (missing.length > 0) {
+      warnings.push(`スラブ ${member.id} の節点 ${missing.join(', ')} が存在しません`);
+    }
+    const polygon = resolvedNodes
       .filter((node): node is StructuralAnalysisNode => Boolean(node))
       .map((node) => ({ x: node.x, y: node.y }));
-    if (polygon.length < 3) continue;
+    if (polygon.length < 3) {
+      warnings.push(`スラブ ${member.id} を取り込めませんでした: 有効な節点が ${polygon.length} 個のみ`);
+      continue;
+    }
 
     members.push({
       id: member.id,
@@ -334,7 +359,7 @@ function structuralAnalysisModelToProject(model: StructuralAnalysisModel): Proje
   const views = createDefaultViews(model.stories, members);
   const sheets = createDefaultSheets(model.meta.projectName, model.stories);
 
-  return {
+  const project: ProjectData = {
     schemaVersion: '1.0.0',
     project: {
       id: model.meta.projectId,
@@ -351,8 +376,10 @@ function structuralAnalysisModelToProject(model: StructuralAnalysisModel): Proje
     dimensions: [],
     views,
     sheets,
-    issues: [],
+    issues: warnings.map((message) => ({ level: 'warning' as const, message })),
   };
+
+  return { project, warnings };
 }
 
 function createDefaultViews(stories: Story[], members: Member[]): View[] {
@@ -441,8 +468,4 @@ function computeStoryExtents(storyId: string, members: Member[]): {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
-}
-
-function isFiniteNumber(value: unknown): value is number {
-  return typeof value === 'number' && Number.isFinite(value);
 }

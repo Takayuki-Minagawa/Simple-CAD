@@ -1,5 +1,68 @@
 import type { DrawState } from './useEditorInteraction';
 import { isCreationTool, type EditorTool } from '@/app/store';
+import { useEditorStore } from '@/app/store';
+import type { SnapResult } from '@/domain/geometry/snap';
+
+const SNAP_COLOR = '#ff6600';
+
+/**
+ * Distinct snap markers per snap type (AutoCAD-style):
+ *   endpoint=square, midpoint=triangle, intersection=X, perpendicular=⊥,
+ *   nearest=circle, grid=small cross.
+ * Marker geometry is sized in world units derived from `zoom` so it appears
+ * constant on screen regardless of zoom level.
+ */
+function SnapMarker({ snap, zoom }: { snap: SnapResult; zoom: number }) {
+  const { x, y } = snap.point;
+  // Zoom-independent half-size and stroke (in world units).
+  const r = 10 / zoom;
+  const strokeWidth = 2 / zoom;
+  const common = {
+    fill: 'none',
+    stroke: SNAP_COLOR,
+    strokeWidth,
+    vectorEffect: 'non-scaling-stroke' as const,
+  };
+
+  switch (snap.type) {
+    case 'endpoint':
+      return <rect x={x - r} y={y - r} width={r * 2} height={r * 2} {...common} />;
+    case 'midpoint':
+      return (
+        <polygon
+          points={`${x},${y - r} ${x - r},${y + r} ${x + r},${y + r}`}
+          {...common}
+        />
+      );
+    case 'intersection':
+      return (
+        <g {...common}>
+          <line x1={x - r} y1={y - r} x2={x + r} y2={y + r} stroke={SNAP_COLOR} strokeWidth={strokeWidth} vectorEffect="non-scaling-stroke" />
+          <line x1={x - r} y1={y + r} x2={x + r} y2={y - r} stroke={SNAP_COLOR} strokeWidth={strokeWidth} vectorEffect="non-scaling-stroke" />
+        </g>
+      );
+    case 'perpendicular':
+      // ⊥ glyph: vertical stroke + base stroke.
+      return (
+        <g>
+          <line x1={x - r} y1={y - r} x2={x - r} y2={y + r} stroke={SNAP_COLOR} strokeWidth={strokeWidth} vectorEffect="non-scaling-stroke" />
+          <line x1={x - r} y1={y + r} x2={x + r} y2={y + r} stroke={SNAP_COLOR} strokeWidth={strokeWidth} vectorEffect="non-scaling-stroke" />
+          <line x1={x - r} y1={y} x2={x} y2={y} stroke={SNAP_COLOR} strokeWidth={strokeWidth} vectorEffect="non-scaling-stroke" />
+        </g>
+      );
+    case 'nearest':
+      return <circle cx={x} cy={y} r={r} {...common} />;
+    case 'grid':
+    default:
+      // Small cross.
+      return (
+        <g>
+          <line x1={x - r * 0.6} y1={y} x2={x + r * 0.6} y2={y} stroke={SNAP_COLOR} strokeWidth={strokeWidth} vectorEffect="non-scaling-stroke" />
+          <line x1={x} y1={y - r * 0.6} x2={x} y2={y + r * 0.6} stroke={SNAP_COLOR} strokeWidth={strokeWidth} vectorEffect="non-scaling-stroke" />
+        </g>
+      );
+  }
+}
 
 interface Props {
   drawState: DrawState;
@@ -8,39 +71,13 @@ interface Props {
 
 export function DrawPreview({ drawState, activeTool }: Props) {
   const { points, previewPos, snapResult } = drawState;
+  const zoom = useEditorStore((s) => s.zoom);
   if (!previewPos) return null;
 
   return (
     <g className="draw-preview" opacity={0.6}>
-      {/* Snap indicator */}
-      {snapResult && (
-        <g>
-          <circle
-            cx={snapResult.point.x}
-            cy={snapResult.point.y}
-            r={150}
-            fill="none"
-            stroke="#ff6600"
-            strokeWidth={30}
-          />
-          <line
-            x1={snapResult.point.x - 200}
-            y1={snapResult.point.y}
-            x2={snapResult.point.x + 200}
-            y2={snapResult.point.y}
-            stroke="#ff6600"
-            strokeWidth={20}
-          />
-          <line
-            x1={snapResult.point.x}
-            y1={snapResult.point.y - 200}
-            x2={snapResult.point.x}
-            y2={snapResult.point.y + 200}
-            stroke="#ff6600"
-            strokeWidth={20}
-          />
-        </g>
-      )}
+      {/* Snap indicator: distinct marker per snap type */}
+      {snapResult && <SnapMarker snap={snapResult} zoom={zoom} />}
 
       {/* Tool preview lines */}
       {(activeTool === 'beam' || activeTool === 'wall' || activeTool === 'dimension' || activeTool === 'xline') &&

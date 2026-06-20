@@ -1,0 +1,159 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://structural-web-cad.example/structuralAnalysis.schema.json",
+  "title": "Structural Analysis Model",
+  "type": "object",
+  "required": [
+    "schema",
+    "meta",
+    "stories",
+    "grids",
+    "materials",
+    "sections",
+    "nodes",
+    "linearMembers",
+    "areaMembers",
+    "openings"
+  ],
+  "additionalProperties": true,
+  "properties": {
+    "schema": { "const": "simple-cad.structural-analysis/v1" },
+    "meta": { "$ref": "#/$defs/Meta" },
+    "stories": { "type": "array", "items": { "$ref": "#/$defs/Story" } },
+    "grids": { "type": "array", "items": { "$ref": "#/$defs/Grid" } },
+    "materials": { "type": "array", "items": { "$ref": "#/$defs/Material" } },
+    "sections": { "type": "array", "items": { "$ref": "#/$defs/Section" } },
+    "nodes": { "type": "array", "items": { "$ref": "#/$defs/Node" } },
+    "linearMembers": { "type": "array", "items": { "$ref": "#/$defs/LinearMember" } },
+    "areaMembers": { "type": "array", "items": { "$ref": "#/$defs/AreaMember" } },
+    "openings": { "type": "array", "items": { "$ref": "#/$defs/Opening" } },
+    "warnings": { "type": "array", "items": { "type": "string" } }
+  },
+  "$defs": {
+    "Meta": {
+      "type": "object",
+      "required": ["projectId", "projectName", "unit"],
+      "additionalProperties": true,
+      "properties": {
+        "source": { "type": "string" },
+        "projectId": { "type": "string", "minLength": 1 },
+        "projectName": { "type": "string", "minLength": 1 },
+        "unit": { "const": "mm" },
+        "generatedAt": { "type": "string" }
+      }
+    },
+    "Story": {
+      "type": "object",
+      "required": ["id", "name", "elevation", "height"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "name": { "type": "string" },
+        "elevation": { "type": "number" },
+        "height": { "type": "number", "exclusiveMinimum": 0 }
+      }
+    },
+    "Grid": {
+      "type": "object",
+      "required": ["id", "axis", "name", "position"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "axis": { "type": "string", "enum": ["X", "Y"] },
+        "name": { "type": "string" },
+        "position": { "type": "number" }
+      }
+    },
+    "Material": {
+      "type": "object",
+      "required": ["id", "name", "type"],
+      "additionalProperties": true,
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "name": { "type": "string" },
+        "type": { "type": "string", "enum": ["concrete", "steel", "wood", "other"] }
+      }
+    },
+    "Section": {
+      "type": "object",
+      "required": ["id", "kind"],
+      "additionalProperties": true,
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "kind": {
+          "type": "string",
+          "enum": ["rc_column_rect", "rc_beam_rect", "rc_slab", "rc_wall"]
+        }
+      }
+    },
+    "Node": {
+      "type": "object",
+      "required": ["id", "x", "y", "z"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "x": { "type": "number" },
+        "y": { "type": "number" },
+        "z": { "type": "number" },
+        "storyId": { "type": "string" }
+      }
+    },
+    "LinearMember": {
+      "type": "object",
+      "required": ["id", "type", "storyId", "sectionId", "materialId", "startNodeId", "endNodeId"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "type": { "type": "string", "enum": ["column", "beam", "wall"] },
+        "storyId": { "type": "string", "minLength": 1 },
+        "sectionId": { "type": "string", "minLength": 1 },
+        "materialId": { "type": "string", "minLength": 1 },
+        "startNodeId": { "type": "string", "minLength": 1 },
+        "endNodeId": { "type": "string", "minLength": 1 },
+        "height": { "type": "number" },
+        "thickness": { "type": "number" },
+        "rotation": { "type": "number" },
+        "tags": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "AreaMember": {
+      "type": "object",
+      "required": ["id", "type", "storyId", "sectionId", "materialId", "nodeIds", "level"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "type": { "const": "slab" },
+        "storyId": { "type": "string", "minLength": 1 },
+        "sectionId": { "type": "string", "minLength": 1 },
+        "materialId": { "type": "string", "minLength": 1 },
+        "nodeIds": { "type": "array", "items": { "type": "string" } },
+        "level": { "type": "number" },
+        "rotation": { "type": "number" },
+        "tags": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "Point3D": {
+      "type": "object",
+      "required": ["x", "y", "z"],
+      "additionalProperties": false,
+      "properties": {
+        "x": { "type": "number" },
+        "y": { "type": "number" },
+        "z": { "type": "number" }
+      }
+    },
+    "Opening": {
+      "type": "object",
+      "required": ["id", "memberId", "type", "position", "width", "height"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "memberId": { "type": "string", "minLength": 1 },
+        "type": { "type": "string", "enum": ["door", "window", "void"] },
+        "position": { "$ref": "#/$defs/Point3D" },
+        "width": { "type": "number" },
+        "height": { "type": "number" }
+      }
+    }
+  }
+}

@@ -12,6 +12,7 @@ import {
   resolveElementStoryId,
   resolveStoryMembership,
 } from './stories';
+import { resolveLengthUnitScale } from './units';
 import type { ResolvedSolid, StepEntity } from './types';
 
 const MATERIAL_ID = 'MAT-IFC';
@@ -40,10 +41,17 @@ export function importIfc(
     };
   }
 
+  // Resolve the IFC length unit; we work internally in mm (3-3).
+  const unitScale = resolveLengthUnitScale(entities);
+
   const storyMembership = resolveStoryMembership(entities);
   const rawStories = collectIfcStories(entities);
   const inferredStories = rawStories.length > 0 ? rawStories : [{ id: '1F', name: '1F', elevation: 0 }];
-  const stories = buildStoryHeights(inferredStories, supportedElements, storyMembership, entities);
+  const builtStories = buildStoryHeights(inferredStories, supportedElements, storyMembership, entities);
+  const stories =
+    unitScale === 1
+      ? builtStories
+      : builtStories.map((s) => ({ ...s, elevation: s.elevation * unitScale, height: s.height * unitScale }));
 
   const sections = new Map<string, Section>();
   const members: Member[] = [];
@@ -52,10 +60,11 @@ export function importIfc(
     const resolved = resolveIfcElement(entity, entities);
     if (!resolved) continue;
 
-    const storyId = resolveElementStoryId(entity.id, stories, storyMembership, resolved, entities);
+    const scaled = unitScale === 1 ? resolved : scaleResolvedSolid(resolved, unitScale);
+    const storyId = resolveElementStoryId(entity.id, stories, storyMembership, scaled, entities);
     if (!storyId) continue;
 
-    const member = convertElement(entity, resolved, storyId, sections);
+    const member = convertElement(entity, scaled, storyId, sections);
     if (member) members.push(member);
   }
 
@@ -94,6 +103,29 @@ export function importIfc(
   }
 
   return { ok: true, data: project };
+}
+
+/** Scale a resolved solid from source units into millimetres (3-3). */
+function scaleResolvedSolid(resolved: ResolvedSolid, scale: number): ResolvedSolid {
+  const profile =
+    resolved.profile.kind === 'rectangle'
+      ? { kind: 'rectangle' as const, xDim: resolved.profile.xDim * scale, yDim: resolved.profile.yDim * scale }
+      : {
+          kind: 'polyline' as const,
+          points: resolved.profile.points.map((p) => ({ x: p.x * scale, y: p.y * scale })),
+        };
+  return {
+    profile,
+    depth: resolved.depth * scale,
+    transform: {
+      ...resolved.transform,
+      origin: {
+        x: resolved.transform.origin.x * scale,
+        y: resolved.transform.origin.y * scale,
+        z: resolved.transform.origin.z * scale,
+      },
+    },
+  };
 }
 
 function convertElement(
@@ -168,6 +200,14 @@ function convertLinearElement(
     depth: resolved.profile.yDim,
   });
   const { start, end } = extrusionSpan(resolved);
+  // Recover in-plane rotation for columns from the placement x-axis (B5 / 3-8).
+  // Beams encode their direction in start/end, so rotation stays implicit there.
+  let rotation: number | undefined;
+  if (type === 'column') {
+    const x = resolved.transform.xAxis;
+    const angle = Math.atan2(x.y, x.x);
+    if (Math.abs(angle) > 1e-6) rotation = angle;
+  }
   return {
     id: resolveElementName(entity),
     type,
@@ -176,6 +216,7 @@ function convertLinearElement(
     materialId: MATERIAL_ID,
     start,
     end,
+    ...(rotation !== undefined ? { rotation } : {}),
   };
 }
 

@@ -1,14 +1,23 @@
-import type { ProjectData } from '@/domain/structural/types';
+import type { MemberType, Section, ProjectData } from '@/domain/structural/types';
 import type { ValidationError, ValidationResult } from './types';
+
+/** Expected section.kind for each member.type (joint/consistency mapping). */
+const MEMBER_SECTION_KIND: Record<MemberType, Section['kind']> = {
+  column: 'rc_column_rect',
+  beam: 'rc_beam_rect',
+  slab: 'rc_slab',
+  wall: 'rc_wall',
+};
 
 export function validateReferences(data: ProjectData): ValidationResult {
   const errors: ValidationError[] = [];
 
   const storyIds = new Set(data.stories.map((s) => s.id));
-  const sectionIds = new Set(data.sections.map((s) => s.id));
+  const sectionById = new Map(data.sections.map((s) => [s.id, s]));
   const materialIds = new Set(data.materials.map((m) => m.id));
   const memberIds = new Set(data.members.map((m) => m.id));
   const viewIds = new Set(data.views.map((v) => v.id));
+  const sheetIds = new Set(data.sheets.map((s) => s.id));
 
   // Check ID uniqueness within each collection
   checkUniqueness(data.stories.map((s) => s.id), 'stories', errors);
@@ -21,6 +30,15 @@ export function validateReferences(data: ProjectData): ValidationResult {
   checkUniqueness(data.dimensions.map((d) => d.id), 'dimensions', errors);
   checkUniqueness(data.views.map((v) => v.id), 'views', errors);
   checkUniqueness(data.sheets.map((s) => s.id), 'sheets', errors);
+  if (data.groups) {
+    checkUniqueness(data.groups.map((g) => g.id), 'groups', errors);
+  }
+  if (data.constructionLines) {
+    checkUniqueness(data.constructionLines.map((c) => c.id), 'constructionLines', errors);
+  }
+  if (data.externalRefs) {
+    checkUniqueness(data.externalRefs.map((r) => r.id), 'externalRefs', errors);
+  }
 
   // Members → story, section, material
   for (const m of data.members) {
@@ -31,12 +49,23 @@ export function validateReferences(data: ProjectData): ValidationResult {
         path: `/members/${m.id}`,
       });
     }
-    if (!sectionIds.has(m.sectionId)) {
+    const section = sectionById.get(m.sectionId);
+    if (!section) {
       errors.push({
         level: 'error',
         message: `Member "${m.id}": sectionId "${m.sectionId}" が未定義`,
         path: `/members/${m.id}`,
       });
+    } else {
+      // section.kind ↔ member.type consistency
+      const expected = MEMBER_SECTION_KIND[m.type];
+      if (section.kind !== expected) {
+        errors.push({
+          level: 'error',
+          message: `Member "${m.id}": ${m.type} は section.kind "${expected}" を要求しますが "${section.kind}" を参照`,
+          path: `/members/${m.id}`,
+        });
+      }
     }
     if (!materialIds.has(m.materialId)) {
       errors.push({
@@ -91,7 +120,7 @@ export function validateReferences(data: ProjectData): ValidationResult {
     }
   }
 
-  // Sheets → views
+  // Sheets → views (+ nested viewports → view / sheet)
   for (const s of data.sheets) {
     for (const vid of s.viewIds) {
       if (!viewIds.has(vid)) {
@@ -102,9 +131,49 @@ export function validateReferences(data: ProjectData): ValidationResult {
         });
       }
     }
+    for (const vp of s.viewports ?? []) {
+      if (!viewIds.has(vp.viewId)) {
+        errors.push({
+          level: 'error',
+          message: `Viewport "${vp.id}": viewId "${vp.viewId}" が未定義`,
+          path: `/sheets/${s.id}`,
+        });
+      }
+      if (!sheetIds.has(vp.sheetId)) {
+        errors.push({
+          level: 'error',
+          message: `Viewport "${vp.id}": sheetId "${vp.sheetId}" が未定義`,
+          path: `/sheets/${s.id}`,
+        });
+      }
+    }
   }
 
-  return { ok: errors.length === 0, errors };
+  // Groups → member existence
+  for (const g of data.groups ?? []) {
+    for (const mid of g.memberIds) {
+      if (!memberIds.has(mid)) {
+        errors.push({
+          level: 'error',
+          message: `Group "${g.id}": memberId "${mid}" が未定義`,
+          path: `/groups/${g.id}`,
+        });
+      }
+    }
+  }
+
+  // Construction lines → story
+  for (const c of data.constructionLines ?? []) {
+    if (!storyIds.has(c.story)) {
+      errors.push({
+        level: 'error',
+        message: `ConstructionLine "${c.id}": story "${c.story}" が未定義`,
+        path: `/constructionLines/${c.id}`,
+      });
+    }
+  }
+
+  return { ok: errors.every((e) => e.level !== 'error'), errors };
 }
 
 function checkUniqueness(ids: string[], collection: string, errors: ValidationError[]) {

@@ -6,8 +6,13 @@ import { useI18n } from '@/i18n';
 import type { Annotation, Dimension, ColumnMember, BeamMember, WallMember, SlabMember, ConstructionLine } from '@/domain/structural/types';
 import { getColumnVerticalSpan } from '@/domain/structural/placement';
 import type { Point2D } from '@/domain/geometry/types';
-import { findSnap, buildSnapCandidatesFromMembers } from '@/domain/geometry/snap';
-import type { SnapResult } from '@/domain/geometry/snap';
+import {
+  findSnap,
+  buildSnapCandidatesFromMembers,
+  buildSnapCandidatesFromConstructionLines,
+} from '@/domain/geometry/snap';
+import type { SnapResult, SnapCandidate } from '@/domain/geometry/snap';
+import type { ProjectData } from '@/domain/structural/types';
 import { snapPointToGrid } from '@/domain/geometry/transform';
 import { constrainPointToAngle } from '@/domain/geometry/angleConstraint';
 import { getEntityBoundsList, selectByRectangle } from '@/domain/structural/editTransform';
@@ -55,6 +60,65 @@ function applyAngleConstraint(
   return constrainPointToAngle(points[points.length - 1], pos);
 }
 
+/**
+ * Build the full snap-candidate list (members + grid intersections +
+ * construction lines) for the active story. Shared between drawing snap
+ * (`getSnapPos`) and edit-handle drag snap so both behave identically.
+ *
+ * `excludeId` removes a member from the candidates to prevent a dragged
+ * handle from snapping onto its own member (self-snap).
+ */
+export function buildEditorSnapCandidates(
+  data: ProjectData,
+  activeStory: string | null,
+  options: { includeMembers?: boolean; excludeId?: string } = {},
+): SnapCandidate[] {
+  const { includeMembers = true, excludeId } = options;
+
+  const candidates: SnapCandidate[] = includeMembers
+    ? buildSnapCandidatesFromMembers(
+        data.members
+          .filter((m) => !activeStory || m.story === activeStory)
+          .filter((m) => m.id !== excludeId)
+          .map((m) => ({
+            id: m.id,
+            type: m.type,
+            start: m.type !== 'slab' ? m.start : undefined,
+            end: m.type !== 'slab' ? m.end : undefined,
+            polygon: m.type === 'slab' ? m.polygon : undefined,
+          })),
+      )
+    : [];
+
+  // Grid intersections as endpoints.
+  for (const gx of data.grids.filter((g) => g.axis === 'X')) {
+    for (const gy of data.grids.filter((g) => g.axis === 'Y')) {
+      candidates.push({
+        id: `${gx.id}-${gy.id}`,
+        endpoints: [{ x: gx.position, y: gy.position }],
+        midpoints: [],
+      });
+    }
+  }
+
+  // Construction lines (xline / ray) as clipped pseudo-edges.
+  const constructionLines = (data.constructionLines ?? []).filter(
+    (l) => !activeStory || l.story === activeStory,
+  );
+  candidates.push(
+    ...buildSnapCandidatesFromConstructionLines(
+      constructionLines.map((l) => ({
+        id: l.id,
+        type: l.type,
+        origin: l.origin,
+        direction: l.direction,
+      })),
+    ),
+  );
+
+  return candidates;
+}
+
 function isSelectableId(id: string, layerLocked: Record<string, boolean>): boolean {
   const data = useProjectStore.getState().data;
   if (!data) return true;
@@ -96,29 +160,9 @@ export function useEditorInteraction() {
 
       const useMemberSnaps =
         !drawInputAssist || snapToMembersWhileDrawing || !isCreationTool(activeTool);
-      const candidates = useMemberSnaps
-        ? buildSnapCandidatesFromMembers(
-            data.members
-              .filter((m) => !activeStory || m.story === activeStory)
-              .map((m) => ({
-                id: m.id,
-                type: m.type,
-                start: m.type !== 'slab' ? m.start : undefined,
-                end: m.type !== 'slab' ? m.end : undefined,
-                polygon: m.type === 'slab' ? m.polygon : undefined,
-              })),
-          )
-        : [];
-      // Also add grid intersections as endpoints
-      for (const gx of data.grids.filter((g) => g.axis === 'X')) {
-        for (const gy of data.grids.filter((g) => g.axis === 'Y')) {
-          candidates.push({
-            id: `${gx.id}-${gy.id}`,
-            endpoints: [{ x: gx.position, y: gy.position }],
-            midpoints: [],
-          });
-        }
-      }
+      const candidates = buildEditorSnapCandidates(data, activeStory, {
+        includeMembers: useMemberSnaps,
+      });
 
       const snap = findSnap(worldPos, candidates, activeSnapModes, gridSpacing, 15, zoom);
       if (snap) return { pos: snap.point, snap };

@@ -3,7 +3,9 @@ import { useEditorStore, useProjectStore } from '@/app/store';
 import { screenToWorld, snapPointToGrid } from '@/domain/geometry/transform';
 import type { Point2D } from '@/domain/geometry/types';
 import type { Member } from '@/domain/structural/types';
+import { findSnap } from '@/domain/geometry/snap';
 import { getSelectionHandles, type SelectionHandle } from './editableHandles';
+import { buildEditorSnapCandidates } from './useEditorInteraction';
 
 function updateLinearMemberPoint(member: Exclude<Member, { type: 'slab' }>, kind: SelectionHandle['kind'], point: Point2D): Partial<Member> {
   if (kind === 'member-point') {
@@ -22,10 +24,28 @@ function getHandleKey(handle: SelectionHandle): string {
   return `${handle.kind}-${handle.id}-${'vertexIndex' in handle ? handle.vertexIndex : 'point'}`;
 }
 
-function snapDragPoint(point: Point2D): Point2D {
-  const { activeSnapModes, gridSpacing, snapEnabled } = useEditorStore.getState();
-  if (!snapEnabled || !activeSnapModes.includes('grid')) return point;
-  return snapPointToGrid(point, gridSpacing);
+/**
+ * Snap an edit-drag point using the SAME full snapping pipeline as drawing
+ * (endpoint / midpoint / intersection / perpendicular / nearest / grid).
+ * The member being dragged is excluded from the candidates to avoid the handle
+ * snapping onto its own geometry.
+ */
+function snapDragPoint(point: Point2D, excludeId?: string): Point2D {
+  const { activeSnapModes, gridSpacing, snapEnabled, zoom, activeStory } = useEditorStore.getState();
+  if (!snapEnabled) return point;
+
+  const data = useProjectStore.getState().data;
+  if (data) {
+    const candidates = buildEditorSnapCandidates(data, activeStory, { excludeId });
+    const snap = findSnap(point, candidates, activeSnapModes, gridSpacing, 15, zoom);
+    if (snap) return snap.point;
+  }
+
+  // Fall back to grid snap when no entity snap matched.
+  if (activeSnapModes.includes('grid')) {
+    return snapPointToGrid(point, gridSpacing);
+  }
+  return point;
 }
 
 export function SelectionHandles() {
@@ -91,17 +111,19 @@ export function SelectionHandles() {
       updateMember(handle.id, updateLinearMemberPoint(member, handle.kind, point));
     };
 
+    const excludeId = dragging.handle.id;
+
     const handleMove = (e: MouseEvent) => {
       const point = toWorld(e);
       if (!point) return;
-      const snapped = snapDragPoint(point);
+      const snapped = snapDragPoint(point, excludeId);
       dragPreviewPointRef.current = snapped;
       setDragPreviewPoint(snapped);
     };
 
     const handleUp = (e: MouseEvent) => {
       const currentPoint = toWorld(e);
-      const point = dragPreviewPointRef.current && currentPoint ? snapDragPoint(currentPoint) : dragPreviewPointRef.current;
+      const point = dragPreviewPointRef.current && currentPoint ? snapDragPoint(currentPoint, excludeId) : dragPreviewPointRef.current;
       if (point) applyDrag(point);
       dragPreviewPointRef.current = null;
       setDragPreviewPoint(null);
