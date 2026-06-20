@@ -47,11 +47,15 @@ export function importIfc(
   const storyMembership = resolveStoryMembership(entities);
   const rawStories = collectIfcStories(entities);
   const inferredStories = rawStories.length > 0 ? rawStories : [{ id: '1F', name: '1F', elevation: 0 }];
-  const builtStories = buildStoryHeights(inferredStories, supportedElements, storyMembership, entities);
-  const stories =
-    unitScale === 1
-      ? builtStories
-      : builtStories.map((s) => ({ ...s, elevation: s.elevation * unitScale, height: s.height * unitScale }));
+  // buildStoryHeights scales source-unit elevations/extents into mm internally
+  // (so its mm fallbacks stay correct); do NOT post-multiply here.
+  const stories = buildStoryHeights(
+    inferredStories,
+    supportedElements,
+    storyMembership,
+    entities,
+    unitScale,
+  );
 
   const sections = new Map<string, Section>();
   const members: Member[] = [];

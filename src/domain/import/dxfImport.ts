@@ -43,7 +43,7 @@ export function insUnitsToMm(code: number | undefined): number | null {
     case 6: return 1000;       // metres
     case 7: return 1e6;        // kilometres
     case 8: return 0.0000254;  // microinches (1µin = 2.54e-5 mm)
-    case 9: return 0.0000254;  // mils (this code overlaps; treat as microinch)
+    case 9: return 0.0254;     // mils (1 mil = 0.001 in = 0.0254 mm)
     case 13: return 1e-6;      // nanometres → mm
     case 14: return 100;       // decimetres (1 dm = 100 mm)
     default: return null;      // 0 = unitless / unknown
