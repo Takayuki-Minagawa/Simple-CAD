@@ -48,6 +48,7 @@ interface MemberMetrics {
 function resolveSection(sectionId: string, sections: Section[]): number[] {
   const sec = sections.find((s) => s.id === sectionId);
   if (!sec) return [];
+  if (sec.kind === 's_pipe') return [sec.diameter, sec.thickness];
   if (sec.kind === 'rc_wall' || sec.kind === 'rc_slab') return [sec.thickness];
   return [sec.width, sec.depth];
 }

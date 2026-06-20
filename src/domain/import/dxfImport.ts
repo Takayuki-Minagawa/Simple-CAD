@@ -95,6 +95,9 @@ function scaleMember(m: Member, s: number): Member {
 
 function scaleSection(sec: Section, s: number): Section {
   if (s === 1) return sec;
+  if (sec.kind === 's_pipe') {
+    return { ...sec, diameter: sec.diameter * s, thickness: sec.thickness * s };
+  }
   if (sec.kind === 'rc_wall' || sec.kind === 'rc_slab') {
     return { ...sec, thickness: sec.thickness * s };
   }

@@ -170,5 +170,11 @@ export function sectionKindLabel(kind: Section['kind']) {
       return 'RC Slab';
     case 'rc_wall':
       return 'RC Wall';
+    case 's_column_h':
+      return 'Steel H Column';
+    case 's_beam_h':
+      return 'Steel H Beam';
+    case 's_pipe':
+      return 'Steel Pipe';
   }
 }

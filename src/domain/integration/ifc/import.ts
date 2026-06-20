@@ -238,9 +238,15 @@ function ensureSection(sections: Map<string, Section>, section: Section): string
       ? `SEC-C${section.width}x${section.depth}`
       : section.kind === 'rc_beam_rect'
         ? `SEC-B${section.width}x${section.depth}`
-        : section.kind === 'rc_wall'
-          ? `SEC-W${section.thickness}`
-          : `SEC-S${section.thickness}`;
+        : section.kind === 's_column_h'
+          ? `SEC-HC${section.width}x${section.depth}`
+          : section.kind === 's_beam_h'
+            ? `SEC-HB${section.width}x${section.depth}`
+            : section.kind === 's_pipe'
+              ? `SEC-P${section.diameter}`
+              : section.kind === 'rc_wall'
+                ? `SEC-W${section.thickness}`
+                : `SEC-S${section.thickness}`;
 
   const next = { ...section, id };
   sections.set(id, next);

@@ -1,12 +1,12 @@
 import type { MemberType, Section, ProjectData } from '@/domain/structural/types';
 import type { ValidationError, ValidationResult } from './types';
 
-/** Expected section.kind for each member.type (joint/consistency mapping). */
-const MEMBER_SECTION_KIND: Record<MemberType, Section['kind']> = {
-  column: 'rc_column_rect',
-  beam: 'rc_beam_rect',
-  slab: 'rc_slab',
-  wall: 'rc_wall',
+/** Section kinds each member.type may reference (joint/consistency mapping). */
+const MEMBER_SECTION_KINDS: Record<MemberType, ReadonlyArray<Section['kind']>> = {
+  column: ['rc_column_rect', 's_column_h', 's_pipe'],
+  beam: ['rc_beam_rect', 's_beam_h', 's_pipe'],
+  slab: ['rc_slab'],
+  wall: ['rc_wall'],
 };
 
 export function validateReferences(data: ProjectData): ValidationResult {
@@ -58,11 +58,11 @@ export function validateReferences(data: ProjectData): ValidationResult {
       });
     } else {
       // section.kind ↔ member.type consistency
-      const expected = MEMBER_SECTION_KIND[m.type];
-      if (section.kind !== expected) {
+      const allowed = MEMBER_SECTION_KINDS[m.type];
+      if (!allowed.includes(section.kind)) {
         errors.push({
           level: 'error',
-          message: `Member "${m.id}": ${m.type} は section.kind "${expected}" を要求しますが "${section.kind}" を参照`,
+          message: `Member "${m.id}": ${m.type} は section.kind ${allowed.map((k) => `"${k}"`).join('/')} を要求しますが "${section.kind}" を参照`,
           path: `/members/${m.id}`,
         });
       }
