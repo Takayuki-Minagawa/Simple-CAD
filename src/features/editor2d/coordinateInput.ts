@@ -114,4 +114,3 @@ export function parseCoordinate(
 export function buildPolarInput(length: number, angleDeg: number): string {
   return `@${length}<${angleDeg}`;
 }
-

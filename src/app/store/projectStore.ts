@@ -384,8 +384,8 @@ export const useProjectStore = create<ProjectState>()(
         set((state) => {
           if (!state.data) return;
           state.data.grids.push(grid);
-          // Re-resolve gridRef-pinned members against the new grid set.
-          state.data = applyGridGeometry(state.data);
+          // Re-resolve gridRef-pinned members, then follow associative dims.
+          state.data = recomputeAssociativeDimensions(applyGridGeometry(state.data));
           state.isDirty = true;
         }),
 
@@ -395,8 +395,9 @@ export const useProjectStore = create<ProjectState>()(
           const grid = state.data.grids.find((item) => item.id === id);
           if (!grid) return;
           Object.assign(grid, updates);
-          // Editing a grid's position/axis/name moves pinned members.
-          state.data = applyGridGeometry(state.data);
+          // Editing a grid's position/axis/name moves pinned members, so
+          // associative dimensions tied to them must follow too.
+          state.data = recomputeAssociativeDimensions(applyGridGeometry(state.data));
           state.isDirty = true;
         }),
 
@@ -404,7 +405,7 @@ export const useProjectStore = create<ProjectState>()(
         set((state) => {
           if (!state.data) return;
           state.data.grids = state.data.grids.filter((item) => item.id !== id);
-          state.data = applyGridGeometry(state.data);
+          state.data = recomputeAssociativeDimensions(applyGridGeometry(state.data));
           state.isDirty = true;
         }),
 

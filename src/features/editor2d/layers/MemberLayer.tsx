@@ -2,29 +2,24 @@ import type { CSSProperties } from 'react';
 import type { Member, Section } from '@/domain/structural/types';
 import type { Point2D } from '@/domain/geometry/types';
 import { lineTypeToDashArray } from '@/domain/rendering/lineStyle';
+import {
+  columnAxisOffsetToWorld,
+  linearAxisOffsetToWorld,
+} from '@/domain/structural/eccentricity';
 
 /**
- * Resolve an axis-line eccentricity (member-local dx,dy) into a world-space
- * offset. Local x runs start→end; local y is its left-hand perpendicular.
- * Members without `axisOffset` get a zero offset (identical rendering).
+ * In-plan world offset (x,y) for a linear member's axis eccentricity. Shared
+ * with the 3D viewer and IFC export via `@/domain/structural/eccentricity` so
+ * the same JSON places a member at the same spot everywhere. The vertical (z)
+ * component of the offset is not visible in plan and is dropped here.
  */
 function axisOffsetWorld(
   offset: { dx: number; dy: number } | undefined,
   start: Point2D,
   end: Point2D,
 ): { ox: number; oy: number } {
-  if (!offset) return { ox: 0, oy: 0 };
-  const dx = end.x - start.x;
-  const dy = end.y - start.y;
-  const len = Math.hypot(dx, dy);
-  if (len === 0) return { ox: offset.dx, oy: offset.dy };
-  const ux = dx / len;
-  const uy = dy / len;
-  // local-x unit = (ux,uy); local-y unit = (-uy,ux)
-  return {
-    ox: ux * offset.dx - uy * offset.dy,
-    oy: uy * offset.dx + ux * offset.dy,
-  };
+  const d = linearAxisOffsetToWorld(offset, start, end);
+  return { ox: d.x, oy: d.y };
 }
 
 interface Props {
@@ -118,8 +113,9 @@ function ColumnShape({
   selected: boolean;
 }) {
   // Columns have no in-plane direction; treat axisOffset as world dx,dy.
-  const cx = member.start.x + (member.axisOffset?.dx ?? 0);
-  const cy = member.start.y + (member.axisOffset?.dy ?? 0);
+  const ecc = columnAxisOffsetToWorld(member.axisOffset);
+  const cx = member.start.x + ecc.x;
+  const cy = member.start.y + ecc.y;
   const hw = width / 2;
   const hd = depth / 2;
   const lw = member.lineWeight ?? 20;
@@ -127,13 +123,24 @@ function ColumnShape({
   const strokeColor = selected ? 'var(--color-selection)' : (member.color ?? 'var(--color-column)');
   const dash = lineTypeToDashArray(member.lineType);
 
+  // Apply member.rotation (radians, CCW about the centre) to match the DXF/IFC
+  // round-trip orientation; a square column is unaffected.
+  const rot = member.rotation ?? 0;
+  const cos = Math.cos(rot);
+  const sin = Math.sin(rot);
+  const corner = (lx: number, ly: number) =>
+    `${cx + lx * cos - ly * sin},${cy + lx * sin + ly * cos}`;
+  const points = [
+    corner(-hw, -hd),
+    corner(hw, -hd),
+    corner(hw, hd),
+    corner(-hw, hd),
+  ].join(' ');
+
   return (
-    <rect
+    <polygon
       data-id={member.id}
-      x={cx - hw}
-      y={cy - hd}
-      width={width}
-      height={depth}
+      points={points}
       fill={selected ? 'rgba(59,130,246,0.3)' : 'rgba(231,76,60,0.3)'}
       stroke={strokeColor}
       strokeWidth={sw}

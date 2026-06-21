@@ -137,6 +137,38 @@ describe('roundtrip: DXF', () => {
     expect(rotated.length).toBe(1);
   });
 
+  it('preserves a non-square column orientation without a 90° swap (P1)', () => {
+    const project: ProjectData = {
+      ...base,
+      grids: [],
+      dimensions: [],
+      annotations: [],
+      constructionLines: [],
+      sections: [{ id: 'SEC-NS', kind: 'rc_column_rect', width: 800, depth: 600 }],
+      members: [
+        {
+          id: 'C-NS',
+          type: 'column',
+          story: '1F',
+          sectionId: 'SEC-NS',
+          materialId: base.materials[0].id,
+          start: { x: 0, y: 0, z: 0 },
+          end: { x: 0, y: 0, z: 3000 },
+        },
+      ],
+    };
+
+    const dxf = exportDxf(project, '1F');
+    const result = importDxf(dxf, '1F', { convertGeometry: true });
+    expect(result.warnings).toEqual([]);
+
+    const col = result.members.find((m) => m.type === 'column')!;
+    const sec = getAutoSections(result).find((s) => s.id === col.sectionId)!;
+    // 800 (X) wide × 600 (Y) deep at rotation 0 must NOT come back as 600×800.
+    expect(sec).toMatchObject({ kind: 'rc_column_rect', width: 800, depth: 600 });
+    expect(Math.abs((col.rotation ?? 0) % Math.PI)).toBeLessThan(1e-3);
+  });
+
   it('writes $INSUNITS and EXTMIN/EXTMAX headers (B4 / 3-3)', () => {
     const dxf = exportDxf(base, '1F');
     expect(dxf).toContain('$INSUNITS');

@@ -1,5 +1,9 @@
 import * as THREE from 'three';
 import type { Member, Opening, Section } from '@/domain/structural/types';
+import {
+  columnAxisOffsetToWorld,
+  linearAxisOffsetToWorld,
+} from '@/domain/structural/eccentricity';
 
 export type GeometryEngine = 'native' | 'opencascade';
 
@@ -96,12 +100,16 @@ function buildColumnGeometry(
   const depth = section && 'depth' in section ? section.depth : 600;
   const height = Math.max(Math.abs(member.end.z - member.start.z), 1);
   const geometry = new THREE.BoxGeometry(width, depth, height);
+  // Apply member.rotation (radians, CCW about the vertical Z axis) so the 3D
+  // solid matches the DXF/IFC round-trip orientation; square columns unaffected.
+  const rot = member.rotation ?? 0;
+  if (rot) geometry.rotateZ(rot);
   // Column runs vertically (Z); cross-section lies in the X/Y plane, so the
   // eccentricity maps directly to X/Y offsets.
-  const offset = getAxisOffset(member);
+  const ecc = columnAxisOffsetToWorld(getAxisOffset(member) ?? undefined);
   geometry.translate(
-    member.start.x + (offset?.dx ?? 0),
-    member.start.y + (offset?.dy ?? 0),
+    member.start.x + ecc.x,
+    member.start.y + ecc.y,
     (member.start.z + member.end.z) / 2,
   );
   return geometry;
@@ -125,16 +133,13 @@ function buildBeamGeometry(
     direction.clone().normalize(),
   );
   geometry.applyQuaternion(quaternion);
-  // Eccentricity in the member-local cross-section plane (local X = width axis,
-  // local Y = depth axis), rotated into world space alongside the geometry.
-  const offset = getAxisOffset(member);
-  const localOffset = offset
-    ? new THREE.Vector3(offset.dx, offset.dy, 0).applyQuaternion(quaternion)
-    : new THREE.Vector3();
+  // Axis eccentricity resolved with the shared convention (dx = in-plan
+  // perpendicular, dy = vertical) so 2D, 3D and IFC agree on placement.
+  const ecc = linearAxisOffsetToWorld(getAxisOffset(member) ?? undefined, member.start, member.end);
   geometry.translate(
-    (member.start.x + member.end.x) / 2 + localOffset.x,
-    (member.start.y + member.end.y) / 2 + localOffset.y,
-    (member.start.z + member.end.z) / 2 + localOffset.z,
+    (member.start.x + member.end.x) / 2 + ecc.x,
+    (member.start.y + member.end.y) / 2 + ecc.y,
+    (member.start.z + member.end.z) / 2 + ecc.z,
   );
   return geometry;
 }

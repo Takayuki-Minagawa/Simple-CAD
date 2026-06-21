@@ -1,6 +1,10 @@
 import type { Point3D } from '@/domain/geometry/types';
 import type { Member, ProjectData, Section } from '@/domain/structural/types';
-import { add3, distance3, localAxisOffset, normalize3, perpendicularHorizontal, sub3 } from './geometry';
+import { add3, distance3, normalize3, perpendicularHorizontal, sub3 } from './geometry';
+import {
+  columnAxisOffsetToWorld,
+  linearAxisOffsetToWorld,
+} from '@/domain/structural/eccentricity';
 import type { Vector3 } from './types';
 import { IfcWriter, escapeIfcString, toIfcGlobalId } from './writer';
 
@@ -170,6 +174,15 @@ function createIfcMember(
   }
 }
 
+/** World-space placement delta for a member's axis eccentricity (2-6). */
+function memberEccentricityWorld(member: Member): Point3D {
+  if (member.type === 'column') return columnAxisOffsetToWorld(member.axisOffset);
+  if (member.type === 'beam' || member.type === 'wall') {
+    return linearAxisOffsetToWorld(member.axisOffset, member.start, member.end);
+  }
+  return { x: 0, y: 0, z: 0 };
+}
+
 function writeExtrudedProduct(
   writer: IfcWriter,
   contextRef: number,
@@ -185,22 +198,11 @@ function writeExtrudedProduct(
 ): number {
   const solid = writer.extrudedSolid(options.profileRef, options.depth);
   const shape = writer.productShape(contextRef, solid);
-  // Apply member-local axis eccentricity (2-6) by shifting the placement origin
-  // along the local x (member direction) and y (perpendicular) axes. Members
+  // Apply axis eccentricity (2-6) by shifting the placement origin in world
+  // space, using the shared convention (column: dx→x, dy→y; beam/wall: dx =
+  // in-plan perpendicular, dy = vertical) so 2D, 3D and IFC agree. Members
   // without an offset are untouched so existing output stays byte-identical.
-  const offset = options.member.axisOffset;
-  const origin =
-    offset && (offset.dx !== 0 || offset.dy !== 0)
-      ? add3(
-          options.origin,
-          localAxisOffset(
-            options.orientation.axis,
-            options.orientation.refDirection,
-            offset.dx,
-            offset.dy,
-          ),
-        )
-      : options.origin;
+  const origin = add3(options.origin, memberEccentricityWorld(options.member));
   const placement = writer.orientedPlacement(parentPlacementRef, origin, options.orientation);
   return writer.product(
     options.type,

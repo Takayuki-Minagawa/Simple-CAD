@@ -102,9 +102,10 @@ export class SectionRegistry {
   }
 
   getColumnSection(width: number, depth: number): Section {
-    // Normalize so width <= depth
-    const w = Math.round(Math.min(width, depth));
-    const d = Math.round(Math.max(width, depth));
+    // Preserve width/depth order: the orientation is carried by member.rotation,
+    // so swapping them here would rotate a non-square column 90° on round-trip.
+    const w = Math.round(width);
+    const d = Math.round(depth);
     const key = `rc_column_rect:${w}x${d}`;
     if (!this.sections.has(key)) {
       this.sections.set(key, {
