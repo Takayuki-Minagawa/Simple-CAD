@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { parseCoordinate } from '../coordinateInput';
+import { parseCoordinate, parseCoordinateResult, buildPolarInput } from '../coordinateInput';
 
 describe('parseCoordinate', () => {
   it('parses absolute comma and space separated coordinates', () => {
@@ -39,5 +39,58 @@ describe('parseCoordinate', () => {
     expect(parseCoordinate('1000', null)).toBeNull();
     expect(parseCoordinate('@100 200 300', null)).toBeNull();
     expect(parseCoordinate('abc def', null)).toBeNull();
+  });
+});
+
+describe('parseCoordinateResult', () => {
+  it('returns ok with the point on success', () => {
+    expect(parseCoordinateResult('1000,2000', null)).toEqual({
+      ok: true,
+      point: { x: 1000, y: 2000 },
+    });
+  });
+
+  it('returns empty for blank input', () => {
+    expect(parseCoordinateResult('   ', null)).toEqual({ ok: false, error: 'empty' });
+  });
+
+  it('flags a missing direction for distance-only input', () => {
+    expect(parseCoordinateResult('@500', { x: 0, y: 0 }, null)).toEqual({
+      ok: false,
+      error: 'no-direction',
+    });
+  });
+
+  it('flags an unparseable absolute value', () => {
+    expect(parseCoordinateResult('abc def', null)).toEqual({ ok: false, error: 'unparseable' });
+  });
+
+  it('flags an invalid relative pair', () => {
+    expect(parseCoordinateResult('@abc', { x: 0, y: 0 })).toEqual({
+      ok: false,
+      error: 'invalid-pair',
+    });
+  });
+
+  it('stays consistent with parseCoordinate', () => {
+    const cases: [string, { x: number; y: number } | null][] = [
+      ['1000,2000', null],
+      ['@100,300', { x: 500, y: -200 }],
+    ];
+    for (const [input, last] of cases) {
+      const res = parseCoordinateResult(input, last);
+      const legacy = parseCoordinate(input, last);
+      expect(res.ok ? res.point : null).toEqual(legacy);
+    }
+  });
+});
+
+describe('buildPolarInput', () => {
+  it('formats a polar coordinate string parseable by parseCoordinate', () => {
+    const str = buildPolarInput(1000, 90);
+    expect(str).toBe('@1000<90');
+    const point = parseCoordinate(str, { x: 0, y: 0 });
+    expect(point?.x).toBeCloseTo(0);
+    expect(point?.y).toBeCloseTo(1000);
   });
 });

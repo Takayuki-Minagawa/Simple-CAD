@@ -1,5 +1,6 @@
-import { useEffect, useCallback, useRef } from 'react';
+import { useEffect, useCallback, useRef, useState } from 'react';
 import { isCreationTool, useProjectStore, useEditorStore } from '@/app/store';
+import type { Point2D } from '@/domain/geometry/types';
 import { SvgCanvas } from './SvgCanvas';
 import { GridLayer } from './layers/GridLayer';
 import { MemberLayer } from './layers/MemberLayer';
@@ -7,7 +8,7 @@ import { DimensionLayer } from './layers/DimensionLayer';
 import { AnnotationLayer } from './layers/AnnotationLayer';
 import { DrawPreview } from './DrawPreview';
 import { canCompleteDrawing, useEditorInteraction } from './useEditorInteraction';
-import { CoordinateInputBar } from './CoordinateInputDialog';
+import { CoordinateInputBar, DynamicInput } from './CoordinateInputDialog';
 import { EditorControls2D } from './EditorControls2D';
 import { DrawingGuide } from './DrawingGuide';
 import { SelectionHandles } from './SelectionHandles';
@@ -21,6 +22,8 @@ export function Editor2D() {
   const activeTool = useEditorStore((s) => s.activeTool);
   const setActiveTool = useEditorStore((s) => s.setActiveTool);
   const drawInputAssist = useEditorStore((s) => s.drawInputAssist);
+  const cursorWorld = useEditorStore((s) => s.cursorWorld);
+  const [ghostPoint, setGhostPoint] = useState<Point2D | null>(null);
   const {
     drawState,
     rectSelect,
@@ -169,7 +172,7 @@ export function Editor2D() {
         />
         <DrawingGuide activeTool={activeTool} pointCount={drawState.points.length} />
       </div>
-      <div style={{ flex: 1, overflow: 'hidden' }}>
+      <div style={{ flex: 1, overflow: 'hidden', position: 'relative' }}>
         <SvgCanvas
           onWorldClick={handleClick}
           onWorldMouseMove={handleMouseMove}
@@ -251,12 +254,28 @@ export function Editor2D() {
             );
           })}
           {activeTool === 'select' && <SelectionHandles />}
-          <DrawPreview drawState={drawState} activeTool={activeTool} />
+          <DrawPreview drawState={drawState} activeTool={activeTool} ghostPoint={ghostPoint} />
           {selectionRectOverlay}
         </SvgCanvas>
+        {/* Dynamic input (4-1): cursor-following length/angle entry while a
+            segment-style draw is in progress. */}
+        {isDrawingTool && lastPoint && (
+          <DynamicInput
+            key={drawState.points.length}
+            lastPoint={lastPoint}
+            cursorWorld={cursorWorld}
+            onSubmit={injectCoordinate}
+            onGhostChange={setGhostPoint}
+          />
+        )}
       </div>
       {isDrawingTool && (
-        <CoordinateInputBar lastPoint={lastPoint} previewPoint={drawState.previewPos} onSubmit={injectCoordinate} />
+        <CoordinateInputBar
+          lastPoint={lastPoint}
+          previewPoint={drawState.previewPos}
+          onSubmit={injectCoordinate}
+          onGhostChange={setGhostPoint}
+        />
       )}
     </div>
   );

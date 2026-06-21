@@ -1,5 +1,10 @@
 import * as THREE from 'three';
 import type { Member, Opening, Section } from '@/domain/structural/types';
+import {
+  columnAxisOffsetToWorld,
+  linearAxisOffsetToWorld,
+  slabAxisOffsetToWorld,
+} from '@/domain/structural/eccentricity';
 
 export type GeometryEngine = 'native' | 'opencascade';
 
@@ -76,6 +81,18 @@ function buildNativeGeometry({ member, section, openings }: GeometryBuildInput):
   }
 }
 
+/**
+ * Returns the member-local axis eccentricity, or null when absent / zero.
+ * `axisOffset.dx`/`dy` are perpendicular offsets of the solid relative to the
+ * structural axis line. Members without it render unchanged.
+ */
+function getAxisOffset(member: Member): { dx: number; dy: number } | null {
+  const offset = member.axisOffset;
+  if (!offset) return null;
+  if (offset.dx === 0 && offset.dy === 0) return null;
+  return offset;
+}
+
 function buildColumnGeometry(
   member: Member & { type: 'column' },
   section: Section | undefined,
@@ -84,7 +101,18 @@ function buildColumnGeometry(
   const depth = section && 'depth' in section ? section.depth : 600;
   const height = Math.max(Math.abs(member.end.z - member.start.z), 1);
   const geometry = new THREE.BoxGeometry(width, depth, height);
-  geometry.translate(member.start.x, member.start.y, (member.start.z + member.end.z) / 2);
+  // Apply member.rotation (radians, CCW about the vertical Z axis) so the 3D
+  // solid matches the DXF/IFC round-trip orientation; square columns unaffected.
+  const rot = member.rotation ?? 0;
+  if (rot) geometry.rotateZ(rot);
+  // Column runs vertically (Z); cross-section lies in the X/Y plane, so the
+  // eccentricity maps directly to X/Y offsets.
+  const ecc = columnAxisOffsetToWorld(getAxisOffset(member) ?? undefined);
+  geometry.translate(
+    member.start.x + ecc.x,
+    member.start.y + ecc.y,
+    (member.start.z + member.end.z) / 2,
+  );
   return geometry;
 }
 
@@ -106,7 +134,14 @@ function buildBeamGeometry(
     direction.clone().normalize(),
   );
   geometry.applyQuaternion(quaternion);
-  geometry.translate((member.start.x + member.end.x) / 2, (member.start.y + member.end.y) / 2, (member.start.z + member.end.z) / 2);
+  // Axis eccentricity resolved with the shared convention (dx = in-plan
+  // perpendicular, dy = vertical) so 2D, 3D and IFC agree on placement.
+  const ecc = linearAxisOffsetToWorld(getAxisOffset(member) ?? undefined, member.start, member.end);
+  geometry.translate(
+    (member.start.x + member.end.x) / 2 + ecc.x,
+    (member.start.y + member.end.y) / 2 + ecc.y,
+    (member.start.z + member.end.z) / 2 + ecc.z,
+  );
   return geometry;
 }
 
@@ -167,8 +202,19 @@ function buildWallGeometry(
     normal.normalize();
   }
 
+  // Axis eccentricity resolved with the shared convention (dx = in-plan left
+  // perpendicular of start→end, dy = vertical) so 2D, 3D and IFC agree on the
+  // wall's placement — including its sign for +X-running walls. (The local
+  // `normal` basis above is the thickness axis used to orient the solid, which
+  // is direction-dependent; resolving the offset in world space avoids that.)
+  const ecc = linearAxisOffsetToWorld(getAxisOffset(member) ?? undefined, member.start, member.end);
+  const placement = start.clone();
+  placement.x += ecc.x;
+  placement.y += ecc.y;
+  placement.z += ecc.z;
+
   const matrix = new THREE.Matrix4().makeBasis(axis, up, normal);
-  matrix.setPosition(start);
+  matrix.setPosition(placement);
   geometry.applyMatrix4(matrix);
   return geometry;
 }
@@ -204,6 +250,9 @@ function buildSlabGeometry(
     depth: thickness,
     bevelEnabled: false,
   });
-  geometry.translate(0, 0, member.level - thickness);
+  // Slab eccentricity maps directly into the X/Y plane via the shared helper so
+  // 2D, 3D and IFC agree (dx→world X, dy→world Y).
+  const ecc = slabAxisOffsetToWorld(getAxisOffset(member) ?? undefined);
+  geometry.translate(ecc.x, ecc.y, member.level - thickness);
   return geometry;
 }

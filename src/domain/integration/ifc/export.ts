@@ -1,6 +1,11 @@
 import type { Point3D } from '@/domain/geometry/types';
 import type { Member, ProjectData, Section } from '@/domain/structural/types';
-import { distance3, normalize3, perpendicularHorizontal, sub3 } from './geometry';
+import { add3, distance3, normalize3, perpendicularHorizontal, sub3 } from './geometry';
+import {
+  columnAxisOffsetToWorld,
+  linearAxisOffsetToWorld,
+  slabAxisOffsetToWorld,
+} from '@/domain/structural/eccentricity';
 import type { Vector3 } from './types';
 import { IfcWriter, escapeIfcString, toIfcGlobalId } from './writer';
 
@@ -15,8 +20,17 @@ interface Orientation {
   refDirection: Vector3;
 }
 
-export function exportIfc(data: ProjectData): string {
+/**
+ * Export a project as IFC4 STEP text.
+ *
+ * @param warnings optional sink — when provided, non-fatal issues such as a
+ *   missing section being replaced by a fallback dimension are pushed here so
+ *   callers don't silently ship magic numbers (B7 / 2-8). Backward compatible:
+ *   existing callers that pass only `data` are unaffected.
+ */
+export function exportIfc(data: ProjectData, warnings?: string[]): string {
   const writer = new IfcWriter();
+  const sink = warnings ?? [];
   const now = new Date().toISOString().replace(/\.\d{3}Z$/, 'Z');
 
   const originPoint = writer.cartesianPoint3D({ x: 0, y: 0, z: 0 });
@@ -57,7 +71,7 @@ export function exportIfc(data: ProjectData): string {
     const storyRef = storyRefs.get(member.story);
     if (!storyRef) continue;
 
-    const elementRef = createIfcMember(writer, context, buildingPlacement, member, data.sections);
+    const elementRef = createIfcMember(writer, context, buildingPlacement, member, data.sections, sink);
     if (!elementRef) continue;
     storyMembers.get(member.story)?.push(elementRef);
   }
@@ -89,21 +103,29 @@ function createIfcMember(
   parentPlacementRef: number,
   member: Member,
   sections: Section[],
+  warnings: string[],
 ): number | null {
   const section = sections.find((item) => item.id === member.sectionId);
+  if (!section) {
+    warnings.push(
+      `部材 ${member.id} (${member.type}) の断面 ${member.sectionId} が見つからないため既定寸法で出力しました`,
+    );
+  }
 
   switch (member.type) {
     case 'column': {
       const width = section && 'width' in section ? section.width : 600;
       const depth = section && 'depth' in section ? section.depth : 600;
       const profile = writer.rectangleProfile(`PROFILE-${member.id}`, width, depth);
+      // Encode member.rotation in the placement refDirection so it round-trips
+      // (B5 / 3-8). A vertical column rotates about its z axis.
       return writeExtrudedProduct(writer, contextRef, parentPlacementRef, {
         type: 'IFCCOLUMN',
         member,
         profileRef: profile,
         depth: memberLength(member.start, member.end),
         origin: member.start,
-        orientation: VERTICAL_ORIENTATION,
+        orientation: rotatedVerticalOrientation(member.rotation),
       });
     }
     case 'beam': {
@@ -153,6 +175,16 @@ function createIfcMember(
   }
 }
 
+/** World-space placement delta for a member's axis eccentricity (2-6). */
+function memberEccentricityWorld(member: Member): Point3D {
+  if (member.type === 'column') return columnAxisOffsetToWorld(member.axisOffset);
+  if (member.type === 'slab') return slabAxisOffsetToWorld(member.axisOffset);
+  if (member.type === 'beam' || member.type === 'wall') {
+    return linearAxisOffsetToWorld(member.axisOffset, member.start, member.end);
+  }
+  return { x: 0, y: 0, z: 0 };
+}
+
 function writeExtrudedProduct(
   writer: IfcWriter,
   contextRef: number,
@@ -168,7 +200,12 @@ function writeExtrudedProduct(
 ): number {
   const solid = writer.extrudedSolid(options.profileRef, options.depth);
   const shape = writer.productShape(contextRef, solid);
-  const placement = writer.orientedPlacement(parentPlacementRef, options.origin, options.orientation);
+  // Apply axis eccentricity (2-6) by shifting the placement origin in world
+  // space, using the shared convention (column: dx→x, dy→y; beam/wall: dx =
+  // in-plan perpendicular, dy = vertical) so 2D, 3D and IFC agree. Members
+  // without an offset are untouched so existing output stays byte-identical.
+  const origin = add3(options.origin, memberEccentricityWorld(options.member));
+  const placement = writer.orientedPlacement(parentPlacementRef, origin, options.orientation);
   return writer.product(
     options.type,
     `${options.member.type}:${options.member.id}`,
@@ -176,6 +213,15 @@ function writeExtrudedProduct(
     placement,
     shape,
   );
+}
+
+/** Vertical orientation whose refDirection is rotated by `rotation` rad in XY. */
+function rotatedVerticalOrientation(rotation: number | undefined): Orientation {
+  if (!rotation) return VERTICAL_ORIENTATION;
+  return {
+    axis: { x: 0, y: 0, z: 1 },
+    refDirection: { x: Math.cos(rotation), y: Math.sin(rotation), z: 0 },
+  };
 }
 
 function alongMemberOrientation(start: Point3D, end: Point3D): Orientation {

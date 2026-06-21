@@ -1,6 +1,27 @@
 import type { CSSProperties } from 'react';
 import type { Member, Section } from '@/domain/structural/types';
+import type { Point2D } from '@/domain/geometry/types';
 import { lineTypeToDashArray } from '@/domain/rendering/lineStyle';
+import {
+  columnAxisOffsetToWorld,
+  linearAxisOffsetToWorld,
+  slabAxisOffsetToWorld,
+} from '@/domain/structural/eccentricity';
+
+/**
+ * In-plan world offset (x,y) for a linear member's axis eccentricity. Shared
+ * with the 3D viewer and IFC export via `@/domain/structural/eccentricity` so
+ * the same JSON places a member at the same spot everywhere. The vertical (z)
+ * component of the offset is not visible in plan and is dropped here.
+ */
+function axisOffsetWorld(
+  offset: { dx: number; dy: number } | undefined,
+  start: Point2D,
+  end: Point2D,
+): { ox: number; oy: number } {
+  const d = linearAxisOffsetToWorld(offset, start, end);
+  return { ox: d.x, oy: d.y };
+}
 
 interface Props {
   members: Member[];
@@ -92,8 +113,10 @@ function ColumnShape({
   depth: number;
   selected: boolean;
 }) {
-  const cx = member.start.x;
-  const cy = member.start.y;
+  // Columns have no in-plane direction; treat axisOffset as world dx,dy.
+  const ecc = columnAxisOffsetToWorld(member.axisOffset);
+  const cx = member.start.x + ecc.x;
+  const cy = member.start.y + ecc.y;
   const hw = width / 2;
   const hd = depth / 2;
   const lw = member.lineWeight ?? 20;
@@ -101,13 +124,24 @@ function ColumnShape({
   const strokeColor = selected ? 'var(--color-selection)' : (member.color ?? 'var(--color-column)');
   const dash = lineTypeToDashArray(member.lineType);
 
+  // Apply member.rotation (radians, CCW about the centre) to match the DXF/IFC
+  // round-trip orientation; a square column is unaffected.
+  const rot = member.rotation ?? 0;
+  const cos = Math.cos(rot);
+  const sin = Math.sin(rot);
+  const corner = (lx: number, ly: number) =>
+    `${cx + lx * cos - ly * sin},${cy + lx * sin + ly * cos}`;
+  const points = [
+    corner(-hw, -hd),
+    corner(hw, -hd),
+    corner(hw, hd),
+    corner(-hw, hd),
+  ].join(' ');
+
   return (
-    <rect
+    <polygon
       data-id={member.id}
-      x={cx - hw}
-      y={cy - hd}
-      width={width}
-      height={depth}
+      points={points}
       fill={selected ? 'rgba(59,130,246,0.3)' : 'rgba(231,76,60,0.3)'}
       stroke={strokeColor}
       strokeWidth={sw}
@@ -133,12 +167,13 @@ function BeamShape({
   if (len === 0) return null;
   const nx = (-dy / len) * (width / 2);
   const ny = (dx / len) * (width / 2);
+  const { ox, oy } = axisOffsetWorld(member.axisOffset, start, end);
 
   const points = [
-    `${start.x + nx},${start.y + ny}`,
-    `${end.x + nx},${end.y + ny}`,
-    `${end.x - nx},${end.y - ny}`,
-    `${start.x - nx},${start.y - ny}`,
+    `${start.x + nx + ox},${start.y + ny + oy}`,
+    `${end.x + nx + ox},${end.y + ny + oy}`,
+    `${end.x - nx + ox},${end.y - ny + oy}`,
+    `${start.x - nx + ox},${start.y - ny + oy}`,
   ].join(' ');
 
   const lw = member.lineWeight ?? 20;
@@ -175,12 +210,13 @@ function WallShape({
   if (len === 0) return null;
   const nx = (-dy / len) * (thickness / 2);
   const ny = (dx / len) * (thickness / 2);
+  const { ox, oy } = axisOffsetWorld(member.axisOffset, start, end);
 
   const points = [
-    `${start.x + nx},${start.y + ny}`,
-    `${end.x + nx},${end.y + ny}`,
-    `${end.x - nx},${end.y - ny}`,
-    `${start.x - nx},${start.y - ny}`,
+    `${start.x + nx + ox},${start.y + ny + oy}`,
+    `${end.x + nx + ox},${end.y + ny + oy}`,
+    `${end.x - nx + ox},${end.y - ny + oy}`,
+    `${start.x - nx + ox},${start.y - ny + oy}`,
   ].join(' ');
 
   const lw = member.lineWeight ?? 20;
@@ -208,7 +244,11 @@ function SlabShape({
   member: Member & { type: 'slab' };
   selected: boolean;
 }) {
-  const points = member.polygon.map((p) => `${p.x},${p.y}`).join(' ');
+  // A slab lies in the world XY plane, so its axisOffset maps directly to
+  // world dx,dy via the shared helper (same convention 3D and IFC use).
+  const poly = member.polygon;
+  const ecc = slabAxisOffsetToWorld(member.axisOffset);
+  const points = poly.map((p) => `${p.x + ecc.x},${p.y + ecc.y}`).join(' ');
   const lw = member.lineWeight ?? 20;
   const sw = selected ? lw * 2 : lw;
   const strokeColor = selected ? 'var(--color-selection)' : (member.color ?? 'var(--color-slab)');

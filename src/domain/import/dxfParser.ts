@@ -25,6 +25,58 @@ export interface DxfEntity {
   closed?: boolean;
 }
 
+export interface DxfHeader {
+  /** $INSUNITS code (4 = mm, 6 = m, 1 = inch, …). Undefined when absent. */
+  insUnits?: number;
+  /** $MEASUREMENT (0 = imperial, 1 = metric). */
+  measurement?: number;
+}
+
+/**
+ * Parse the HEADER section variables we care about for unit handling (3-3 / B4).
+ * Returns an empty object when there is no HEADER section.
+ */
+export function parseDxfHeader(content: string): DxfHeader {
+  const lines = content.split(/\r?\n/);
+  const header: DxfHeader = {};
+  let inHeader = false;
+  let currentVar: string | null = null;
+
+  for (let i = 0; i < lines.length - 1; i += 2) {
+    const code = parseInt(lines[i].trim(), 10);
+    const value = lines[i + 1]?.trim() ?? '';
+
+    if (code === 0 && value === 'SECTION') {
+      const nextCode = parseInt(lines[i + 2]?.trim() ?? '', 10);
+      const nextVal = lines[i + 3]?.trim() ?? '';
+      if (nextCode === 2 && nextVal === 'HEADER') {
+        inHeader = true;
+        i += 2;
+        continue;
+      }
+    }
+
+    if (!inHeader) continue;
+
+    if (code === 0 && value === 'ENDSEC') break;
+
+    if (code === 9) {
+      currentVar = value;
+      continue;
+    }
+
+    if (currentVar === '$INSUNITS' && code === 70) {
+      header.insUnits = parseInt(value, 10);
+      currentVar = null;
+    } else if (currentVar === '$MEASUREMENT' && code === 70) {
+      header.measurement = parseInt(value, 10);
+      currentVar = null;
+    }
+  }
+
+  return header;
+}
+
 function withX(point: DxfPoint | undefined, x: number): DxfPoint {
   return { ...point, x, y: point?.y ?? 0 };
 }

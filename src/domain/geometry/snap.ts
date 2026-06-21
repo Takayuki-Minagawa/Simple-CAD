@@ -2,12 +2,13 @@ import type { Point2D } from './types';
 import type { SnapMode } from '@/app/store/editorStore';
 import { distance2D, midpoint2D, sub2D, dot2D } from './point';
 import { snapPointToGrid } from './transform';
+import { segmentIntersection, isDegenerateSegment } from './precision';
 
 export interface SnapCandidate {
   id: string;
   endpoints: Point2D[];
   midpoints: Point2D[];
-  /** Edge segments for perpendicular/nearest snap: pairs [start, end] */
+  /** Edge segments for perpendicular/nearest/intersection snap: pairs [start, end] */
   edges?: Array<[Point2D, Point2D]>;
 }
 
@@ -33,6 +34,54 @@ function projectPointOnSegment(cursor: Point2D, a: Point2D, b: Point2D): { point
   };
 }
 
+/** Axis-aligned bounding box of a segment, expanded by `pad`. */
+function segmentBox(a: Point2D, b: Point2D, pad: number) {
+  return {
+    minX: Math.min(a.x, b.x) - pad,
+    maxX: Math.max(a.x, b.x) + pad,
+    minY: Math.min(a.y, b.y) - pad,
+    maxY: Math.max(a.y, b.y) + pad,
+  };
+}
+
+function boxesOverlap(
+  p: { minX: number; maxX: number; minY: number; maxY: number },
+  q: { minX: number; maxX: number; minY: number; maxY: number },
+): boolean {
+  return p.minX <= q.maxX && p.maxX >= q.minX && p.minY <= q.maxY && p.maxY >= q.minY;
+}
+
+interface FlatEdge {
+  id: string;
+  a: Point2D;
+  b: Point2D;
+}
+
+/**
+ * Collect all candidate edges whose bounding box is near the cursor (within
+ * `radius`), used to pre-filter intersection / nearest evaluation and avoid
+ * an O(n²) pass over every edge pair in the model.
+ */
+function collectNearbyEdges(cursor: Point2D, candidates: SnapCandidate[], radius: number): FlatEdge[] {
+  const cursorBox = {
+    minX: cursor.x - radius,
+    maxX: cursor.x + radius,
+    minY: cursor.y - radius,
+    maxY: cursor.y + radius,
+  };
+  const edges: FlatEdge[] = [];
+  for (const c of candidates) {
+    if (!c.edges) continue;
+    for (const [a, b] of c.edges) {
+      if (isDegenerateSegment(a, b)) continue;
+      if (boxesOverlap(segmentBox(a, b, radius), cursorBox)) {
+        edges.push({ id: c.id, a, b });
+      }
+    }
+  }
+  return edges;
+}
+
 export function findSnap(
   cursor: Point2D,
   candidates: SnapCandidate[],
@@ -42,23 +91,50 @@ export function findSnap(
   zoom: number,
 ): SnapResult | null {
   const worldRadius = snapRadius / zoom;
-  let best: SnapResult | null = null;
-  let bestDist = worldRadius;
 
-  // 1. Endpoint snap (highest priority)
+  // ── Top-priority tier: endpoint + intersection ──────────────────────────
+  // These represent exact structural nodes; if any lies within the snap radius
+  // it wins over lower-tier snaps even when a midpoint/edge point is closer.
+  let topBest: SnapResult | null = null;
+  let topDist = worldRadius;
+
   if (activeSnapModes.includes('endpoint')) {
     for (const c of candidates) {
       for (const ep of c.endpoints) {
         const d = distance2D(cursor, ep);
-        if (d < bestDist) {
-          bestDist = d;
-          best = { point: ep, type: 'endpoint', sourceId: c.id };
+        if (d < topDist) {
+          topDist = d;
+          topBest = { point: ep, type: 'endpoint', sourceId: c.id };
         }
       }
     }
   }
 
-  // 2. Midpoint snap
+  if (activeSnapModes.includes('intersection')) {
+    // Only evaluate pairs of edges near the cursor (bbox pre-filter).
+    const nearby = collectNearbyEdges(cursor, candidates, worldRadius);
+    for (let i = 0; i < nearby.length; i++) {
+      for (let j = i + 1; j < nearby.length; j++) {
+        const e1 = nearby[i];
+        const e2 = nearby[j];
+        const hit = segmentIntersection(e1.a, e1.b, e2.a, e2.b);
+        if (!hit) continue;
+        const d = distance2D(cursor, hit.point);
+        if (d < topDist) {
+          topDist = d;
+          topBest = { point: hit.point, type: 'intersection', sourceId: e1.id };
+        }
+      }
+    }
+  }
+
+  if (topBest) return topBest;
+
+  // ── Lower tiers: midpoint / perpendicular / nearest / grid ──────────────
+  let best: SnapResult | null = null;
+  let bestDist = worldRadius;
+
+  // Midpoint snap
   if (activeSnapModes.includes('midpoint')) {
     for (const c of candidates) {
       for (const mp of c.midpoints) {
@@ -71,7 +147,7 @@ export function findSnap(
     }
   }
 
-  // 3. Perpendicular snap — snap to the foot of the perpendicular from cursor to each edge
+  // Perpendicular snap — snap to the foot of the perpendicular from cursor to each edge
   if (activeSnapModes.includes('perpendicular')) {
     for (const c of candidates) {
       if (!c.edges) continue;
@@ -89,7 +165,7 @@ export function findSnap(
     }
   }
 
-  // 4. Nearest snap — snap to the closest point on any edge
+  // Nearest snap — snap to the closest point on any edge
   if (activeSnapModes.includes('nearest') && !best) {
     for (const c of candidates) {
       if (!c.edges) continue;
@@ -104,7 +180,7 @@ export function findSnap(
     }
   }
 
-  // 5. Grid snap (lowest priority)
+  // Grid snap (lowest priority)
   if (activeSnapModes.includes('grid') && !best) {
     const snapped = snapPointToGrid(cursor, gridSpacing);
     const d = distance2D(cursor, snapped);
@@ -157,6 +233,54 @@ export function buildSnapCandidatesFromMembers(
     if (endpoints.length > 0) {
       candidates.push({ id: m.id, endpoints, midpoints, edges });
     }
+  }
+
+  return candidates;
+}
+
+/**
+ * Turn construction lines (xline / ray) into clipped pseudo-edge snap
+ * candidates so nearest / perpendicular / intersection snapping apply to them.
+ *
+ * An infinite `xline` is clipped symmetrically around its origin; a `ray` is
+ * clipped only in the forward direction. The clip length is large relative to
+ * typical building geometry so the pseudo-edge behaves like the underlying
+ * (semi-)infinite line for snap purposes, while staying a finite segment that
+ * `segmentIntersection` / projection can consume.
+ */
+export function buildSnapCandidatesFromConstructionLines(
+  lines: Array<{
+    id: string;
+    type: 'xline' | 'ray';
+    origin: Point2D;
+    direction: Point2D;
+  }>,
+  clipLength = 1e7,
+): SnapCandidate[] {
+  const candidates: SnapCandidate[] = [];
+
+  for (const line of lines) {
+    const len = Math.hypot(line.direction.x, line.direction.y);
+    if (len < 1e-9) continue; // degenerate direction
+    const dir = { x: line.direction.x / len, y: line.direction.y / len };
+
+    const forward: Point2D = {
+      x: line.origin.x + dir.x * clipLength,
+      y: line.origin.y + dir.y * clipLength,
+    };
+    // xline extends both ways from the origin; ray only forward.
+    const back: Point2D =
+      line.type === 'ray'
+        ? { x: line.origin.x, y: line.origin.y }
+        : { x: line.origin.x - dir.x * clipLength, y: line.origin.y - dir.y * clipLength };
+
+    candidates.push({
+      id: line.id,
+      // The origin is a meaningful endpoint to snap to (start of a ray).
+      endpoints: [{ x: line.origin.x, y: line.origin.y }],
+      midpoints: [],
+      edges: [[back, forward]],
+    });
   }
 
   return candidates;

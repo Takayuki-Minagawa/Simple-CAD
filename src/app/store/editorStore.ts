@@ -61,6 +61,19 @@ interface EditorState {
   snapToMembersWhileDrawing: boolean;
   columnPlacementDirection: ColumnPlacementDirection;
 
+  // Polar tracking / ortho
+  polarTrackingEnabled: boolean;
+  polarAngleStep: number;
+  orthoMode: boolean;
+
+  // Status bar precision / unit context
+  statusDecimals: number;
+  statusUnit: 'mm' | 'm';
+
+  // Live drawing context (published by the interaction hook for the status bar)
+  drawAnchor: { x: number; y: number } | null;
+  activeSnapPoint: { x: number; y: number } | null;
+
   // 2D viewport
   pan: { x: number; y: number };
   zoom: number;
@@ -91,6 +104,15 @@ interface EditorState {
   setDrawInputAssist: (enabled: boolean) => void;
   setSnapToMembersWhileDrawing: (enabled: boolean) => void;
   setColumnPlacementDirection: (direction: ColumnPlacementDirection) => void;
+  setPolarTrackingEnabled: (enabled: boolean) => void;
+  togglePolarTracking: () => void;
+  setPolarAngleStep: (step: number) => void;
+  setOrthoMode: (enabled: boolean) => void;
+  toggleOrthoMode: () => void;
+  setStatusDecimals: (decimals: number) => void;
+  setStatusUnit: (unit: 'mm' | 'm') => void;
+  setDrawAnchor: (pos: { x: number; y: number } | null) => void;
+  setActiveSnapPoint: (pos: { x: number; y: number } | null) => void;
   setPan: (pan: { x: number; y: number }) => void;
   setZoom: (zoom: number) => void;
   setCursorWorld: (pos: { x: number; y: number } | null) => void;
@@ -118,6 +140,13 @@ export const useEditorStore = create<EditorState>()((set) => ({
   drawInputAssist: true,
   snapToMembersWhileDrawing: false,
   columnPlacementDirection: 'down',
+  polarTrackingEnabled: false,
+  polarAngleStep: 45,
+  orthoMode: false,
+  statusDecimals: 0,
+  statusUnit: 'mm',
+  drawAnchor: null,
+  activeSnapPoint: null,
   pan: { x: 0, y: 0 },
   zoom: 0.05,
   cursorWorld: null,
@@ -149,6 +178,15 @@ export const useEditorStore = create<EditorState>()((set) => ({
   setDrawInputAssist: (enabled) => set({ drawInputAssist: enabled }),
   setSnapToMembersWhileDrawing: (enabled) => set({ snapToMembersWhileDrawing: enabled }),
   setColumnPlacementDirection: (direction) => set({ columnPlacementDirection: direction }),
+  setPolarTrackingEnabled: (enabled) => set({ polarTrackingEnabled: enabled }),
+  togglePolarTracking: () => set((state) => ({ polarTrackingEnabled: !state.polarTrackingEnabled })),
+  setPolarAngleStep: (step) => set({ polarAngleStep: step > 0 ? step : 45 }),
+  setOrthoMode: (enabled) => set({ orthoMode: enabled }),
+  toggleOrthoMode: () => set((state) => ({ orthoMode: !state.orthoMode })),
+  setStatusDecimals: (decimals) => set({ statusDecimals: Math.max(0, Math.min(4, Math.round(decimals))) }),
+  setStatusUnit: (unit) => set({ statusUnit: unit }),
+  setDrawAnchor: (pos) => set({ drawAnchor: pos }),
+  setActiveSnapPoint: (pos) => set({ activeSnapPoint: pos }),
   setPan: (pan) => set({ pan }),
   setZoom: (zoom) => set({ zoom: Math.max(0.001, Math.min(10, zoom)) }),
   setCursorWorld: (pos) => set({ cursorWorld: pos }),

@@ -38,6 +38,10 @@ export function buildStoryHeights(
   elements: StepEntity[],
   membership: Map<number, number>,
   entities: Map<number, StepEntity>,
+  // Source length unit → mm. Elevations/solid extents are scaled into mm here so
+  // the hardcoded mm fallbacks (3000 default storey, 1000 floor) stay correct for
+  // non-mm IFC files (3-3). Defaults to 1 (already-mm) for backward compatibility.
+  unitScale = 1,
 ): Story[] {
   const sorted = [...rawStories].sort((a, b) => a.elevation - b.elevation);
   const result: Story[] = [];
@@ -45,7 +49,9 @@ export function buildStoryHeights(
   for (let index = 0; index < sorted.length; index++) {
     const story = sorted[index];
     const next = sorted[index + 1];
-    let top = story.elevation + 3000;
+    const elevationMm = story.elevation * unitScale;
+    const nextElevationMm = next ? next.elevation * unitScale : undefined;
+    let top = elevationMm + 3000;
     for (const element of elements) {
       const storyRef = membership.get(element.id);
       if (storyRef) {
@@ -54,14 +60,14 @@ export function buildStoryHeights(
       }
       const resolved = resolveIfcElement(element, entities);
       if (!resolved) continue;
-      top = Math.max(top, resolved.transform.origin.z + resolved.depth);
+      top = Math.max(top, (resolved.transform.origin.z + resolved.depth) * unitScale);
     }
 
     result.push({
       id: story.id,
       name: story.name,
-      elevation: story.elevation,
-      height: Math.max((next?.elevation ?? top) - story.elevation, 1000),
+      elevation: elevationMm,
+      height: Math.max((nextElevationMm ?? top) - elevationMm, 1000),
     });
   }
 

@@ -1,6 +1,20 @@
 import type { ProjectData, Member, Section } from '@/domain/structural/types';
 import { distance2D, sub2D, normalize2D, perpendicular2D } from '@/domain/geometry/point';
 
+/** Decimal places for DXF coordinate output. 4 dp at mm = 0.1µm — plenty. */
+const DXF_DECIMALS = 4;
+
+/**
+ * Format a coordinate with fixed decimals (no full FP precision / exponent noise),
+ * trimming trailing zeros so integers stay compact and parseFloat round-trips.
+ */
+function fmt(value: number): string {
+  if (!Number.isFinite(value)) return '0';
+  const fixed = value.toFixed(DXF_DECIMALS);
+  // Strip trailing zeros and a dangling decimal point.
+  return fixed.replace(/\.?0+$/, '') || '0';
+}
+
 /**
  * Export DXF using manual string generation.
  * Using DXF ASCII format for maximum compatibility.
@@ -8,9 +22,18 @@ import { distance2D, sub2D, normalize2D, perpendicular2D } from '@/domain/geomet
 export function exportDxf(data: ProjectData, storyId: string): string {
   const lines: string[] = [];
 
+  const bbox = computeBoundingBox(data, storyId);
+
   // Header section
   lines.push('0', 'SECTION', '2', 'HEADER');
   lines.push('9', '$ACADVER', '1', 'AC1015'); // AutoCAD 2000
+  // Units: 4 = millimetres. Pairs with $MEASUREMENT=1 (metric) so receiving
+  // CADs don't misread the drawing as inches/metres (B4 / 3-3).
+  lines.push('9', '$INSUNITS', '70', '4');
+  lines.push('9', '$MEASUREMENT', '70', '1');
+  // Drawing extents from the bounding box (3-8).
+  lines.push('9', '$EXTMIN', '10', fmt(bbox.minX), '20', fmt(bbox.minY), '30', '0');
+  lines.push('9', '$EXTMAX', '10', fmt(bbox.maxX), '20', fmt(bbox.maxY), '30', '0');
   lines.push('0', 'ENDSEC');
 
   // Tables section (layers)
@@ -115,6 +138,16 @@ export function exportDxf(data: ProjectData, storyId: string): string {
   return lines.join('\n');
 }
 
+/** Rotate point (px,py) by `angle` radians about pivot (cx,cy). */
+function rotateAbout(px: number, py: number, cx: number, cy: number, angle: number): [number, number] {
+  if (!angle) return [px, py];
+  const cos = Math.cos(angle);
+  const sin = Math.sin(angle);
+  const dx = px - cx;
+  const dy = py - cy;
+  return [cx + dx * cos - dy * sin, cy + dx * sin + dy * cos];
+}
+
 function renderMemberDxf(lines: string[], m: Member, sections: Section[]) {
   const sec = sections.find((s) => s.id === m.sectionId);
 
@@ -124,12 +157,15 @@ function renderMemberDxf(lines: string[], m: Member, sections: Section[]) {
       const d = sec && 'depth' in sec ? sec.depth : 600;
       const cx = m.start.x;
       const cy = m.start.y;
-      addLwPolyline(lines, 'COLUMN', [
+      // Apply member.rotation about the column centre so it round-trips (B5 / 3-8).
+      const rot = m.rotation ?? 0;
+      const corners: [number, number][] = [
         [cx - w / 2, cy - d / 2],
         [cx + w / 2, cy - d / 2],
         [cx + w / 2, cy + d / 2],
         [cx - w / 2, cy + d / 2],
-      ], true);
+      ].map(([x, y]) => rotateAbout(x, y, cx, cy, rot));
+      addLwPolyline(lines, 'COLUMN', corners, true);
       break;
     }
     case 'beam': {
@@ -179,8 +215,8 @@ function renderMemberDxf(lines: string[], m: Member, sections: Section[]) {
 function addLine(lines: string[], layer: string, x1: number, y1: number, x2: number, y2: number) {
   lines.push('0', 'LINE');
   lines.push('8', layer);
-  lines.push('10', String(x1), '20', String(y1), '30', '0');
-  lines.push('11', String(x2), '21', String(y2), '31', '0');
+  lines.push('10', fmt(x1), '20', fmt(y1), '30', '0');
+  lines.push('11', fmt(x2), '21', fmt(y2), '31', '0');
 }
 
 function addLwPolyline(lines: string[], layer: string, points: number[][], closed: boolean) {
@@ -189,7 +225,7 @@ function addLwPolyline(lines: string[], layer: string, points: number[][], close
   lines.push('90', String(points.length));
   lines.push('70', closed ? '1' : '0');
   for (const [x, y] of points) {
-    lines.push('10', String(x), '20', String(y));
+    lines.push('10', fmt(x), '20', fmt(y));
   }
 }
 
@@ -197,10 +233,10 @@ function addText(lines: string[], layer: string, x: number, y: number, height: n
   const sanitized = text.replace(/\r?\n/g, ' ');
   lines.push('0', 'TEXT');
   lines.push('8', layer);
-  lines.push('10', String(x), '20', String(y), '30', '0');
-  lines.push('40', String(height));
+  lines.push('10', fmt(x), '20', fmt(y), '30', '0');
+  lines.push('40', fmt(height));
   if (rotation) {
-    lines.push('50', String(rotation));
+    lines.push('50', fmt(rotation));
   }
   lines.push('1', sanitized);
 }
@@ -208,10 +244,10 @@ function addText(lines: string[], layer: string, x: number, y: number, height: n
 function addMText(lines: string[], layer: string, x: number, y: number, height: number, text: string, rotation?: number) {
   lines.push('0', 'MTEXT');
   lines.push('8', layer);
-  lines.push('10', String(x), '20', String(y), '30', '0');
-  lines.push('40', String(height));
+  lines.push('10', fmt(x), '20', fmt(y), '30', '0');
+  lines.push('40', fmt(height));
   if (rotation) {
-    lines.push('50', String(rotation));
+    lines.push('50', fmt(rotation));
   }
   const encoded = text.replace(/\r?\n/g, '\\P');
   lines.push('1', encoded);
@@ -225,6 +261,42 @@ function addSpline(lines: string[], layer: string, points: { x: number; y: numbe
   lines.push('71', '3'); // Degree 3 (cubic)
   lines.push('73', String(points.length)); // Number of control points
   for (const p of points) {
-    lines.push('10', String(p.x), '20', String(p.y), '30', '0');
+    lines.push('10', fmt(p.x), '20', fmt(p.y), '30', '0');
   }
+}
+
+/** Compute the 2D bounding box of all renderable geometry for `storyId`. */
+function computeBoundingBox(
+  data: ProjectData,
+  storyId: string,
+): { minX: number; minY: number; maxX: number; maxY: number } {
+  let minX = Infinity;
+  let minY = Infinity;
+  let maxX = -Infinity;
+  let maxY = -Infinity;
+  const acc = (x: number, y: number) => {
+    if (x < minX) minX = x;
+    if (y < minY) minY = y;
+    if (x > maxX) maxX = x;
+    if (y > maxY) maxY = y;
+  };
+
+  for (const g of data.grids) {
+    if (g.axis === 'X') acc(g.position, 0);
+    else acc(0, g.position);
+  }
+  for (const m of data.members) {
+    if (m.story !== storyId) continue;
+    if (m.type === 'slab') {
+      for (const p of m.polygon) acc(p.x, p.y);
+    } else {
+      acc(m.start.x, m.start.y);
+      acc(m.end.x, m.end.y);
+    }
+  }
+
+  if (!Number.isFinite(minX)) {
+    return { minX: 0, minY: 0, maxX: 0, maxY: 0 };
+  }
+  return { minX, minY, maxX, maxY };
 }

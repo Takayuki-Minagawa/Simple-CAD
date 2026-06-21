@@ -1,5 +1,6 @@
 import { useEffect, useMemo } from 'react';
 import { Edges } from '@react-three/drei';
+import { type ThreeEvent } from '@react-three/fiber';
 import * as THREE from 'three';
 import type { Member, Opening, Section } from '@/domain/structural/types';
 import { buildMemberGeometry, type GeometryEngine } from './memberGeometry';
@@ -13,6 +14,14 @@ interface Props {
   engine: GeometryEngine;
   clippingPlanes?: THREE.Plane[];
   onClick: () => void;
+  /** Measurement mode is active: clicks pick measure points instead of selecting. */
+  measureMode?: boolean;
+  /** Called with the world-space hit point when picking a measure point. */
+  onMeasurePick?: (worldPoint: THREE.Vector3) => void;
+  /** Hover enter/move with the world-space hit point. */
+  onHover?: (member: Member, section: Section | undefined, worldPoint: THREE.Vector3) => void;
+  /** Hover leave for this member. */
+  onHoverEnd?: (memberId: string) => void;
 }
 
 const COLORS = {
@@ -32,6 +41,10 @@ export function MemberMesh({
   engine,
   clippingPlanes,
   onClick,
+  measureMode,
+  onMeasurePick,
+  onHover,
+  onHoverEnd,
 }: Props) {
   const geometry = useMemo(
     () => buildMemberGeometry({ member, section, openings }, engine),
@@ -50,10 +63,30 @@ export function MemberMesh({
   return (
     <mesh
       geometry={geometry}
-      onClick={(event) => {
+      onClick={(event: ThreeEvent<MouseEvent>) => {
         event.stopPropagation();
+        if (measureMode) {
+          onMeasurePick?.(event.point.clone());
+          return;
+        }
         onClick();
       }}
+      onPointerMove={
+        onHover
+          ? (event: ThreeEvent<PointerEvent>) => {
+              event.stopPropagation();
+              onHover(member, section, event.point.clone());
+            }
+          : undefined
+      }
+      onPointerOut={
+        onHoverEnd
+          ? (event: ThreeEvent<PointerEvent>) => {
+              event.stopPropagation();
+              onHoverEnd(member.id);
+            }
+          : undefined
+      }
     >
       <meshStandardMaterial {...materialProps} />
       {selected && <Edges color="#f8fafc" linewidth={2} />}

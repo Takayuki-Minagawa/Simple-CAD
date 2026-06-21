@@ -1,11 +1,19 @@
+import { useCallback, useRef, useState } from 'react';
 import { GizmoHelper, GizmoViewport, OrbitControls, OrthographicCamera, PerspectiveCamera } from '@react-three/drei';
 import * as THREE from 'three';
 import { useEditorStore } from '@/app/store';
 import type { Grid, Member, Opening, Section, Story } from '@/domain/structural/types';
 import { GridHelper3D } from './GridHelper3D';
 import { MemberMesh } from './MemberMesh';
+import { MeasureLayer, type MeasurePoint } from './MeasureLayer';
+import { HoverProbe, type HoverInfo } from './HoverProbe';
+import { getMemberSnapPoints, getMemberLength, getSectionLabel } from './measureUtils';
 import type { GeometryEngine } from './memberGeometry';
 import { SCALE, type ModelExtents, type SectionBoxState, type SectionMode } from './sectionMath';
+import type { ViewerLabels } from './viewerLabels';
+
+/** Snap a CAD-space hit point to the nearest member endpoint within this radius (mm). */
+const SNAP_RADIUS = 400;
 
 interface SceneContentsProps {
   orthographic: boolean;
@@ -23,6 +31,11 @@ interface SceneContentsProps {
   geometryEngine: GeometryEngine;
   clippingPlanes: THREE.Plane[] | undefined;
   setSelectedIds: (ids: string[]) => void;
+  // ── 3D measurement / hover probe ──
+  measureMode: boolean;
+  measurePoints: MeasurePoint[];
+  addMeasurePoint: (point: MeasurePoint) => void;
+  labels: ViewerLabels;
 }
 
 export function SceneContents({
@@ -41,7 +54,67 @@ export function SceneContents({
   geometryEngine,
   clippingPlanes,
   setSelectedIds,
+  measureMode,
+  measurePoints,
+  addMeasurePoint,
+  labels,
 }: SceneContentsProps) {
+  // Inner group that holds members in CAD coordinates (mm). Used to convert
+  // world-space raycast hit points back into CAD space for measuring/snapping.
+  const cadGroupRef = useRef<THREE.Group>(null);
+  const [hover, setHover] = useState<HoverInfo | null>(null);
+
+  /** Convert a world-space point into the CAD-coordinate frame (mm). */
+  const worldToCad = useCallback((worldPoint: THREE.Vector3): THREE.Vector3 => {
+    const group = cadGroupRef.current;
+    if (!group) return worldPoint.clone();
+    return group.worldToLocal(worldPoint.clone());
+  }, []);
+
+  /** Snap a CAD-space point to the nearest member endpoint within SNAP_RADIUS. */
+  const snapToEndpoint = useCallback(
+    (cadPoint: THREE.Vector3): THREE.Vector3 => {
+      let best: THREE.Vector3 | null = null;
+      let bestDist = SNAP_RADIUS;
+      for (const member of filteredMembers) {
+        for (const candidate of getMemberSnapPoints(member, sectionMap.get(member.sectionId))) {
+          const dist = candidate.distanceTo(cadPoint);
+          if (dist < bestDist) {
+            bestDist = dist;
+            best = candidate;
+          }
+        }
+      }
+      return best ?? cadPoint;
+    },
+    [filteredMembers, sectionMap],
+  );
+
+  const handleMeasurePick = useCallback(
+    (worldPoint: THREE.Vector3) => {
+      const cad = snapToEndpoint(worldToCad(worldPoint));
+      addMeasurePoint({ x: cad.x, y: cad.y, z: cad.z });
+    },
+    [snapToEndpoint, worldToCad, addMeasurePoint],
+  );
+
+  const handleHover = useCallback(
+    (member: Member, section: Section | undefined, worldPoint: THREE.Vector3) => {
+      const cad = worldToCad(worldPoint);
+      const story = stories.find((s) => s.id === member.story);
+      setHover({
+        position: { x: cad.x, y: cad.y, z: cad.z },
+        length: getMemberLength(member),
+        sectionName: getSectionLabel(section),
+        storyName: story?.name ?? member.story,
+        memberType: member.type,
+      });
+    },
+    [worldToCad, stories, setHover],
+  );
+
+  const handleHoverEnd = useCallback(() => setHover(null), [setHover]);
+
   const centerX = (extents.xMin + extents.xMax) / 2;
   const centerY = (extents.yMin + extents.yMax) / 2;
   const centerZ = (extents.zMin + extents.zMax) / 2;
@@ -83,7 +156,7 @@ export function SceneContents({
       <directionalLight position={[-10, 20, -20]} intensity={0.3} />
 
       <group scale={[SCALE, SCALE, SCALE]}>
-        <group rotation={[-Math.PI / 2, 0, 0]}>
+        <group ref={cadGroupRef} rotation={[-Math.PI / 2, 0, 0]}>
           <GridHelper3D grids={grids} stories={stories} activeStoryId={activeStory} />
 
           {sectionMode === 'box' && (
@@ -107,9 +180,22 @@ export function SceneContents({
                 engine={geometryEngine}
                 clippingPlanes={clippingPlanes}
                 onClick={() => { if (!locked) setSelectedIds([member.id]); }}
+                measureMode={measureMode}
+                onMeasurePick={handleMeasurePick}
+                onHover={handleHover}
+                onHoverEnd={handleHoverEnd}
               />
             );
           })}
+
+          {measureMode && (
+            <MeasureLayer
+              points={measurePoints}
+              preview={hover && measurePoints.length === 1 ? hover.position : null}
+              labels={labels}
+            />
+          )}
+          {!measureMode && <HoverProbe hover={hover} labels={labels} />}
         </group>
       </group>
 

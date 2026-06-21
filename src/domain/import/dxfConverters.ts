@@ -102,9 +102,10 @@ export class SectionRegistry {
   }
 
   getColumnSection(width: number, depth: number): Section {
-    // Normalize so width <= depth
-    const w = Math.round(Math.min(width, depth));
-    const d = Math.round(Math.max(width, depth));
+    // Preserve width/depth order: the orientation is carried by member.rotation,
+    // so swapping them here would rotate a non-square column 90° on round-trip.
+    const w = Math.round(width);
+    const d = Math.round(depth);
     const key = `rc_column_rect:${w}x${d}`;
     if (!this.sections.has(key)) {
       this.sections.set(key, {
@@ -146,6 +147,7 @@ function createColumnMember(
   story: string,
   sections: SectionRegistry,
   usedIds: Set<string>,
+  rotation = 0,
 ): Member {
   const colSection = sections.getColumnSection(width, depth);
   return {
@@ -156,6 +158,7 @@ function createColumnMember(
     materialId: DXF_MATERIAL_ID,
     start: { x: center.x, y: center.y, z: 0 },
     end: { x: center.x, y: center.y, z: DEFAULT_STORY_HEIGHT },
+    ...(rotation ? { rotation } : {}),
   };
 }
 
@@ -218,10 +221,15 @@ export function convertPolylineToMembers(
   if (isClosed && points2D.length === 4) {
     const rectInfo = isRectangle(points2D);
     if (rectInfo.isRect) {
-      const { width, height, center } = rectInfo;
+      const { width, height, center, angle } = rectInfo;
       if (isSquarish(width, height)) {
-        // Column at centroid
-        return [createColumnMember(center, width, height, story, sections, usedIds)];
+        // Column at centroid. Recover rotation from the box orientation so it
+        // round-trips with the DXF exporter (B5 / 3-8). Normalize to (-π/2, π/2]
+        // since a rectangle has 180°/box symmetry.
+        let rot = angle;
+        while (rot > Math.PI / 2) rot -= Math.PI;
+        while (rot <= -Math.PI / 2) rot += Math.PI;
+        return [createColumnMember(center, width, height, story, sections, usedIds, rot)];
       } else {
         // Elongated rectangle → beam along long axis
         const beamSection = sections.getBeamSection(width, height);

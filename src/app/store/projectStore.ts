@@ -18,7 +18,10 @@ import type {
   ConstructionLine,
   ExternalRef,
   Viewport,
+  LoadCase,
 } from '@/domain/structural/types';
+import { applyGridGeometry } from '@/domain/structural/gridResolve';
+import { recomputeAssociativeDimensions } from '@/domain/structural/associativeDimension';
 import {
   duplicateSelection,
   scaleSelection,
@@ -81,6 +84,13 @@ export interface ProjectState {
 
   // Grid operations
   addGrid: (grid: Grid) => void;
+  updateGrid: (id: string, updates: Partial<Grid>) => void;
+  deleteGrid: (id: string) => void;
+
+  // Load case operations
+  addLoadCase: (loadCase: LoadCase) => void;
+  updateLoadCase: (id: string, updates: Partial<LoadCase>) => void;
+  deleteLoadCase: (id: string) => void;
 
   // Master operations
   addMaterial: (material: Material) => void;
@@ -170,6 +180,8 @@ export const useProjectStore = create<ProjectState>()(
           const idx = state.data.members.findIndex((m) => m.id === id);
           if (idx < 0) return;
           Object.assign(state.data.members[idx], updates);
+          // Associative dimensions follow the edited member.
+          state.data = recomputeAssociativeDimensions(state.data);
           state.isDirty = true;
         }),
 
@@ -186,6 +198,7 @@ export const useProjectStore = create<ProjectState>()(
         set((state) => {
           if (!state.data) return;
           translateSelection(state.data, [id], dx, dy);
+          state.data = recomputeAssociativeDimensions(state.data);
           state.isDirty = true;
         }),
 
@@ -204,6 +217,7 @@ export const useProjectStore = create<ProjectState>()(
         set((state) => {
           if (!state.data || ids.length === 0) return;
           translateSelection(state.data, ids, dx, dy);
+          state.data = recomputeAssociativeDimensions(state.data);
           state.isDirty = true;
         }),
 
@@ -228,6 +242,7 @@ export const useProjectStore = create<ProjectState>()(
         set((state) => {
           if (!state.data || ids.length === 0) return;
           stretchSelection(state.data, ids, options);
+          state.data = recomputeAssociativeDimensions(state.data);
           state.isDirty = true;
         }),
 
@@ -369,6 +384,54 @@ export const useProjectStore = create<ProjectState>()(
         set((state) => {
           if (!state.data) return;
           state.data.grids.push(grid);
+          // Re-resolve gridRef-pinned members, then follow associative dims.
+          state.data = recomputeAssociativeDimensions(applyGridGeometry(state.data));
+          state.isDirty = true;
+        }),
+
+      updateGrid: (id, updates) =>
+        set((state) => {
+          if (!state.data) return;
+          const grid = state.data.grids.find((item) => item.id === id);
+          if (!grid) return;
+          Object.assign(grid, updates);
+          // Editing a grid's position/axis/name moves pinned members, so
+          // associative dimensions tied to them must follow too.
+          state.data = recomputeAssociativeDimensions(applyGridGeometry(state.data));
+          state.isDirty = true;
+        }),
+
+      deleteGrid: (id) =>
+        set((state) => {
+          if (!state.data) return;
+          state.data.grids = state.data.grids.filter((item) => item.id !== id);
+          state.data = recomputeAssociativeDimensions(applyGridGeometry(state.data));
+          state.isDirty = true;
+        }),
+
+      // ── Load cases ──
+
+      addLoadCase: (loadCase) =>
+        set((state) => {
+          if (!state.data) return;
+          if (!state.data.loadCases) state.data.loadCases = [];
+          state.data.loadCases.push(loadCase);
+          state.isDirty = true;
+        }),
+
+      updateLoadCase: (id, updates) =>
+        set((state) => {
+          if (!state.data || !state.data.loadCases) return;
+          const loadCase = state.data.loadCases.find((item) => item.id === id);
+          if (!loadCase) return;
+          Object.assign(loadCase, updates);
+          state.isDirty = true;
+        }),
+
+      deleteLoadCase: (id) =>
+        set((state) => {
+          if (!state.data || !state.data.loadCases) return;
+          state.data.loadCases = state.data.loadCases.filter((item) => item.id !== id);
           state.isDirty = true;
         }),
 

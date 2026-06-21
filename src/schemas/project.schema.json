@@ -79,6 +79,10 @@
     "externalRefs": {
       "type": "array",
       "items": { "$ref": "#/$defs/ExternalRef" }
+    },
+    "loadCases": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/LoadCase" }
     }
   },
   "$defs": {
@@ -127,7 +131,9 @@
         "id": { "type": "string", "minLength": 1 },
         "name": { "type": "string" },
         "elevation": { "type": "number" },
-        "height": { "type": "number", "exclusiveMinimum": 0 }
+        "height": { "type": "number", "exclusiveMinimum": 0 },
+        "deadLoad": { "type": "number", "minimum": 0 },
+        "liveLoad": { "type": "number", "minimum": 0 }
       }
     },
     "Grid": {
@@ -151,7 +157,65 @@
         "type": {
           "type": "string",
           "enum": ["concrete", "steel", "wood", "other"]
+        },
+        "elasticModulus": { "type": "number", "exclusiveMinimum": 0 },
+        "shearModulus": { "type": "number", "exclusiveMinimum": 0 },
+        "poissonRatio": { "type": "number", "minimum": 0, "maximum": 0.5 },
+        "unitWeight": { "type": "number", "minimum": 0 },
+        "Fc": { "type": "number", "exclusiveMinimum": 0 },
+        "F": { "type": "number", "exclusiveMinimum": 0 },
+        "Fy": { "type": "number", "exclusiveMinimum": 0 }
+      }
+    },
+    "LoadCase": {
+      "type": "object",
+      "required": ["id", "name", "type"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "name": { "type": "string" },
+        "type": {
+          "type": "string",
+          "enum": ["dead", "live", "snow", "wind", "seismic", "other"]
+        },
+        "factor": { "type": "number" }
+      }
+    },
+    "RebarSpec": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "mainDiameter": { "type": "number", "exclusiveMinimum": 0 },
+        "mainCount": { "type": "integer", "minimum": 0 },
+        "hoopDiameter": { "type": "number", "exclusiveMinimum": 0 },
+        "hoopSpacing": { "type": "number", "exclusiveMinimum": 0 }
+      }
+    },
+    "GridRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "startGrid": {
+          "type": "array",
+          "items": { "type": "string" },
+          "minItems": 2,
+          "maxItems": 2
+        },
+        "endGrid": {
+          "type": "array",
+          "items": { "type": "string" },
+          "minItems": 2,
+          "maxItems": 2
         }
+      }
+    },
+    "AxisOffset": {
+      "type": "object",
+      "required": ["dx", "dy"],
+      "additionalProperties": false,
+      "properties": {
+        "dx": { "type": "number" },
+        "dy": { "type": "number" }
       }
     },
     "Section": {
@@ -159,7 +223,10 @@
         { "$ref": "#/$defs/RectColumnSection" },
         { "$ref": "#/$defs/RectBeamSection" },
         { "$ref": "#/$defs/SlabSection" },
-        { "$ref": "#/$defs/WallSection" }
+        { "$ref": "#/$defs/WallSection" },
+        { "$ref": "#/$defs/SteelColumnHSection" },
+        { "$ref": "#/$defs/SteelBeamHSection" },
+        { "$ref": "#/$defs/SteelPipeSection" }
       ]
     },
     "RectColumnSection": {
@@ -170,7 +237,9 @@
         "id": { "type": "string", "minLength": 1 },
         "kind": { "type": "string", "const": "rc_column_rect" },
         "width": { "type": "number", "exclusiveMinimum": 0 },
-        "depth": { "type": "number", "exclusiveMinimum": 0 }
+        "depth": { "type": "number", "exclusiveMinimum": 0 },
+        "cover": { "type": "number", "minimum": 0 },
+        "rebar": { "$ref": "#/$defs/RebarSpec" }
       }
     },
     "RectBeamSection": {
@@ -181,7 +250,9 @@
         "id": { "type": "string", "minLength": 1 },
         "kind": { "type": "string", "const": "rc_beam_rect" },
         "width": { "type": "number", "exclusiveMinimum": 0 },
-        "depth": { "type": "number", "exclusiveMinimum": 0 }
+        "depth": { "type": "number", "exclusiveMinimum": 0 },
+        "cover": { "type": "number", "minimum": 0 },
+        "rebar": { "$ref": "#/$defs/RebarSpec" }
       }
     },
     "SlabSection": {
@@ -191,7 +262,10 @@
       "properties": {
         "id": { "type": "string", "minLength": 1 },
         "kind": { "type": "string", "const": "rc_slab" },
-        "thickness": { "type": "number", "exclusiveMinimum": 0 }
+        "thickness": { "type": "number", "exclusiveMinimum": 0 },
+        "cover": { "type": "number", "minimum": 0 },
+        "deadLoad": { "type": "number", "minimum": 0 },
+        "liveLoad": { "type": "number", "minimum": 0 }
       }
     },
     "WallSection": {
@@ -201,6 +275,44 @@
       "properties": {
         "id": { "type": "string", "minLength": 1 },
         "kind": { "type": "string", "const": "rc_wall" },
+        "thickness": { "type": "number", "exclusiveMinimum": 0 },
+        "cover": { "type": "number", "minimum": 0 }
+      }
+    },
+    "SteelColumnHSection": {
+      "type": "object",
+      "required": ["id", "kind", "width", "depth"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "kind": { "type": "string", "const": "s_column_h" },
+        "width": { "type": "number", "exclusiveMinimum": 0 },
+        "depth": { "type": "number", "exclusiveMinimum": 0 },
+        "tw": { "type": "number", "exclusiveMinimum": 0 },
+        "tf": { "type": "number", "exclusiveMinimum": 0 }
+      }
+    },
+    "SteelBeamHSection": {
+      "type": "object",
+      "required": ["id", "kind", "width", "depth"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "kind": { "type": "string", "const": "s_beam_h" },
+        "width": { "type": "number", "exclusiveMinimum": 0 },
+        "depth": { "type": "number", "exclusiveMinimum": 0 },
+        "tw": { "type": "number", "exclusiveMinimum": 0 },
+        "tf": { "type": "number", "exclusiveMinimum": 0 }
+      }
+    },
+    "SteelPipeSection": {
+      "type": "object",
+      "required": ["id", "kind", "diameter", "thickness"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "kind": { "type": "string", "const": "s_pipe" },
+        "diameter": { "type": "number", "exclusiveMinimum": 0 },
         "thickness": { "type": "number", "exclusiveMinimum": 0 }
       }
     },
@@ -228,7 +340,10 @@
         "tags": { "type": "array", "items": { "type": "string" } },
         "color": { "type": "string" },
         "lineWeight": { "type": "number", "exclusiveMinimum": 0 },
-        "lineType": { "$ref": "#/$defs/LineType" }
+        "lineType": { "$ref": "#/$defs/LineType" },
+        "gridRef": { "$ref": "#/$defs/GridRef" },
+        "axisOffset": { "$ref": "#/$defs/AxisOffset" },
+        "faceAlign": { "type": "string", "enum": ["center", "left", "right"] }
       }
     },
     "BeamMember": {
@@ -247,7 +362,10 @@
         "tags": { "type": "array", "items": { "type": "string" } },
         "color": { "type": "string" },
         "lineWeight": { "type": "number", "exclusiveMinimum": 0 },
-        "lineType": { "$ref": "#/$defs/LineType" }
+        "lineType": { "$ref": "#/$defs/LineType" },
+        "gridRef": { "$ref": "#/$defs/GridRef" },
+        "axisOffset": { "$ref": "#/$defs/AxisOffset" },
+        "faceAlign": { "type": "string", "enum": ["center", "left", "right"] }
       }
     },
     "WallMember": {
@@ -271,7 +389,10 @@
         "tags": { "type": "array", "items": { "type": "string" } },
         "color": { "type": "string" },
         "lineWeight": { "type": "number", "exclusiveMinimum": 0 },
-        "lineType": { "$ref": "#/$defs/LineType" }
+        "lineType": { "$ref": "#/$defs/LineType" },
+        "gridRef": { "$ref": "#/$defs/GridRef" },
+        "axisOffset": { "$ref": "#/$defs/AxisOffset" },
+        "faceAlign": { "type": "string", "enum": ["center", "left", "right"] }
       }
     },
     "SlabMember": {
@@ -296,7 +417,10 @@
         "lineWeight": { "type": "number", "exclusiveMinimum": 0 },
         "lineType": { "$ref": "#/$defs/LineType" },
         "fillColor": { "type": "string" },
-        "fillOpacity": { "type": "number", "minimum": 0, "maximum": 1 }
+        "fillOpacity": { "type": "number", "minimum": 0, "maximum": 1 },
+        "gridRef": { "$ref": "#/$defs/GridRef" },
+        "axisOffset": { "$ref": "#/$defs/AxisOffset" },
+        "faceAlign": { "type": "string", "enum": ["center", "left", "right"] }
       }
     },
     "Opening": {
@@ -351,7 +475,12 @@
         "text": { "type": "string" },
         "color": { "type": "string" },
         "lineWeight": { "type": "number", "exclusiveMinimum": 0 },
-        "lineType": { "$ref": "#/$defs/LineType" }
+        "lineType": { "$ref": "#/$defs/LineType" },
+        "associative": { "type": "boolean" },
+        "refMemberIds": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        }
       }
     },
     "View": {
