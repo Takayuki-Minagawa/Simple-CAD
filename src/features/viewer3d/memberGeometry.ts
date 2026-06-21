@@ -3,6 +3,7 @@ import type { Member, Opening, Section } from '@/domain/structural/types';
 import {
   columnAxisOffsetToWorld,
   linearAxisOffsetToWorld,
+  slabAxisOffsetToWorld,
 } from '@/domain/structural/eccentricity';
 
 export type GeometryEngine = 'native' | 'opencascade';
@@ -201,13 +202,16 @@ function buildWallGeometry(
     normal.normalize();
   }
 
-  // Eccentricity: dx shifts the wall across its thickness (normal direction),
-  // dy shifts it vertically (up direction).
-  const offset = getAxisOffset(member);
+  // Axis eccentricity resolved with the shared convention (dx = in-plan left
+  // perpendicular of start→end, dy = vertical) so 2D, 3D and IFC agree on the
+  // wall's placement — including its sign for +X-running walls. (The local
+  // `normal` basis above is the thickness axis used to orient the solid, which
+  // is direction-dependent; resolving the offset in world space avoids that.)
+  const ecc = linearAxisOffsetToWorld(getAxisOffset(member) ?? undefined, member.start, member.end);
   const placement = start.clone();
-  if (offset) {
-    placement.addScaledVector(normal, offset.dx).addScaledVector(up, offset.dy);
-  }
+  placement.x += ecc.x;
+  placement.y += ecc.y;
+  placement.z += ecc.z;
 
   const matrix = new THREE.Matrix4().makeBasis(axis, up, normal);
   matrix.setPosition(placement);
@@ -246,8 +250,9 @@ function buildSlabGeometry(
     depth: thickness,
     bevelEnabled: false,
   });
-  // Slab eccentricity offsets directly in the X/Y plane.
-  const offset = getAxisOffset(member);
-  geometry.translate(offset?.dx ?? 0, offset?.dy ?? 0, member.level - thickness);
+  // Slab eccentricity maps directly into the X/Y plane via the shared helper so
+  // 2D, 3D and IFC agree (dx→world X, dy→world Y).
+  const ecc = slabAxisOffsetToWorld(getAxisOffset(member) ?? undefined);
+  geometry.translate(ecc.x, ecc.y, member.level - thickness);
   return geometry;
 }

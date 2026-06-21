@@ -1,5 +1,9 @@
 import { describe, it, expect } from 'vitest';
-import { linearAxisOffsetToWorld, columnAxisOffsetToWorld } from '../eccentricity';
+import {
+  linearAxisOffsetToWorld,
+  columnAxisOffsetToWorld,
+  slabAxisOffsetToWorld,
+} from '../eccentricity';
 
 describe('linearAxisOffsetToWorld', () => {
   it('maps dx to the in-plan left perpendicular and dy to +Z (no along-axis term)', () => {
@@ -27,5 +31,13 @@ describe('columnAxisOffsetToWorld', () => {
   it('maps dx,dy directly to world x,y', () => {
     expect(columnAxisOffsetToWorld({ dx: 30, dy: -40 })).toEqual({ x: 30, y: -40, z: 0 });
     expect(columnAxisOffsetToWorld(undefined)).toEqual({ x: 0, y: 0, z: 0 });
+  });
+});
+
+describe('slabAxisOffsetToWorld', () => {
+  it('maps dx,dy directly into the world XY plane (in-plane, no Z)', () => {
+    expect(slabAxisOffsetToWorld({ dx: 50, dy: -20 })).toEqual({ x: 50, y: -20, z: 0 });
+    expect(slabAxisOffsetToWorld({ dx: 0, dy: 0 })).toEqual({ x: 0, y: 0, z: 0 });
+    expect(slabAxisOffsetToWorld(undefined)).toEqual({ x: 0, y: 0, z: 0 });
   });
 });

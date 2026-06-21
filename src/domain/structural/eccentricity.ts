@@ -63,3 +63,14 @@ export function columnAxisOffsetToWorld(offset: AxisOffset | undefined): WorldDe
   if (isZero(offset)) return ZERO;
   return { x: offset.dx, y: offset.dy, z: 0 };
 }
+
+/**
+ * Eccentricity for a slab. A slab is a plate in the world XY plane with no
+ * single structural axis, so there is no perpendicular/along distinction: the
+ * offset maps directly like a column, `dx`→world X and `dy`→world Y. Shared so
+ * the 2D plan, the 3D viewer and the IFC exporter agree on slab placement.
+ */
+export function slabAxisOffsetToWorld(offset: AxisOffset | undefined): WorldDelta {
+  if (isZero(offset)) return ZERO;
+  return { x: offset.dx, y: offset.dy, z: 0 };
+}

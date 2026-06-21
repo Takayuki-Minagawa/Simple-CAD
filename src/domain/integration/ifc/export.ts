@@ -4,6 +4,7 @@ import { add3, distance3, normalize3, perpendicularHorizontal, sub3 } from './ge
 import {
   columnAxisOffsetToWorld,
   linearAxisOffsetToWorld,
+  slabAxisOffsetToWorld,
 } from '@/domain/structural/eccentricity';
 import type { Vector3 } from './types';
 import { IfcWriter, escapeIfcString, toIfcGlobalId } from './writer';
@@ -177,6 +178,7 @@ function createIfcMember(
 /** World-space placement delta for a member's axis eccentricity (2-6). */
 function memberEccentricityWorld(member: Member): Point3D {
   if (member.type === 'column') return columnAxisOffsetToWorld(member.axisOffset);
+  if (member.type === 'slab') return slabAxisOffsetToWorld(member.axisOffset);
   if (member.type === 'beam' || member.type === 'wall') {
     return linearAxisOffsetToWorld(member.axisOffset, member.start, member.end);
   }

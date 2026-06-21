@@ -5,6 +5,7 @@ import { lineTypeToDashArray } from '@/domain/rendering/lineStyle';
 import {
   columnAxisOffsetToWorld,
   linearAxisOffsetToWorld,
+  slabAxisOffsetToWorld,
 } from '@/domain/structural/eccentricity';
 
 /**
@@ -243,11 +244,11 @@ function SlabShape({
   member: Member & { type: 'slab' };
   selected: boolean;
 }) {
-  // Slab axisOffset reference: first polygon edge defines local-x.
+  // A slab lies in the world XY plane, so its axisOffset maps directly to
+  // world dx,dy via the shared helper (same convention 3D and IFC use).
   const poly = member.polygon;
-  const { ox, oy } =
-    poly.length >= 2 ? axisOffsetWorld(member.axisOffset, poly[0], poly[1]) : { ox: member.axisOffset?.dx ?? 0, oy: member.axisOffset?.dy ?? 0 };
-  const points = poly.map((p) => `${p.x + ox},${p.y + oy}`).join(' ');
+  const ecc = slabAxisOffsetToWorld(member.axisOffset);
+  const points = poly.map((p) => `${p.x + ecc.x},${p.y + ecc.y}`).join(' ');
   const lw = member.lineWeight ?? 20;
   const sw = selected ? lw * 2 : lw;
   const strokeColor = selected ? 'var(--color-selection)' : (member.color ?? 'var(--color-slab)');
