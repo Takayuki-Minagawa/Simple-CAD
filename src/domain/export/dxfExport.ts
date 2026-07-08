@@ -1,5 +1,6 @@
 import type { ProjectData, Member, Section } from '@/domain/structural/types';
 import { distance2D, sub2D, normalize2D, perpendicular2D } from '@/domain/geometry/point';
+import { getMemberPlanPolygon } from '@/domain/structural/memberShape';
 
 /** Decimal places for DXF coordinate output. 4 dp at mm = 0.1µm — plenty. */
 const DXF_DECIMALS = 4;
@@ -41,11 +42,11 @@ export function exportDxf(data: ProjectData, storyId: string): string {
   lines.push('0', 'TABLE', '2', 'LAYER');
 
   const layerDefs = [
-    { name: 'GRID', color: 3 },      // green
-    { name: 'COLUMN', color: 1 },    // red
-    { name: 'BEAM', color: 2 },      // yellow
-    { name: 'WALL', color: 4 },      // cyan
-    { name: 'SLAB', color: 6 },      // magenta
+    { name: 'GRID', color: 3 }, // green
+    { name: 'COLUMN', color: 1 }, // red
+    { name: 'BEAM', color: 2 }, // yellow
+    { name: 'WALL', color: 4 }, // cyan
+    { name: 'SLAB', color: 6 }, // magenta
     { name: 'DIMENSION', color: 7 }, // white
     { name: 'ANNOTATION', color: 7 },
     { name: 'CONSTRUCTION', color: 8 }, // gray
@@ -122,13 +123,23 @@ export function exportDxf(data: ProjectData, storyId: string): string {
   for (const cl of constructionLines) {
     const ext = 500000;
     if (cl.type === 'xline') {
-      addLine(lines, 'CONSTRUCTION',
-        cl.origin.x - cl.direction.x * ext, cl.origin.y - cl.direction.y * ext,
-        cl.origin.x + cl.direction.x * ext, cl.origin.y + cl.direction.y * ext);
+      addLine(
+        lines,
+        'CONSTRUCTION',
+        cl.origin.x - cl.direction.x * ext,
+        cl.origin.y - cl.direction.y * ext,
+        cl.origin.x + cl.direction.x * ext,
+        cl.origin.y + cl.direction.y * ext,
+      );
     } else {
-      addLine(lines, 'CONSTRUCTION',
-        cl.origin.x, cl.origin.y,
-        cl.origin.x + cl.direction.x * ext, cl.origin.y + cl.direction.y * ext);
+      addLine(
+        lines,
+        'CONSTRUCTION',
+        cl.origin.x,
+        cl.origin.y,
+        cl.origin.x + cl.direction.x * ext,
+        cl.origin.y + cl.direction.y * ext,
+      );
     }
   }
 
@@ -138,77 +149,29 @@ export function exportDxf(data: ProjectData, storyId: string): string {
   return lines.join('\n');
 }
 
-/** Rotate point (px,py) by `angle` radians about pivot (cx,cy). */
-function rotateAbout(px: number, py: number, cx: number, cy: number, angle: number): [number, number] {
-  if (!angle) return [px, py];
-  const cos = Math.cos(angle);
-  const sin = Math.sin(angle);
-  const dx = px - cx;
-  const dy = py - cy;
-  return [cx + dx * cos - dy * sin, cy + dx * sin + dy * cos];
-}
-
 function renderMemberDxf(lines: string[], m: Member, sections: Section[]) {
   const sec = sections.find((s) => s.id === m.sectionId);
+  const polygon = getMemberPlanPolygon(m, sec);
+  if (!polygon) return;
+  const layer = memberLayerName(m);
+  addLwPolyline(
+    lines,
+    layer,
+    polygon.map((point) => [point.x, point.y]),
+    true,
+  );
+}
 
-  switch (m.type) {
-    case 'column': {
-      const w = sec && 'width' in sec ? sec.width : 600;
-      const d = sec && 'depth' in sec ? sec.depth : 600;
-      const cx = m.start.x;
-      const cy = m.start.y;
-      // Apply member.rotation about the column centre so it round-trips (B5 / 3-8).
-      const rot = m.rotation ?? 0;
-      const corners: [number, number][] = [
-        [cx - w / 2, cy - d / 2],
-        [cx + w / 2, cy - d / 2],
-        [cx + w / 2, cy + d / 2],
-        [cx - w / 2, cy + d / 2],
-      ].map(([x, y]) => rotateAbout(x, y, cx, cy, rot));
-      addLwPolyline(lines, 'COLUMN', corners, true);
-      break;
-    }
-    case 'beam': {
-      const w = sec && 'width' in sec ? sec.width : 300;
-      const dx = m.end.x - m.start.x;
-      const dy = m.end.y - m.start.y;
-      const len = Math.sqrt(dx * dx + dy * dy);
-      if (len === 0) break;
-      const nx = (-dy / len) * (w / 2);
-      const ny = (dx / len) * (w / 2);
-      addLwPolyline(lines, 'BEAM', [
-        [m.start.x + nx, m.start.y + ny],
-        [m.end.x + nx, m.end.y + ny],
-        [m.end.x - nx, m.end.y - ny],
-        [m.start.x - nx, m.start.y - ny],
-      ], true);
-      break;
-    }
-    case 'wall': {
-      const t = sec && 'thickness' in sec ? sec.thickness : m.thickness;
-      const dx = m.end.x - m.start.x;
-      const dy = m.end.y - m.start.y;
-      const len = Math.sqrt(dx * dx + dy * dy);
-      if (len === 0) break;
-      const nx = (-dy / len) * (t / 2);
-      const ny = (dx / len) * (t / 2);
-      addLwPolyline(lines, 'WALL', [
-        [m.start.x + nx, m.start.y + ny],
-        [m.end.x + nx, m.end.y + ny],
-        [m.end.x - nx, m.end.y - ny],
-        [m.start.x - nx, m.start.y - ny],
-      ], true);
-      break;
-    }
-    case 'slab': {
-      addLwPolyline(
-        lines,
-        'SLAB',
-        m.polygon.map((p) => [p.x, p.y]),
-        true,
-      );
-      break;
-    }
+function memberLayerName(member: Member): string {
+  switch (member.type) {
+    case 'column':
+      return 'COLUMN';
+    case 'beam':
+      return 'BEAM';
+    case 'wall':
+      return 'WALL';
+    case 'slab':
+      return 'SLAB';
   }
 }
 
@@ -229,7 +192,15 @@ function addLwPolyline(lines: string[], layer: string, points: number[][], close
   }
 }
 
-function addText(lines: string[], layer: string, x: number, y: number, height: number, text: string, rotation?: number) {
+function addText(
+  lines: string[],
+  layer: string,
+  x: number,
+  y: number,
+  height: number,
+  text: string,
+  rotation?: number,
+) {
   const sanitized = text.replace(/\r?\n/g, ' ');
   lines.push('0', 'TEXT');
   lines.push('8', layer);
@@ -241,7 +212,15 @@ function addText(lines: string[], layer: string, x: number, y: number, height: n
   lines.push('1', sanitized);
 }
 
-function addMText(lines: string[], layer: string, x: number, y: number, height: number, text: string, rotation?: number) {
+function addMText(
+  lines: string[],
+  layer: string,
+  x: number,
+  y: number,
+  height: number,
+  text: string,
+  rotation?: number,
+) {
   lines.push('0', 'MTEXT');
   lines.push('8', layer);
   lines.push('10', fmt(x), '20', fmt(y), '30', '0');
@@ -287,12 +266,10 @@ function computeBoundingBox(
   }
   for (const m of data.members) {
     if (m.story !== storyId) continue;
-    if (m.type === 'slab') {
-      for (const p of m.polygon) acc(p.x, p.y);
-    } else {
-      acc(m.start.x, m.start.y);
-      acc(m.end.x, m.end.y);
-    }
+    const section = data.sections.find((item) => item.id === m.sectionId);
+    const polygon = getMemberPlanPolygon(m, section);
+    if (!polygon) continue;
+    for (const p of polygon) acc(p.x, p.y);
   }
 
   if (!Number.isFinite(minX)) {

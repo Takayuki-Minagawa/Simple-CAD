@@ -1,12 +1,17 @@
 import { useEffect } from 'react';
 import { useProjectStore, useEditorStore } from '@/app/store';
 import { getToolForShortcutKey } from '@/app/toolMetadata';
+import { showPrompt } from './browserDialogs';
 
 export function useKeyboardShortcuts() {
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement;
-      if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT') {
+      if (
+        target.tagName === 'INPUT' ||
+        target.tagName === 'TEXTAREA' ||
+        target.tagName === 'SELECT'
+      ) {
         return;
       }
 
@@ -62,7 +67,7 @@ export function useKeyboardShortcuts() {
                 }
               } else {
                 // Group
-                const name = prompt('Group name:') || 'Group';
+                const name = showPrompt('Group name:') || 'Group';
                 useProjectStore.getState().createGroup(ids, name);
               }
             }

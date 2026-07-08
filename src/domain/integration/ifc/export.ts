@@ -6,6 +6,13 @@ import {
   linearAxisOffsetToWorld,
   slabAxisOffsetToWorld,
 } from '@/domain/structural/eccentricity';
+import {
+  getBeamRectSize,
+  getColumnRectSize,
+  getSlabThickness,
+  getWallThickness,
+} from '@/domain/structural/memberShape';
+import { nowIsoString } from '@/domain/time';
 import type { Vector3 } from './types';
 import { IfcWriter, escapeIfcString, toIfcGlobalId } from './writer';
 
@@ -31,13 +38,15 @@ interface Orientation {
 export function exportIfc(data: ProjectData, warnings?: string[]): string {
   const writer = new IfcWriter();
   const sink = warnings ?? [];
-  const now = new Date().toISOString().replace(/\.\d{3}Z$/, 'Z');
+  const now = nowIsoString().replace(/\.\d{3}Z$/, 'Z');
 
   const originPoint = writer.cartesianPoint3D({ x: 0, y: 0, z: 0 });
   const xDirection = writer.direction({ x: 1, y: 0, z: 0 });
   const zDirection = writer.direction({ x: 0, y: 0, z: 1 });
   const globalAxis = writer.axis2Placement3D(originPoint, zDirection, xDirection);
-  const context = writer.add(`IFCGEOMETRICREPRESENTATIONCONTEXT($,'Model',3,1.E-05,${writer.ref(globalAxis)},$)`);
+  const context = writer.add(
+    `IFCGEOMETRICREPRESENTATIONCONTEXT($,'Model',3,1.E-05,${writer.ref(globalAxis)},$)`,
+  );
   const lengthUnit = writer.add('IFCSIUNIT(*,.LENGTHUNIT.,.MILLI.,.METRE.)');
   const unitAssignment = writer.add(`IFCUNITASSIGNMENT((${writer.ref(lengthUnit)}))`);
   const project = writer.add(
@@ -71,7 +80,14 @@ export function exportIfc(data: ProjectData, warnings?: string[]): string {
     const storyRef = storyRefs.get(member.story);
     if (!storyRef) continue;
 
-    const elementRef = createIfcMember(writer, context, buildingPlacement, member, data.sections, sink);
+    const elementRef = createIfcMember(
+      writer,
+      context,
+      buildingPlacement,
+      member,
+      data.sections,
+      sink,
+    );
     if (!elementRef) continue;
     storyMembers.get(member.story)?.push(elementRef);
   }
@@ -114,8 +130,7 @@ function createIfcMember(
 
   switch (member.type) {
     case 'column': {
-      const width = section && 'width' in section ? section.width : 600;
-      const depth = section && 'depth' in section ? section.depth : 600;
+      const { width, depth } = getColumnRectSize(section);
       const profile = writer.rectangleProfile(`PROFILE-${member.id}`, width, depth);
       // Encode member.rotation in the placement refDirection so it round-trips
       // (B5 / 3-8). A vertical column rotates about its z axis.
@@ -129,8 +144,7 @@ function createIfcMember(
       });
     }
     case 'beam': {
-      const width = section && 'width' in section ? section.width : 300;
-      const depth = section && 'depth' in section ? section.depth : 600;
+      const { width, depth } = getBeamRectSize(section);
       const profile = writer.rectangleProfile(`PROFILE-${member.id}`, width, depth);
       return writeExtrudedProduct(writer, contextRef, parentPlacementRef, {
         type: 'IFCBEAM',
@@ -142,7 +156,7 @@ function createIfcMember(
       });
     }
     case 'wall': {
-      const thickness = section && 'thickness' in section ? section.thickness : member.thickness;
+      const thickness = getWallThickness(member, section);
       const profile = writer.rectangleProfile(`PROFILE-${member.id}`, thickness, member.height, {
         x: 0,
         y: member.height / 2,
@@ -157,7 +171,7 @@ function createIfcMember(
       });
     }
     case 'slab': {
-      const thickness = section && 'thickness' in section ? section.thickness : 180;
+      const thickness = getSlabThickness(section);
       const baseZ = member.level - thickness;
       const profile = writer.polylineProfile(
         `PROFILE-${member.id}`,

@@ -2,16 +2,37 @@ import { useEditorStore, useProjectStore } from '@/app/store';
 import { useI18n } from '@/i18n';
 import { openDxfFile, openIfcFile, openJsonFile, saveFile } from '@/libs/fileSystem';
 import { importProjectJson } from '@/domain/import/jsonImport';
-import { importDxf, getAutoSections, DXF_MATERIAL, DXF_MATERIAL_ID } from '@/domain/import/dxfImport';
+import {
+  importDxf,
+  getAutoSections,
+  DXF_MATERIAL,
+  DXF_MATERIAL_ID,
+} from '@/domain/import/dxfImport';
 import { exportProjectJson } from '@/domain/export/jsonExport';
 import { importIfc } from '@/domain/integration/ifc';
-import { importStructuralAnalysisJson, STRUCTURAL_ANALYSIS_SCHEMA } from '@/domain/integration/structuralAnalysisJson';
+import {
+  importStructuralAnalysisJson,
+  STRUCTURAL_ANALYSIS_SCHEMA,
+} from '@/domain/integration/structuralAnalysisJson';
 import sampleProject from '@/samples/sample-project.json';
 import type { ProjectData } from '@/domain/structural/types';
+import { showAlert, showConfirm } from '@/app/browserDialogs';
 
 export function useFileActions() {
-  const { data, isDirty, fileHandle, loadProject, setFileHandle, markClean, addAnnotations, addExternalRef, addMember, addMaterial, addSection, addDimension } =
-    useProjectStore();
+  const {
+    data,
+    isDirty,
+    fileHandle,
+    loadProject,
+    setFileHandle,
+    markClean,
+    addAnnotations,
+    addExternalRef,
+    addMember,
+    addMaterial,
+    addSection,
+    addDimension,
+  } = useProjectStore();
   const { activeStory } = useEditorStore();
   const { t, locale } = useI18n();
 
@@ -21,7 +42,7 @@ export function useFileActions() {
       const result = await openJsonFile();
       const imported = importProjectJson(result.content);
       if (!imported.ok) {
-        alert(imported.errors.map((e) => e.message).join('\n'));
+        showAlert(imported.errors.map((e) => e.message).join('\n'));
         return;
       }
       const existingRefIds = new Set(data.externalRefs?.map((existingRef) => existingRef.id));
@@ -61,7 +82,7 @@ export function useFileActions() {
           ? importStructuralAnalysisJson(result.content)
           : importProjectJson(result.content);
       if (!imported.ok) {
-        alert(imported.errors.map((e) => e.message).join('\n'));
+        showAlert(imported.errors.map((e) => e.message).join('\n'));
         return;
       }
       loadProject(imported.data);
@@ -75,7 +96,12 @@ export function useFileActions() {
     if (!data) return;
     const json = exportProjectJson(data);
     try {
-      const handle = await saveFile(json, `${data.project.name}.json`, 'application/json', fileHandle);
+      const handle = await saveFile(
+        json,
+        `${data.project.name}.json`,
+        'application/json',
+        fileHandle,
+      );
       if (handle) setFileHandle(handle);
       markClean();
     } catch {
@@ -84,7 +110,7 @@ export function useFileActions() {
   };
 
   const handleSample = () => {
-    if (isDirty && !confirm(t.confirmLoadSample)) return;
+    if (isDirty && !showConfirm(t.confirmLoadSample)) return;
     loadProject(sampleProject as unknown as ProjectData);
   };
 
@@ -92,12 +118,12 @@ export function useFileActions() {
     if (!data) return;
     const storyId = activeStory ?? data.stories[0]?.id;
     if (!storyId) {
-      alert(locale === 'ja' ? '取込先の階がありません。' : 'No target story is available.');
+      showAlert(locale === 'ja' ? '取込先の階がありません。' : 'No target story is available.');
       return;
     }
 
     // Ask the user whether to convert geometry
-    const convertGeometry = confirm(
+    const convertGeometry = showConfirm(
       locale === 'ja'
         ? '形状変換ありで取り込みますか？\n\nOK: 形状変換あり（部材生成）\nキャンセル: 注記のみ取込'
         : 'Import with geometry conversion?\n\nOK: With geometry conversion (generate members)\nCancel: Annotations only',
@@ -150,20 +176,29 @@ export function useFileActions() {
           })()
         : '';
 
-      const summary = locale === 'ja'
-        ? [
-            `${imported.annotations.length} 件の注記を ${storyId} に追加しました。`,
-            memberCounts ? `部材: ${memberCounts}` : '',
-            `検出プリミティブ: ${imported.primitiveCount}`,
-            imported.warnings.length > 0 ? `警告:\n${imported.warnings.slice(0, 8).join('\n')}` : '',
-          ].filter(Boolean).join('\n')
-        : [
-            `Imported ${imported.annotations.length} annotations into ${storyId}.`,
-            memberCounts ? `Members: ${memberCounts}` : '',
-            `Detected primitives: ${imported.primitiveCount}`,
-            imported.warnings.length > 0 ? `Warnings:\n${imported.warnings.slice(0, 8).join('\n')}` : '',
-          ].filter(Boolean).join('\n');
-      alert(summary);
+      const summary =
+        locale === 'ja'
+          ? [
+              `${imported.annotations.length} 件の注記を ${storyId} に追加しました。`,
+              memberCounts ? `部材: ${memberCounts}` : '',
+              `検出プリミティブ: ${imported.primitiveCount}`,
+              imported.warnings.length > 0
+                ? `警告:\n${imported.warnings.slice(0, 8).join('\n')}`
+                : '',
+            ]
+              .filter(Boolean)
+              .join('\n')
+          : [
+              `Imported ${imported.annotations.length} annotations into ${storyId}.`,
+              memberCounts ? `Members: ${memberCounts}` : '',
+              `Detected primitives: ${imported.primitiveCount}`,
+              imported.warnings.length > 0
+                ? `Warnings:\n${imported.warnings.slice(0, 8).join('\n')}`
+                : '',
+            ]
+              .filter(Boolean)
+              .join('\n');
+      showAlert(summary);
     } catch {
       // User cancelled
     }
@@ -174,7 +209,7 @@ export function useFileActions() {
       const result = await openIfcFile();
       const imported = importIfc(result.content);
       if (!imported.ok) {
-        alert(imported.errors.map((error) => error.message).join('\n'));
+        showAlert(imported.errors.map((error) => error.message).join('\n'));
         return;
       }
       loadProject(imported.data);
@@ -183,5 +218,12 @@ export function useFileActions() {
     }
   };
 
-  return { handleImportXref, handleOpen, handleSave, handleSample, handleImportDxf, handleImportIfc };
+  return {
+    handleImportXref,
+    handleOpen,
+    handleSave,
+    handleSample,
+    handleImportDxf,
+    handleImportIfc,
+  };
 }

@@ -2,22 +2,15 @@ import type { Point2D } from '@/domain/geometry/types';
 import { normalize2D, perpendicular2D, sub2D } from '@/domain/geometry/point';
 import { collectAllIds, generateId, prefixFor } from '@/domain/idGenerator';
 import { deepClone } from '@/libs/clone';
-import type { Opening, ProjectData } from './types';
-import {
-  getAnnotationPoints,
-  getMemberPoints,
-  getSelectionPoints,
-} from './editTransformPoints';
+import type { ProjectData } from './types';
+import { getAnnotationPoints, getMemberPoints, getSelectionPoints } from './editTransformPoints';
 import {
   applyPointTransformToSelection,
   reflectPoint,
   scalePoint,
-  transformAnnotation,
-  transformDimension,
-  transformMember,
-  transformOpening,
   translatePoint,
 } from './editTransformApply';
+import { cloneSelectionWithTransform } from './editSelectionClone';
 
 export interface ArraySelectionOptions {
   columns: number;
@@ -117,63 +110,13 @@ export function duplicateSelection(
   ids: string[],
   options: CopySelectionOptions,
 ): string[] {
-  const selectedIds = new Set(ids);
-  const selectedMembers = data.members.filter((member) => selectedIds.has(member.id));
-  const selectedAnnotations = data.annotations.filter((annotation) => selectedIds.has(annotation.id));
-  const selectedDimensions = data.dimensions.filter((dimension) => selectedIds.has(dimension.id));
-  const openingsByMember = new Map<string, Opening[]>();
   const copyCount = Math.max(1, Math.floor(options.count ?? 1));
   const createdIds: string[] = [];
-  const usedIds = collectAllIds(data);
-
-  for (const opening of data.openings) {
-    if (!selectedIds.has(opening.memberId)) continue;
-    const list = openingsByMember.get(opening.memberId) ?? [];
-    list.push(opening);
-    openingsByMember.set(opening.memberId, list);
-  }
 
   for (let index = 1; index <= copyCount; index++) {
     const pointTransform = (point: Point2D) =>
       translatePoint(point, options.dx * index, options.dy * index);
-    const memberIdMap = new Map<string, string>();
-
-    for (const member of selectedMembers) {
-      const clone = deepClone(member);
-      clone.id = generateId(prefixFor(member.type), usedIds);
-      transformMember(clone, pointTransform);
-      memberIdMap.set(member.id, clone.id);
-      data.members.push(clone);
-      createdIds.push(clone.id);
-    }
-
-    for (const annotation of selectedAnnotations) {
-      const clone = deepClone(annotation);
-      clone.id = generateId(annotation.type === 'spline' ? 'spl' : 'ann', usedIds);
-      transformAnnotation(clone, pointTransform);
-      data.annotations.push(clone);
-      createdIds.push(clone.id);
-    }
-
-    for (const dimension of selectedDimensions) {
-      const clone = deepClone(dimension);
-      clone.id = generateId('dim', usedIds);
-      transformDimension(clone, pointTransform);
-      data.dimensions.push(clone);
-      createdIds.push(clone.id);
-    }
-
-    for (const [memberId, openings] of openingsByMember) {
-      const clonedMemberId = memberIdMap.get(memberId);
-      if (!clonedMemberId) continue;
-      for (const opening of openings) {
-        const clone = deepClone(opening);
-        clone.id = generateId('opn', usedIds);
-        clone.memberId = clonedMemberId;
-        transformOpening(clone, pointTransform);
-        data.openings.push(clone);
-      }
-    }
+    createdIds.push(...cloneSelectionWithTransform(data, ids, pointTransform));
   }
 
   return createdIds;
@@ -186,9 +129,7 @@ export function scaleSelection(
   scaleX: number,
   scaleY: number,
 ) {
-  applyPointTransformToSelection(data, ids, (point) =>
-    scalePoint(point, origin, scaleX, scaleY),
-  );
+  applyPointTransformToSelection(data, ids, (point) => scalePoint(point, origin, scaleX, scaleY));
 }
 
 export function stretchSelection(
@@ -209,11 +150,7 @@ export function stretchSelection(
 
 // ── Offset (parallel copy) ──
 
-export function offsetSelection(
-  data: ProjectData,
-  ids: string[],
-  distance: number,
-): string[] {
+export function offsetSelection(data: ProjectData, ids: string[], distance: number): string[] {
   const selectedIds = new Set(ids);
   const createdIds: string[] = [];
   const usedIds = collectAllIds(data);
@@ -222,8 +159,7 @@ export function offsetSelection(
     if (!selectedIds.has(member.id)) continue;
     if (member.type === 'slab') continue;
 
-    const isZeroLength =
-      member.start.x === member.end.x && member.start.y === member.end.y;
+    const isZeroLength = member.start.x === member.end.x && member.start.y === member.end.y;
 
     if (isZeroLength) {
       // Zero-length members (e.g. point columns): offset in X direction
@@ -235,10 +171,9 @@ export function offsetSelection(
       createdIds.push(clone.id);
     } else {
       // Normal linear members: offset perpendicular
-      const dir = normalize2D(sub2D(
-        { x: member.end.x, y: member.end.y },
-        { x: member.start.x, y: member.start.y },
-      ));
+      const dir = normalize2D(
+        sub2D({ x: member.end.x, y: member.end.y }, { x: member.start.x, y: member.start.y }),
+      );
       const perp = perpendicular2D(dir);
       const dx = perp.x * distance;
       const dy = perp.y * distance;
@@ -276,52 +211,7 @@ export function mirrorSelection(
     return [];
   }
 
-  // copy mode: duplicate then mirror the copies
-  const selectedIds = new Set(ids);
-  const createdIds: string[] = [];
-  const memberIdMap = new Map<string, string>();
-  const usedIds = collectAllIds(data);
-
-  for (const member of [...data.members]) {
-    if (!selectedIds.has(member.id)) continue;
-    const clone = deepClone(member);
-    clone.id = generateId(prefixFor(member.type), usedIds);
-    transformMember(clone, mirrorTransform);
-    memberIdMap.set(member.id, clone.id);
-    data.members.push(clone);
-    createdIds.push(clone.id);
-  }
-
-  for (const annotation of [...data.annotations]) {
-    if (!selectedIds.has(annotation.id)) continue;
-    const clone = deepClone(annotation);
-    clone.id = generateId(annotation.type === 'spline' ? 'spl' : 'ann', usedIds);
-    transformAnnotation(clone, mirrorTransform);
-    data.annotations.push(clone);
-    createdIds.push(clone.id);
-  }
-
-  for (const dimension of [...data.dimensions]) {
-    if (!selectedIds.has(dimension.id)) continue;
-    const clone = deepClone(dimension);
-    clone.id = generateId('dim', usedIds);
-    transformDimension(clone, mirrorTransform);
-    data.dimensions.push(clone);
-    createdIds.push(clone.id);
-  }
-
-  for (const opening of [...data.openings]) {
-    if (!selectedIds.has(opening.memberId)) continue;
-    const clonedMemberId = memberIdMap.get(opening.memberId);
-    if (!clonedMemberId) continue;
-    const clone = deepClone(opening);
-    clone.id = generateId('opn', usedIds);
-    clone.memberId = clonedMemberId;
-    transformOpening(clone, mirrorTransform);
-    data.openings.push(clone);
-  }
-
-  return createdIds;
+  return cloneSelectionWithTransform(data, ids, mirrorTransform);
 }
 
 // ── Array (rectangular) ──
@@ -365,7 +255,10 @@ export function getEntityBoundsList(data: ProjectData, storyId: string | null): 
     if (storyId && member.story !== storyId) continue;
     const pts = getMemberPoints(member);
     if (pts.length === 0) continue;
-    let minX = pts[0].x, minY = pts[0].y, maxX = pts[0].x, maxY = pts[0].y;
+    let minX = pts[0].x,
+      minY = pts[0].y,
+      maxX = pts[0].x,
+      maxY = pts[0].y;
     for (const p of pts.slice(1)) {
       minX = Math.min(minX, p.x);
       minY = Math.min(minY, p.y);
@@ -379,7 +272,10 @@ export function getEntityBoundsList(data: ProjectData, storyId: string | null): 
     if (storyId && annotation.story !== storyId) continue;
     const aPts = getAnnotationPoints(annotation);
     if (aPts.length === 0) continue;
-    let aMinX = aPts[0].x, aMinY = aPts[0].y, aMaxX = aPts[0].x, aMaxY = aPts[0].y;
+    let aMinX = aPts[0].x,
+      aMinY = aPts[0].y,
+      aMaxX = aPts[0].x,
+      aMaxY = aPts[0].y;
     for (const p of aPts.slice(1)) {
       aMinX = Math.min(aMinX, p.x);
       aMinY = Math.min(aMinY, p.y);
@@ -439,8 +335,10 @@ export function getAllEntityBounds(
 ): { minX: number; minY: number; maxX: number; maxY: number } | null {
   const entities = getEntityBoundsList(data, storyId);
   if (entities.length === 0) return null;
-  let minX = entities[0].minX, minY = entities[0].minY;
-  let maxX = entities[0].maxX, maxY = entities[0].maxY;
+  let minX = entities[0].minX,
+    minY = entities[0].minY;
+  let maxX = entities[0].maxX,
+    maxY = entities[0].maxY;
   for (const e of entities.slice(1)) {
     minX = Math.min(minX, e.minX);
     minY = Math.min(minY, e.minY);

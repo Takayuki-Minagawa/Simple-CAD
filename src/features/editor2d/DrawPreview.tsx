@@ -4,6 +4,7 @@ import { useEditorStore } from '@/app/store';
 import { useI18n } from '@/i18n';
 import type { SnapResult } from '@/domain/geometry/snap';
 import type { Point2D } from '@/domain/geometry/types';
+import { linearLength, polygonArea, polygonPerimeter } from '@/domain/geometry/measurement';
 
 const SNAP_COLOR = '#ff6600';
 const LABEL_COLOR = '#2563eb';
@@ -33,26 +34,61 @@ function SnapMarker({ snap, zoom }: { snap: SnapResult; zoom: number }) {
     case 'endpoint':
       return <rect x={x - r} y={y - r} width={r * 2} height={r * 2} {...common} />;
     case 'midpoint':
-      return (
-        <polygon
-          points={`${x},${y - r} ${x - r},${y + r} ${x + r},${y + r}`}
-          {...common}
-        />
-      );
+      return <polygon points={`${x},${y - r} ${x - r},${y + r} ${x + r},${y + r}`} {...common} />;
     case 'intersection':
       return (
         <g {...common}>
-          <line x1={x - r} y1={y - r} x2={x + r} y2={y + r} stroke={SNAP_COLOR} strokeWidth={strokeWidth} vectorEffect="non-scaling-stroke" />
-          <line x1={x - r} y1={y + r} x2={x + r} y2={y - r} stroke={SNAP_COLOR} strokeWidth={strokeWidth} vectorEffect="non-scaling-stroke" />
+          <line
+            x1={x - r}
+            y1={y - r}
+            x2={x + r}
+            y2={y + r}
+            stroke={SNAP_COLOR}
+            strokeWidth={strokeWidth}
+            vectorEffect="non-scaling-stroke"
+          />
+          <line
+            x1={x - r}
+            y1={y + r}
+            x2={x + r}
+            y2={y - r}
+            stroke={SNAP_COLOR}
+            strokeWidth={strokeWidth}
+            vectorEffect="non-scaling-stroke"
+          />
         </g>
       );
     case 'perpendicular':
       // ⊥ glyph: vertical stroke + base stroke.
       return (
         <g>
-          <line x1={x - r} y1={y - r} x2={x - r} y2={y + r} stroke={SNAP_COLOR} strokeWidth={strokeWidth} vectorEffect="non-scaling-stroke" />
-          <line x1={x - r} y1={y + r} x2={x + r} y2={y + r} stroke={SNAP_COLOR} strokeWidth={strokeWidth} vectorEffect="non-scaling-stroke" />
-          <line x1={x - r} y1={y} x2={x} y2={y} stroke={SNAP_COLOR} strokeWidth={strokeWidth} vectorEffect="non-scaling-stroke" />
+          <line
+            x1={x - r}
+            y1={y - r}
+            x2={x - r}
+            y2={y + r}
+            stroke={SNAP_COLOR}
+            strokeWidth={strokeWidth}
+            vectorEffect="non-scaling-stroke"
+          />
+          <line
+            x1={x - r}
+            y1={y + r}
+            x2={x + r}
+            y2={y + r}
+            stroke={SNAP_COLOR}
+            strokeWidth={strokeWidth}
+            vectorEffect="non-scaling-stroke"
+          />
+          <line
+            x1={x - r}
+            y1={y}
+            x2={x}
+            y2={y}
+            stroke={SNAP_COLOR}
+            strokeWidth={strokeWidth}
+            vectorEffect="non-scaling-stroke"
+          />
         </g>
       );
     case 'nearest':
@@ -62,8 +98,24 @@ function SnapMarker({ snap, zoom }: { snap: SnapResult; zoom: number }) {
       // Small cross.
       return (
         <g>
-          <line x1={x - r * 0.6} y1={y} x2={x + r * 0.6} y2={y} stroke={SNAP_COLOR} strokeWidth={strokeWidth} vectorEffect="non-scaling-stroke" />
-          <line x1={x} y1={y - r * 0.6} x2={x} y2={y + r * 0.6} stroke={SNAP_COLOR} strokeWidth={strokeWidth} vectorEffect="non-scaling-stroke" />
+          <line
+            x1={x - r * 0.6}
+            y1={y}
+            x2={x + r * 0.6}
+            y2={y}
+            stroke={SNAP_COLOR}
+            strokeWidth={strokeWidth}
+            vectorEffect="non-scaling-stroke"
+          />
+          <line
+            x1={x}
+            y1={y - r * 0.6}
+            x2={x}
+            y2={y + r * 0.6}
+            stroke={SNAP_COLOR}
+            strokeWidth={strokeWidth}
+            vectorEffect="non-scaling-stroke"
+          />
         </g>
       );
   }
@@ -110,31 +162,13 @@ function PreviewLabel({
 }
 
 function segmentLength(a: Point2D, b: Point2D): number {
-  return Math.hypot(b.x - a.x, b.y - a.y);
+  return linearLength(a, b);
 }
 
 /** Signed angle of a→b in degrees, normalised to (-180, 180]. */
 function segmentAngleDeg(a: Point2D, b: Point2D): number {
   const deg = (Math.atan2(b.y - a.y, b.x - a.x) * 180) / Math.PI;
   return deg;
-}
-
-function polygonArea(pts: Point2D[]): number {
-  let sum = 0;
-  for (let i = 0; i < pts.length; i++) {
-    const a = pts[i];
-    const b = pts[(i + 1) % pts.length];
-    sum += a.x * b.y - b.x * a.y;
-  }
-  return Math.abs(sum) / 2;
-}
-
-function polygonPerimeter(pts: Point2D[]): number {
-  let sum = 0;
-  for (let i = 0; i < pts.length; i++) {
-    sum += segmentLength(pts[i], pts[(i + 1) % pts.length]);
-  }
-  return sum;
 }
 
 /** Real-time length/angle labels for a single segment (beam/wall/dimension). */
@@ -158,7 +192,13 @@ function SegmentDimensionLabels({
   return (
     <g>
       <PreviewLabel x={mid.x} y={mid.y + off} text={`${len.toFixed(0)}`} zoom={zoom} />
-      <PreviewLabel x={start.x + off} y={start.y + off} text={angleLabel} zoom={zoom} anchor="start" />
+      <PreviewLabel
+        x={start.x + off}
+        y={start.y + off}
+        text={angleLabel}
+        zoom={zoom}
+        anchor="start"
+      />
     </g>
   );
 }
@@ -326,12 +366,30 @@ function SlabPreviewLabels({
   return (
     <g>
       {edges.map((e, i) => (
-        <PreviewLabel key={i} x={e.mid.x} y={e.mid.y + off} text={`${e.len.toFixed(0)}`} zoom={zoom} />
+        <PreviewLabel
+          key={i}
+          x={e.mid.x}
+          y={e.mid.y + off}
+          text={`${e.len.toFixed(0)}`}
+          zoom={zoom}
+        />
       ))}
       {centroid && (
         <>
-          <PreviewLabel x={centroid.x} y={centroid.y + off} text={areaLabel} zoom={zoom} color={POLAR_COLOR} />
-          <PreviewLabel x={centroid.x} y={centroid.y - off} text={perimLabel} zoom={zoom} color={POLAR_COLOR} />
+          <PreviewLabel
+            x={centroid.x}
+            y={centroid.y + off}
+            text={areaLabel}
+            zoom={zoom}
+            color={POLAR_COLOR}
+          />
+          <PreviewLabel
+            x={centroid.x}
+            y={centroid.y - off}
+            text={perimLabel}
+            zoom={zoom}
+            color={POLAR_COLOR}
+          />
         </>
       )}
     </g>
@@ -373,7 +431,14 @@ function PolarTrackingGuide({
         vectorEffect="non-scaling-stroke"
         opacity={0.8}
       />
-      <PreviewLabel x={preview.x + off} y={preview.y - off} text={label} zoom={zoom} color={POLAR_COLOR} anchor="start" />
+      <PreviewLabel
+        x={preview.x + off}
+        y={preview.y - off}
+        text={label}
+        zoom={zoom}
+        color={POLAR_COLOR}
+        anchor="start"
+      />
     </g>
   );
 }
@@ -392,10 +457,41 @@ function GhostPoint({
   const label = locale === 'ja' ? '入力' : 'input';
   return (
     <g opacity={0.85}>
-      <circle cx={point.x} cy={point.y} r={r} fill="none" stroke={GHOST_COLOR} strokeWidth={2 / zoom} vectorEffect="non-scaling-stroke" />
-      <line x1={point.x - r * 1.6} y1={point.y} x2={point.x + r * 1.6} y2={point.y} stroke={GHOST_COLOR} strokeWidth={1.5 / zoom} vectorEffect="non-scaling-stroke" />
-      <line x1={point.x} y1={point.y - r * 1.6} x2={point.x} y2={point.y + r * 1.6} stroke={GHOST_COLOR} strokeWidth={1.5 / zoom} vectorEffect="non-scaling-stroke" />
-      <PreviewLabel x={point.x + off} y={point.y + off} text={label} zoom={zoom} color={GHOST_COLOR} anchor="start" />
+      <circle
+        cx={point.x}
+        cy={point.y}
+        r={r}
+        fill="none"
+        stroke={GHOST_COLOR}
+        strokeWidth={2 / zoom}
+        vectorEffect="non-scaling-stroke"
+      />
+      <line
+        x1={point.x - r * 1.6}
+        y1={point.y}
+        x2={point.x + r * 1.6}
+        y2={point.y}
+        stroke={GHOST_COLOR}
+        strokeWidth={1.5 / zoom}
+        vectorEffect="non-scaling-stroke"
+      />
+      <line
+        x1={point.x}
+        y1={point.y - r * 1.6}
+        x2={point.x}
+        y2={point.y + r * 1.6}
+        stroke={GHOST_COLOR}
+        strokeWidth={1.5 / zoom}
+        vectorEffect="non-scaling-stroke"
+      />
+      <PreviewLabel
+        x={point.x + off}
+        y={point.y + off}
+        text={label}
+        zoom={zoom}
+        color={GHOST_COLOR}
+        anchor="start"
+      />
     </g>
   );
 }

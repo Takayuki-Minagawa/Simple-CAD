@@ -1,5 +1,5 @@
 export { useProjectStore } from './projectStore';
-export type { ProjectState } from './projectStore';
+export type { ProjectState } from './projectStoreTypes';
 export { useEditorStore } from './editorStore';
 export type { EditorTool, SnapMode, LayerName, ThemeMode } from './editorStore';
 export { LAYER_NAMES, SNAP_MODES, isCreationTool } from './editorStore';

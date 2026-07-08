@@ -6,6 +6,7 @@ import { MenuBar } from './MenuBar';
 import { ToolButtonGroups } from './ToolButtonGroups';
 import { TemplatePickerDialog } from './TemplatePickerDialog';
 import { useMenuState } from './useMenuState';
+import { showConfirm } from '@/app/browserDialogs';
 
 interface Props {
   onExport: () => void;
@@ -16,7 +17,14 @@ interface Props {
   onPrintPreview: () => void;
 }
 
-export function MainToolbar({ onExport, onMasters, onAiAssist, onHelp, onTransform, onPrintPreview }: Props) {
+export function MainToolbar({
+  onExport,
+  onMasters,
+  onAiAssist,
+  onHelp,
+  onTransform,
+  onPrintPreview,
+}: Props) {
   const { isDirty, loadProject, newProject } = useProjectStore();
   const { theme, toggleTheme } = useEditorStore();
   const { t, locale, setLocale } = useI18n();
@@ -25,7 +33,7 @@ export function MainToolbar({ onExport, onMasters, onAiAssist, onHelp, onTransfo
   const { openMenu, closeMenu, toggleMenu, menuBarRef } = useMenuState();
 
   const handleNew = () => {
-    if (isDirty && !confirm(t.confirmUnsaved)) return;
+    if (isDirty && !showConfirm(t.confirmUnsaved)) return;
     setShowTemplatePicker(true);
   };
 
@@ -65,7 +73,11 @@ export function MainToolbar({ onExport, onMasters, onAiAssist, onHelp, onTransfo
 
       {/* ── Right side: theme & locale ── */}
       <div className="toolbar-group" style={{ marginLeft: 'auto' }}>
-        <button className="toolbar-btn" onClick={toggleTheme} title={theme === 'light' ? t.themeDark : t.themeLight}>
+        <button
+          className="toolbar-btn"
+          onClick={toggleTheme}
+          title={theme === 'light' ? t.themeDark : t.themeLight}
+        >
           {theme === 'light' ? '🌙' : '☀️'}
         </button>
         <button className="toolbar-btn" onClick={() => setLocale(locale === 'ja' ? 'en' : 'ja')}>
@@ -75,7 +87,10 @@ export function MainToolbar({ onExport, onMasters, onAiAssist, onHelp, onTransfo
 
       {/* Template Picker Dialog */}
       {showTemplatePicker && (
-        <TemplatePickerDialog onSelect={handleTemplateSelect} onClose={() => setShowTemplatePicker(false)} />
+        <TemplatePickerDialog
+          onSelect={handleTemplateSelect}
+          onClose={() => setShowTemplatePicker(false)}
+        />
       )}
     </div>
   );

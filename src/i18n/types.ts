@@ -158,6 +158,37 @@ export interface Translations {
   helpAiText: string;
 
   // Transform modes
+  transformTitle: string;
+  transformSelected: string;
+  transformCurrentBounds: string;
+  transformMove: string;
+  transformCopy: string;
+  transformScale: string;
+  transformStretch: string;
+  transformDx: string;
+  transformDy: string;
+  transformCopyCount: string;
+  transformOriginX: string;
+  transformOriginY: string;
+  transformScaleX: string;
+  transformScaleY: string;
+  transformTargetWidth: string;
+  transformTargetHeight: string;
+  transformAnchorX: string;
+  transformAnchorY: string;
+  transformAnchorMinX: string;
+  transformAnchorCenterX: string;
+  transformAnchorMaxX: string;
+  transformAnchorMinY: string;
+  transformAnchorCenterY: string;
+  transformAnchorMaxY: string;
+  transformApply: string;
+  transformInvalidNumber: string;
+  transformInvalidScale: string;
+  transformInvalidCount: string;
+  transformInvalidStretch: string;
+  transformLockedWidth: string;
+  transformLockedHeight: string;
   transformOffset: string;
   transformMirror: string;
   transformArray: string;

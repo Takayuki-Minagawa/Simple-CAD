@@ -1,27 +1,7 @@
 import type { CSSProperties } from 'react';
 import type { Member, Section } from '@/domain/structural/types';
-import type { Point2D } from '@/domain/geometry/types';
 import { lineTypeToDashArray } from '@/domain/rendering/lineStyle';
-import {
-  columnAxisOffsetToWorld,
-  linearAxisOffsetToWorld,
-  slabAxisOffsetToWorld,
-} from '@/domain/structural/eccentricity';
-
-/**
- * In-plan world offset (x,y) for a linear member's axis eccentricity. Shared
- * with the 3D viewer and IFC export via `@/domain/structural/eccentricity` so
- * the same JSON places a member at the same spot everywhere. The vertical (z)
- * component of the offset is not visible in plan and is dropped here.
- */
-function axisOffsetWorld(
-  offset: { dx: number; dy: number } | undefined,
-  start: Point2D,
-  end: Point2D,
-): { ox: number; oy: number } {
-  const d = linearAxisOffsetToWorld(offset, start, end);
-  return { ox: d.x, oy: d.y };
-}
+import { formatPointList, getMemberPlanPolygon } from '@/domain/structural/memberShape';
 
 interface Props {
   members: Member[];
@@ -43,7 +23,12 @@ export function MemberLayer({ members, sections, selectedIds, muted = false }: P
         {members
           .filter((m) => m.type === 'slab')
           .map((m) => (
-            <SlabShape key={m.id} member={m} selected={selectedIds.includes(m.id)} />
+            <SlabShape
+              key={m.id}
+              member={m}
+              selected={selectedIds.includes(m.id)}
+              section={sections.find((s) => s.id === m.sectionId)}
+            />
           ))}
       </g>
       {/* Walls */}
@@ -56,7 +41,7 @@ export function MemberLayer({ members, sections, selectedIds, muted = false }: P
               <WallShape
                 key={m.id}
                 member={m}
-                thickness={sec && 'thickness' in sec ? sec.thickness : m.thickness}
+                section={sec}
                 selected={selectedIds.includes(m.id)}
               />
             );
@@ -68,12 +53,11 @@ export function MemberLayer({ members, sections, selectedIds, muted = false }: P
           .filter((m) => m.type === 'beam')
           .map((m) => {
             const sec = sections.find((s) => s.id === m.sectionId);
-            const width = sec && 'width' in sec ? sec.width : 300;
             return (
               <BeamShape
                 key={m.id}
                 member={m}
-                width={width}
+                section={sec}
                 selected={selectedIds.includes(m.id)}
               />
             );
@@ -85,14 +69,11 @@ export function MemberLayer({ members, sections, selectedIds, muted = false }: P
           .filter((m) => m.type === 'column')
           .map((m) => {
             const sec = sections.find((s) => s.id === m.sectionId);
-            const w = sec && 'width' in sec ? sec.width : 600;
-            const d = sec && 'depth' in sec ? sec.depth : 600;
             return (
               <ColumnShape
                 key={m.id}
                 member={m}
-                width={w}
-                depth={d}
+                section={sec}
                 selected={selectedIds.includes(m.id)}
               />
             );
@@ -104,44 +85,24 @@ export function MemberLayer({ members, sections, selectedIds, muted = false }: P
 
 function ColumnShape({
   member,
-  width,
-  depth,
+  section,
   selected,
 }: {
   member: Member & { type: 'column' };
-  width: number;
-  depth: number;
+  section: Section | undefined;
   selected: boolean;
 }) {
-  // Columns have no in-plane direction; treat axisOffset as world dx,dy.
-  const ecc = columnAxisOffsetToWorld(member.axisOffset);
-  const cx = member.start.x + ecc.x;
-  const cy = member.start.y + ecc.y;
-  const hw = width / 2;
-  const hd = depth / 2;
+  const points = getMemberPlanPolygon(member, section);
+  if (!points) return null;
   const lw = member.lineWeight ?? 20;
   const sw = selected ? lw * 2 : lw;
   const strokeColor = selected ? 'var(--color-selection)' : (member.color ?? 'var(--color-column)');
   const dash = lineTypeToDashArray(member.lineType);
 
-  // Apply member.rotation (radians, CCW about the centre) to match the DXF/IFC
-  // round-trip orientation; a square column is unaffected.
-  const rot = member.rotation ?? 0;
-  const cos = Math.cos(rot);
-  const sin = Math.sin(rot);
-  const corner = (lx: number, ly: number) =>
-    `${cx + lx * cos - ly * sin},${cy + lx * sin + ly * cos}`;
-  const points = [
-    corner(-hw, -hd),
-    corner(hw, -hd),
-    corner(hw, hd),
-    corner(-hw, hd),
-  ].join(' ');
-
   return (
     <polygon
       data-id={member.id}
-      points={points}
+      points={formatPointList(points)}
       fill={selected ? 'rgba(59,130,246,0.3)' : 'rgba(231,76,60,0.3)'}
       stroke={strokeColor}
       strokeWidth={sw}
@@ -153,29 +114,15 @@ function ColumnShape({
 
 function BeamShape({
   member,
-  width,
+  section,
   selected,
 }: {
   member: Member & { type: 'beam' };
-  width: number;
+  section: Section | undefined;
   selected: boolean;
 }) {
-  const { start, end } = member;
-  const dx = end.x - start.x;
-  const dy = end.y - start.y;
-  const len = Math.sqrt(dx * dx + dy * dy);
-  if (len === 0) return null;
-  const nx = (-dy / len) * (width / 2);
-  const ny = (dx / len) * (width / 2);
-  const { ox, oy } = axisOffsetWorld(member.axisOffset, start, end);
-
-  const points = [
-    `${start.x + nx + ox},${start.y + ny + oy}`,
-    `${end.x + nx + ox},${end.y + ny + oy}`,
-    `${end.x - nx + ox},${end.y - ny + oy}`,
-    `${start.x - nx + ox},${start.y - ny + oy}`,
-  ].join(' ');
-
+  const points = getMemberPlanPolygon(member, section);
+  if (!points) return null;
   const lw = member.lineWeight ?? 20;
   const sw = selected ? lw * 2 : lw;
   const strokeColor = selected ? 'var(--color-selection)' : (member.color ?? 'var(--color-beam)');
@@ -184,7 +131,7 @@ function BeamShape({
   return (
     <polygon
       data-id={member.id}
-      points={points}
+      points={formatPointList(points)}
       fill={selected ? 'rgba(59,130,246,0.2)' : 'rgba(243,156,18,0.2)'}
       stroke={strokeColor}
       strokeWidth={sw}
@@ -196,29 +143,15 @@ function BeamShape({
 
 function WallShape({
   member,
-  thickness,
+  section,
   selected,
 }: {
   member: Member & { type: 'wall' };
-  thickness: number;
+  section: Section | undefined;
   selected: boolean;
 }) {
-  const { start, end } = member;
-  const dx = end.x - start.x;
-  const dy = end.y - start.y;
-  const len = Math.sqrt(dx * dx + dy * dy);
-  if (len === 0) return null;
-  const nx = (-dy / len) * (thickness / 2);
-  const ny = (dx / len) * (thickness / 2);
-  const { ox, oy } = axisOffsetWorld(member.axisOffset, start, end);
-
-  const points = [
-    `${start.x + nx + ox},${start.y + ny + oy}`,
-    `${end.x + nx + ox},${end.y + ny + oy}`,
-    `${end.x - nx + ox},${end.y - ny + oy}`,
-    `${start.x - nx + ox},${start.y - ny + oy}`,
-  ].join(' ');
-
+  const points = getMemberPlanPolygon(member, section);
+  if (!points) return null;
   const lw = member.lineWeight ?? 20;
   const sw = selected ? lw * 2 : lw;
   const strokeColor = selected ? 'var(--color-selection)' : (member.color ?? 'var(--color-wall)');
@@ -227,7 +160,7 @@ function WallShape({
   return (
     <polygon
       data-id={member.id}
-      points={points}
+      points={formatPointList(points)}
       fill={selected ? 'rgba(59,130,246,0.2)' : 'rgba(0,188,212,0.2)'}
       stroke={strokeColor}
       strokeWidth={sw}
@@ -239,16 +172,15 @@ function WallShape({
 
 function SlabShape({
   member,
+  section,
   selected,
 }: {
   member: Member & { type: 'slab' };
+  section: Section | undefined;
   selected: boolean;
 }) {
-  // A slab lies in the world XY plane, so its axisOffset maps directly to
-  // world dx,dy via the shared helper (same convention 3D and IFC use).
-  const poly = member.polygon;
-  const ecc = slabAxisOffsetToWorld(member.axisOffset);
-  const points = poly.map((p) => `${p.x + ecc.x},${p.y + ecc.y}`).join(' ');
+  const points = getMemberPlanPolygon(member, section);
+  if (!points) return null;
   const lw = member.lineWeight ?? 20;
   const sw = selected ? lw * 2 : lw;
   const strokeColor = selected ? 'var(--color-selection)' : (member.color ?? 'var(--color-slab)');
@@ -261,7 +193,7 @@ function SlabShape({
   return (
     <polygon
       data-id={member.id}
-      points={points}
+      points={formatPointList(points)}
       fill={fillColor}
       fillOpacity={fillOpacity}
       stroke={strokeColor}
