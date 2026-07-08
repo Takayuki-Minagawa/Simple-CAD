@@ -39,21 +39,26 @@ export function VertexCoordInput({
   value: number;
   onChange: (v: number) => void;
 }) {
-  const [text, setText] = useState(String(Math.round(value)));
-  useEffect(() => {
-    setText(String(Math.round(value)));
-  }, [value]);
+  const displayText = String(Math.round(value));
+  const [draft, setDraft] = useState<{ text: string; dirty: boolean }>({
+    text: '',
+    dirty: false,
+  });
+  const text = draft.dirty ? draft.text : displayText;
   const commit = () => {
+    if (!draft.dirty) return;
     const num = parseFloat(text);
     if (!isNaN(num) && num !== value) onChange(num);
-    else setText(String(Math.round(value)));
+    setDraft({ text: '', dirty: false });
   };
   return (
     <input
       className="prop-input"
       style={{ width: 60, fontSize: 10, padding: '1px 3px' }}
       value={text}
-      onChange={(e) => setText(e.target.value)}
+      onChange={(e) => {
+        setDraft({ text: e.target.value, dirty: true });
+      }}
       onBlur={commit}
       onKeyDown={(e) => e.key === 'Enter' && commit()}
     />

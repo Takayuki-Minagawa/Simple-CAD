@@ -13,6 +13,7 @@ export function cloneSelectionWithTransform(
   data: ProjectData,
   ids: string[],
   pointTransform: (point: Point2D) => Point2D,
+  usedIds = collectAllIds(data),
 ): string[] {
   const selectedIds = new Set(ids);
   const selectedMembers = data.members.filter((member) => selectedIds.has(member.id));
@@ -23,7 +24,6 @@ export function cloneSelectionWithTransform(
   const openingsByMember = collectSelectedOpenings(data.openings, selectedIds);
   const createdIds: string[] = [];
   const memberIdMap = new Map<string, string>();
-  const usedIds = collectAllIds(data);
 
   for (const member of selectedMembers) {
     const clone = deepClone(member);

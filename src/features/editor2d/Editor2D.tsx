@@ -7,7 +7,11 @@ import { MemberLayer } from './layers/MemberLayer';
 import { DimensionLayer } from './layers/DimensionLayer';
 import { AnnotationLayer } from './layers/AnnotationLayer';
 import { DrawPreview } from './DrawPreview';
-import { canCompleteDrawing, useEditorInteraction } from './useEditorInteraction';
+import {
+  canCompleteDrawing,
+  hasActiveDrawingState,
+  useEditorInteraction,
+} from './useEditorInteraction';
 import { CoordinateInputBar, DynamicInput } from './CoordinateInputDialog';
 import { EditorControls2D } from './EditorControls2D';
 import { DrawingGuide } from './DrawingGuide';
@@ -40,6 +44,8 @@ export function Editor2D() {
   } = useEditorInteraction();
 
   const containerRef = useRef<HTMLDivElement>(null);
+  const previousToolRef = useRef(activeTool);
+  const hasActiveDrawing = hasActiveDrawingState(drawState);
 
   const zoomToExtents = useCallback(() => {
     const projectData = useProjectStore.getState().data;
@@ -71,7 +77,7 @@ export function Editor2D() {
   const handleKeyDown = useCallback(
     (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
-        if (drawState.points.length > 0) {
+        if (hasActiveDrawing) {
           resetDrawing();
         } else {
           useEditorStore.getState().setSelectedIds([]);
@@ -122,6 +128,7 @@ export function Editor2D() {
     [
       activeTool,
       completeDrawing,
+      hasActiveDrawing,
       drawState.points.length,
       resetDrawing,
       setActiveTool,
@@ -134,6 +141,12 @@ export function Editor2D() {
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [handleKeyDown]);
+
+  useEffect(() => {
+    if (previousToolRef.current === activeTool) return;
+    previousToolRef.current = activeTool;
+    resetDrawing();
+  }, [activeTool, resetDrawing]);
 
   if (!data) return null;
 

@@ -112,11 +112,12 @@ export function duplicateSelection(
 ): string[] {
   const copyCount = Math.max(1, Math.floor(options.count ?? 1));
   const createdIds: string[] = [];
+  const usedIds = collectAllIds(data);
 
   for (let index = 1; index <= copyCount; index++) {
     const pointTransform = (point: Point2D) =>
       translatePoint(point, options.dx * index, options.dy * index);
-    createdIds.push(...cloneSelectionWithTransform(data, ids, pointTransform));
+    createdIds.push(...cloneSelectionWithTransform(data, ids, pointTransform, usedIds));
   }
 
   return createdIds;

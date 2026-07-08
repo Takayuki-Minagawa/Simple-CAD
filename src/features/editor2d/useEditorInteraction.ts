@@ -57,6 +57,10 @@ export function createEmptyDrawState(): DrawState {
   };
 }
 
+export function hasActiveDrawingState(drawState: DrawState): boolean {
+  return drawState.points.length > 0 || Boolean(drawState.extendMemberId);
+}
+
 export function canCompleteDrawing(tool: EditorTool, pointCount: number): boolean {
   return (tool === 'slab' && pointCount >= 3) || (tool === 'spline' && pointCount >= 2);
 }
