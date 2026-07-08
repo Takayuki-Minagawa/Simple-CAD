@@ -1,24 +1,29 @@
-import type { Point2D, Point3D } from '@/domain/geometry/types';
+import type { Point3D } from '@/domain/geometry/types';
 import type {
   Grid,
   LoadCase,
   Material,
   Member,
-  PlanView,
   ProjectData,
   Section,
-  Sheet,
   Story,
-  View,
 } from '@/domain/structural/types';
 import { validateProject } from '@/domain/validation';
 import type { ValidationError } from '@/domain/validation';
-import Ajv2020 from 'ajv/dist/2020';
 import { pointKey3D } from '@/domain/geometry/precision';
-import { computeMemberSelfWeight } from '@/domain/structural/selfWeight';
-import analysisSchema from '@/schemas/structuralAnalysis.schema.json';
+import { createDefaultSheets, createDefaultViews } from '@/domain/structural/projectDefaults';
+import { nowIsoString } from '@/domain/time';
+import {
+  computeStructuralAnalysisLoads,
+  type StructuralAnalysisLoads,
+} from './structuralAnalysisLoads';
+import { validateStructuralAnalysisModel } from './structuralAnalysisValidation';
 
 export const STRUCTURAL_ANALYSIS_SCHEMA = 'simple-cad.structural-analysis/v1';
+export type {
+  StructuralAnalysisLoads,
+  StructuralAnalysisMemberLoad,
+} from './structuralAnalysisLoads';
 
 export interface StructuralAnalysisMeta {
   source: 'Simple-CAD';
@@ -76,32 +81,6 @@ export interface StructuralAnalysisOpening {
   position: Point3D;
   width: number;
   height: number;
-}
-
-/**
- * Self-weight / superimposed loads derived for a member (2-7). All values are
- * additive and optional so the analysis model stays backward-compatible.
- */
-export interface StructuralAnalysisMemberLoad {
-  memberId: string;
-  memberType: 'column' | 'beam' | 'wall' | 'slab';
-  /** 'distributed' = kN/m along a linear member; 'area' = kN/m² over a slab/wall. */
-  kind: 'distributed' | 'area';
-  /** Load case this contribution belongs to (self-weight is a dead case). */
-  loadType: 'dead' | 'live';
-  /** Source of the load (self-weight vs. superimposed dead/live). */
-  source: 'selfWeight' | 'superimposedDead' | 'live';
-  /** Distributed intensity: kN/m for linear members, kN/m² for areas. */
-  intensity: number;
-  /** Total load over the member in kN (when computable). */
-  total?: number;
-}
-
-export interface StructuralAnalysisLoads {
-  /** Per-member self-weight (auto-computed from material unit weight × section). */
-  selfWeight: StructuralAnalysisMemberLoad[];
-  /** Slab/floor superimposed dead + live area loads (from slab section or story). */
-  areaLoads: StructuralAnalysisMemberLoad[];
 }
 
 export interface StructuralAnalysisModel {
@@ -206,7 +185,7 @@ export function exportStructuralAnalysisModel(data: ProjectData): StructuralAnal
     });
   }
 
-  const loads = computeLoads(data, materialMap);
+  const loads = computeStructuralAnalysisLoads(data, materialMap);
 
   return {
     schema: STRUCTURAL_ANALYSIS_SCHEMA,
@@ -215,7 +194,7 @@ export function exportStructuralAnalysisModel(data: ProjectData): StructuralAnal
       projectId: data.project.id,
       projectName: data.project.name,
       unit: data.project.unit,
-      generatedAt: new Date().toISOString(),
+      generatedAt: nowIsoString(),
     },
     stories: data.stories,
     grids: data.grids,
@@ -229,76 +208,6 @@ export function exportStructuralAnalysisModel(data: ProjectData): StructuralAnal
     ...(loads ? { loads } : {}),
     ...(warnings.length > 0 ? { warnings } : {}),
   };
-}
-
-/**
- * Derive the optional `loads` section (2-7):
- *   - per-member self-weight from material unit weight × section,
- *   - slab superimposed dead + live area loads (slab section overrides story),
- *   - wall self-weight as a panel area load.
- *
- * Returns `undefined` when nothing could be derived so the field is omitted and
- * the model stays backward-compatible.
- */
-function computeLoads(
-  data: ProjectData,
-  materialMap: Map<string, Material>,
-): StructuralAnalysisLoads | undefined {
-  const sectionMap = new Map(data.sections.map((s) => [s.id, s] as const));
-  const storyMap = new Map(data.stories.map((s) => [s.id, s] as const));
-  const selfWeight: StructuralAnalysisMemberLoad[] = [];
-  const areaLoads: StructuralAnalysisMemberLoad[] = [];
-
-  for (const member of data.members) {
-    const section = sectionMap.get(member.sectionId);
-    const material = materialMap.get(member.materialId);
-
-    const sw = computeMemberSelfWeight(member, section, material);
-    if (sw) {
-      selfWeight.push({
-        memberId: sw.memberId,
-        memberType: sw.memberType,
-        kind: sw.kind,
-        loadType: 'dead',
-        source: 'selfWeight',
-        intensity: sw.intensity,
-        total: sw.total,
-      });
-    }
-
-    // Superimposed dead + live area loads for slabs. Slab section values take
-    // precedence over the story-level defaults.
-    if (member.type === 'slab') {
-      const story = storyMap.get(member.story);
-      const slabDead = section && 'deadLoad' in section ? section.deadLoad : undefined;
-      const slabLive = section && 'liveLoad' in section ? section.liveLoad : undefined;
-      const dead = slabDead ?? story?.deadLoad;
-      const live = slabLive ?? story?.liveLoad;
-      if (dead !== undefined) {
-        areaLoads.push({
-          memberId: member.id,
-          memberType: 'slab',
-          kind: 'area',
-          loadType: 'dead',
-          source: 'superimposedDead',
-          intensity: dead,
-        });
-      }
-      if (live !== undefined) {
-        areaLoads.push({
-          memberId: member.id,
-          memberType: 'slab',
-          kind: 'area',
-          loadType: 'live',
-          source: 'live',
-          intensity: live,
-        });
-      }
-    }
-  }
-
-  if (selfWeight.length === 0 && areaLoads.length === 0) return undefined;
-  return { selfWeight, areaLoads };
 }
 
 export function exportStructuralAnalysisJson(data: ProjectData): string {
@@ -318,7 +227,7 @@ export function importStructuralAnalysisJson(
     };
   }
 
-  const validationErrors = validateStructuralAnalysisModel(parsed);
+  const validationErrors = validateStructuralAnalysisModel(parsed, STRUCTURAL_ANALYSIS_SCHEMA);
   if (validationErrors.length > 0) {
     return { ok: false, errors: validationErrors };
   }
@@ -334,52 +243,6 @@ export function importStructuralAnalysisJson(
     data: conversion.project,
     ...(conversion.warnings.length > 0 ? { warnings: conversion.warnings } : {}),
   };
-}
-
-const ajv = new Ajv2020({ allErrors: true });
-const validateAnalysisSchema = ajv.compile(analysisSchema);
-
-/**
- * Validate the structural-analysis JSON with the JSON Schema (3-6) plus
- * reference-integrity checks that schema alone cannot express (every member's
- * node references must resolve to a declared node).
- */
-function validateStructuralAnalysisModel(value: unknown): ValidationError[] {
-  // The schema enforces the unsupported-schema message ordering expectation of
-  // the existing tests, so check the discriminator first for a friendly message.
-  if (isRecord(value) && value.schema !== STRUCTURAL_ANALYSIS_SCHEMA) {
-    return [
-      {
-        level: 'error',
-        message: `Unsupported structural analysis schema: ${String(value.schema)}`,
-        path: '/schema',
-      },
-    ];
-  }
-
-  const valid = validateAnalysisSchema(value);
-  if (!valid) {
-    return (validateAnalysisSchema.errors ?? []).map((e) => ({
-      level: 'error' as const,
-      message: `Schema: ${e.instancePath || '/'} ${e.message ?? 'unknown error'}`,
-      path: e.instancePath || undefined,
-    }));
-  }
-
-  // Reference integrity: node ids referenced by members must exist.
-  const model = value as unknown as StructuralAnalysisModel;
-  const errors: ValidationError[] = [];
-  const nodeIds = new Set(model.nodes.map((n) => n.id));
-  for (const m of model.linearMembers) {
-    if (!nodeIds.has(m.startNodeId)) {
-      errors.push({ level: 'error', message: `linearMember ${m.id} references missing startNode ${m.startNodeId}`, path: `/linearMembers` });
-    }
-    if (!nodeIds.has(m.endNodeId)) {
-      errors.push({ level: 'error', message: `linearMember ${m.id} references missing endNode ${m.endNodeId}`, path: `/linearMembers` });
-    }
-  }
-
-  return errors;
 }
 
 function structuralAnalysisModelToProject(model: StructuralAnalysisModel): {
@@ -409,11 +272,9 @@ function structuralAnalysisModelToProject(model: StructuralAnalysisModel): {
     if (member.type === 'wall') {
       const story = storyMap.get(member.storyId);
       const section = sectionMap.get(member.sectionId);
-      const hasThickness =
-        member.thickness !== undefined || (section && 'thickness' in section);
+      const hasThickness = member.thickness !== undefined || (section && 'thickness' in section);
       const thickness =
-        member.thickness ??
-        (section && 'thickness' in section ? section.thickness : 200);
+        member.thickness ?? (section && 'thickness' in section ? section.thickness : 200);
       if (!hasThickness) {
         warnings.push(`壁 ${member.id} の厚さが不明のため既定値 200mm を使用しました`);
       }
@@ -464,7 +325,9 @@ function structuralAnalysisModelToProject(model: StructuralAnalysisModel): {
       .filter((node): node is StructuralAnalysisNode => Boolean(node))
       .map((node) => ({ x: node.x, y: node.y }));
     if (polygon.length < 3) {
-      warnings.push(`スラブ ${member.id} を取り込めませんでした: 有効な節点が ${polygon.length} 個のみ`);
+      warnings.push(
+        `スラブ ${member.id} を取り込めませんでした: 有効な節点が ${polygon.length} 個のみ`,
+      );
       continue;
     }
 
@@ -506,92 +369,4 @@ function structuralAnalysisModelToProject(model: StructuralAnalysisModel): {
   };
 
   return { project, warnings };
-}
-
-function createDefaultViews(stories: Story[], members: Member[]): View[] {
-  const views: View[] = stories.map((story) => {
-    const extents = computeStoryExtents(story.id, members);
-    return {
-      id: `VIEW-${story.id}-PLAN`,
-      type: 'plan',
-      story: story.id,
-      center: extents.center,
-      width: extents.width,
-      height: extents.height,
-      rotation: 0,
-    } satisfies PlanView;
-  });
-
-  if (stories.length > 0) {
-    views.push({
-      id: 'VIEW-3D-001',
-      type: 'model3d',
-      story: stories[0].id,
-    });
-  }
-
-  return views;
-}
-
-function createDefaultSheets(projectName: string, stories: Story[]): Sheet[] {
-  return stories.map((story, index) => ({
-    id: `S-${String(index + 1).padStart(3, '0')}`,
-    name: `${story.name}平面図`,
-    paperSize: 'A1',
-    scale: '1:100',
-    viewIds: [`VIEW-${story.id}-PLAN`],
-    titleBlockTemplate: 'standard',
-    titleBlock: {
-      projectName,
-      drawingTitle: `${story.name}平面図`,
-      issueDate: new Date().toISOString().slice(0, 10),
-    },
-  }));
-}
-
-function computeStoryExtents(storyId: string, members: Member[]): {
-  center: Point2D;
-  width: number;
-  height: number;
-} {
-  const points: Point2D[] = [];
-  for (const member of members) {
-    if (member.story !== storyId) continue;
-    if (member.type === 'slab') {
-      points.push(...member.polygon);
-      continue;
-    }
-    points.push(
-      { x: member.start.x, y: member.start.y },
-      { x: member.end.x, y: member.end.y },
-    );
-  }
-
-  if (points.length === 0) {
-    return {
-      center: { x: 4000, y: 3000 },
-      width: 14000,
-      height: 11000,
-    };
-  }
-
-  const xs = points.map((point) => point.x);
-  const ys = points.map((point) => point.y);
-  const minX = Math.min(...xs);
-  const maxX = Math.max(...xs);
-  const minY = Math.min(...ys);
-  const maxY = Math.max(...ys);
-
-  return {
-    center: {
-      x: (minX + maxX) / 2,
-      y: (minY + maxY) / 2,
-    },
-    width: Math.max(maxX - minX + 4000, 8000),
-    height: Math.max(maxY - minY + 4000, 6000),
-  };
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null;
 }

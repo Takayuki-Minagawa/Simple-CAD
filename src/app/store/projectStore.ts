@@ -2,24 +2,7 @@ import { create } from 'zustand';
 import { immer } from 'zustand/middleware/immer';
 import { temporal } from 'zundo';
 import { collectAllIds, generateId } from '@/domain/idGenerator';
-import type { Point2D } from '@/domain/geometry/types';
-import type {
-  ProjectData,
-  Member,
-  Annotation,
-  Dimension,
-  Story,
-  Grid,
-  Opening,
-  Material,
-  Section,
-  Sheet,
-  Group,
-  ConstructionLine,
-  ExternalRef,
-  Viewport,
-  LoadCase,
-} from '@/domain/structural/types';
+import type { Group } from '@/domain/structural/types';
 import { applyGridGeometry } from '@/domain/structural/gridResolve';
 import { recomputeAssociativeDimensions } from '@/domain/structural/associativeDimension';
 import {
@@ -30,109 +13,16 @@ import {
   offsetSelection,
   mirrorSelection,
   arraySelection,
-  type StretchSelectionOptions,
-  type ArraySelectionOptions,
 } from '@/domain/structural/editTransform';
-import { trimMember as trimMemberFn, extendMember as extendMemberFn, filletWalls as filletWallsFn } from '@/domain/structural/editTrim';
+import {
+  trimMember as trimMemberFn,
+  extendMember as extendMemberFn,
+  filletWalls as filletWallsFn,
+} from '@/domain/structural/editTrim';
 import { createDefaultPlanView, createDefaultSheet, createEmptyProject } from './projectFactories';
 import { ensureUniqueId, duplicateStoryInProject } from './storyRename';
-
-export interface ProjectState {
-  data: ProjectData | null;
-  isDirty: boolean;
-  fileHandle: FileSystemFileHandle | null;
-
-  // Project operations
-  loadProject: (data: ProjectData) => void;
-  newProject: () => void;
-  setFileHandle: (handle: FileSystemFileHandle | null) => void;
-  markClean: () => void;
-
-  // Member operations
-  addMember: (member: Member) => void;
-  updateMember: (id: string, updates: Partial<Member>) => void;
-  deleteMember: (id: string) => void;
-  moveMember: (id: string, dx: number, dy: number) => void;
-  duplicateMember: (id: string) => string | null;
-  translateEntities: (ids: string[], dx: number, dy: number) => void;
-  duplicateEntities: (ids: string[], dx: number, dy: number, count?: number) => string[];
-  scaleEntities: (ids: string[], origin: Point2D, scaleX: number, scaleY: number) => void;
-  stretchEntities: (ids: string[], options: StretchSelectionOptions) => void;
-  offsetEntities: (ids: string[], distance: number) => string[];
-  mirrorEntities: (ids: string[], axisStart: Point2D, axisEnd: Point2D, copy: boolean) => string[];
-  arrayEntities: (ids: string[], options: ArraySelectionOptions) => string[];
-
-  // Annotation operations
-  addAnnotation: (annotation: Annotation) => void;
-  addAnnotations: (annotations: Annotation[]) => void;
-  updateAnnotation: (id: string, updates: Partial<Annotation>) => void;
-  deleteAnnotation: (id: string) => void;
-
-  // Dimension operations
-  addDimension: (dimension: Dimension) => void;
-  updateDimension: (id: string, updates: Partial<Dimension>) => void;
-  deleteDimension: (id: string) => void;
-
-  // Opening operations
-  addOpening: (opening: Opening) => void;
-  deleteOpening: (id: string) => void;
-
-  // Story operations
-  addStory: (story: Story) => void;
-  updateStory: (id: string, updates: Partial<Story>) => void;
-  duplicateStory: (sourceId: string, story: Story) => string | null;
-
-  // Grid operations
-  addGrid: (grid: Grid) => void;
-  updateGrid: (id: string, updates: Partial<Grid>) => void;
-  deleteGrid: (id: string) => void;
-
-  // Load case operations
-  addLoadCase: (loadCase: LoadCase) => void;
-  updateLoadCase: (id: string, updates: Partial<LoadCase>) => void;
-  deleteLoadCase: (id: string) => void;
-
-  // Master operations
-  addMaterial: (material: Material) => void;
-  updateMaterial: (id: string, updates: Partial<Material>) => void;
-  deleteMaterial: (id: string) => void;
-  addSection: (section: Section) => void;
-  updateSection: (id: string, updates: Partial<Section>) => void;
-  deleteSection: (id: string) => void;
-  addPlanSheet: (storyId: string) => string | null;
-  updateSheet: (id: string, updates: Partial<Sheet>) => void;
-
-  // Trim/Extend operations
-  trimMember: (memberId: string, cutPoint: Point2D, side: 'start' | 'end') => boolean;
-  extendMember: (memberId: string, targetMemberId: string) => boolean;
-  filletWalls: (wallId1: string, wallId2: string, radius?: number) => boolean;
-
-  // Slab vertex editing
-  updateSlabVertex: (memberId: string, vertexIndex: number, point: Point2D) => void;
-  addSlabVertex: (memberId: string, afterIndex: number) => void;
-  removeSlabVertex: (memberId: string, vertexIndex: number) => void;
-
-  // Grouping
-  createGroup: (ids: string[], name: string) => string | null;
-  ungroupSelection: (groupId: string) => void;
-
-  // Construction Lines
-  addConstructionLine: (cl: ConstructionLine) => void;
-  deleteConstructionLine: (id: string) => void;
-
-  // External References
-  addExternalRef: (ref: ExternalRef) => void;
-  removeExternalRef: (id: string) => void;
-  toggleExternalRefVisibility: (id: string) => void;
-
-  // Viewports
-  addViewport: (viewport: Viewport) => void;
-  updateViewport: (id: string, updates: Partial<Viewport>) => void;
-  removeViewport: (id: string) => void;
-
-  // Generic delete by id (from any collection)
-  deleteById: (id: string) => void;
-}
+import type { ProjectState } from './projectStoreTypes';
+import { assignById, removeById } from './projectCollectionMutations';
 
 export const useProjectStore = create<ProjectState>()(
   temporal(
@@ -208,6 +98,7 @@ export const useProjectStore = create<ProjectState>()(
           if (!state.data) return;
           const createdIds = duplicateSelection(state.data, [id], { dx: 0, dy: 0, count: 1 });
           newId = createdIds[0] ?? null;
+          state.data = recomputeAssociativeDimensions(state.data);
           state.isDirty = true;
         });
         return newId;
@@ -226,6 +117,7 @@ export const useProjectStore = create<ProjectState>()(
         set((state) => {
           if (!state.data || ids.length === 0) return;
           createdIds = duplicateSelection(state.data, ids, { dx, dy, count });
+          state.data = recomputeAssociativeDimensions(state.data);
           state.isDirty = true;
         });
         return createdIds;
@@ -235,6 +127,7 @@ export const useProjectStore = create<ProjectState>()(
         set((state) => {
           if (!state.data || ids.length === 0) return;
           scaleSelection(state.data, ids, origin, scaleX, scaleY);
+          state.data = recomputeAssociativeDimensions(state.data);
           state.isDirty = true;
         }),
 
@@ -251,6 +144,7 @@ export const useProjectStore = create<ProjectState>()(
         set((state) => {
           if (!state.data || ids.length === 0) return;
           createdIds = offsetSelection(state.data, ids, distance);
+          state.data = recomputeAssociativeDimensions(state.data);
           state.isDirty = true;
         });
         return createdIds;
@@ -261,6 +155,7 @@ export const useProjectStore = create<ProjectState>()(
         set((state) => {
           if (!state.data || ids.length === 0) return;
           createdIds = mirrorSelection(state.data, ids, axisStart, axisEnd, copy);
+          state.data = recomputeAssociativeDimensions(state.data);
           state.isDirty = true;
         });
         return createdIds;
@@ -271,6 +166,7 @@ export const useProjectStore = create<ProjectState>()(
         set((state) => {
           if (!state.data || ids.length === 0) return;
           createdIds = arraySelection(state.data, ids, options);
+          state.data = recomputeAssociativeDimensions(state.data);
           state.isDirty = true;
         });
         return createdIds;
@@ -295,16 +191,14 @@ export const useProjectStore = create<ProjectState>()(
       updateAnnotation: (id, updates) =>
         set((state) => {
           if (!state.data) return;
-          const idx = state.data.annotations.findIndex((a) => a.id === id);
-          if (idx < 0) return;
-          Object.assign(state.data.annotations[idx], updates);
+          if (!assignById(state.data.annotations, id, updates)) return;
           state.isDirty = true;
         }),
 
       deleteAnnotation: (id) =>
         set((state) => {
           if (!state.data) return;
-          state.data.annotations = state.data.annotations.filter((a) => a.id !== id);
+          state.data.annotations = removeById(state.data.annotations, id);
           state.isDirty = true;
         }),
 
@@ -320,16 +214,14 @@ export const useProjectStore = create<ProjectState>()(
       updateDimension: (id, updates) =>
         set((state) => {
           if (!state.data) return;
-          const idx = state.data.dimensions.findIndex((d) => d.id === id);
-          if (idx < 0) return;
-          Object.assign(state.data.dimensions[idx], updates);
+          if (!assignById(state.data.dimensions, id, updates)) return;
           state.isDirty = true;
         }),
 
       deleteDimension: (id) =>
         set((state) => {
           if (!state.data) return;
-          state.data.dimensions = state.data.dimensions.filter((d) => d.id !== id);
+          state.data.dimensions = removeById(state.data.dimensions, id);
           state.isDirty = true;
         }),
 
@@ -345,7 +237,7 @@ export const useProjectStore = create<ProjectState>()(
       deleteOpening: (id) =>
         set((state) => {
           if (!state.data) return;
-          state.data.openings = state.data.openings.filter((o) => o.id !== id);
+          state.data.openings = removeById(state.data.openings, id);
           state.isDirty = true;
         }),
 
@@ -361,9 +253,7 @@ export const useProjectStore = create<ProjectState>()(
       updateStory: (id, updates) =>
         set((state) => {
           if (!state.data) return;
-          const story = state.data.stories.find((item) => item.id === id);
-          if (!story) return;
-          Object.assign(story, updates);
+          if (!assignById(state.data.stories, id, updates)) return;
           state.isDirty = true;
         }),
 
@@ -404,7 +294,7 @@ export const useProjectStore = create<ProjectState>()(
       deleteGrid: (id) =>
         set((state) => {
           if (!state.data) return;
-          state.data.grids = state.data.grids.filter((item) => item.id !== id);
+          state.data.grids = removeById(state.data.grids, id);
           state.data = recomputeAssociativeDimensions(applyGridGeometry(state.data));
           state.isDirty = true;
         }),
@@ -422,16 +312,14 @@ export const useProjectStore = create<ProjectState>()(
       updateLoadCase: (id, updates) =>
         set((state) => {
           if (!state.data || !state.data.loadCases) return;
-          const loadCase = state.data.loadCases.find((item) => item.id === id);
-          if (!loadCase) return;
-          Object.assign(loadCase, updates);
+          if (!assignById(state.data.loadCases, id, updates)) return;
           state.isDirty = true;
         }),
 
       deleteLoadCase: (id) =>
         set((state) => {
           if (!state.data || !state.data.loadCases) return;
-          state.data.loadCases = state.data.loadCases.filter((item) => item.id !== id);
+          state.data.loadCases = removeById(state.data.loadCases, id);
           state.isDirty = true;
         }),
 
@@ -447,9 +335,7 @@ export const useProjectStore = create<ProjectState>()(
       updateMaterial: (id, updates) =>
         set((state) => {
           if (!state.data) return;
-          const material = state.data.materials.find((item) => item.id === id);
-          if (!material) return;
-          Object.assign(material, updates);
+          if (!assignById(state.data.materials, id, updates)) return;
           state.isDirty = true;
         }),
 
@@ -457,7 +343,7 @@ export const useProjectStore = create<ProjectState>()(
         set((state) => {
           if (!state.data) return;
           if (state.data.members.some((m) => m.materialId === id)) return;
-          state.data.materials = state.data.materials.filter((item) => item.id !== id);
+          state.data.materials = removeById(state.data.materials, id);
           state.isDirty = true;
         }),
 
@@ -471,9 +357,7 @@ export const useProjectStore = create<ProjectState>()(
       updateSection: (id, updates) =>
         set((state) => {
           if (!state.data) return;
-          const section = state.data.sections.find((item) => item.id === id);
-          if (!section) return;
-          Object.assign(section, updates);
+          if (!assignById(state.data.sections, id, updates)) return;
           state.isDirty = true;
         }),
 
@@ -481,7 +365,7 @@ export const useProjectStore = create<ProjectState>()(
         set((state) => {
           if (!state.data) return;
           if (state.data.members.some((m) => m.sectionId === id)) return;
-          state.data.sections = state.data.sections.filter((item) => item.id !== id);
+          state.data.sections = removeById(state.data.sections, id);
           state.isDirty = true;
         }),
 
@@ -505,7 +389,10 @@ export const useProjectStore = create<ProjectState>()(
             state.data.sheets.length + 1,
           );
           nextSheet.id = ensureUniqueId(sheetIds, nextSheet.id);
-          nextSheet.name = ensureUniqueId(new Set(state.data.sheets.map((item) => item.name)), nextSheet.name);
+          nextSheet.name = ensureUniqueId(
+            new Set(state.data.sheets.map((item) => item.name)),
+            nextSheet.name,
+          );
           state.data.sheets.push(nextSheet);
           state.isDirty = true;
           newId = nextSheet.id;
@@ -516,9 +403,7 @@ export const useProjectStore = create<ProjectState>()(
       updateSheet: (id, updates) =>
         set((state) => {
           if (!state.data) return;
-          const sheet = state.data.sheets.find((item) => item.id === id);
-          if (!sheet) return;
-          Object.assign(sheet, updates);
+          if (!assignById(state.data.sheets, id, updates)) return;
           state.isDirty = true;
         }),
 
@@ -529,7 +414,10 @@ export const useProjectStore = create<ProjectState>()(
         set((state) => {
           if (!state.data) return;
           result = trimMemberFn(state.data, memberId, cutPoint, side);
-          if (result) state.isDirty = true;
+          if (result) {
+            state.data = recomputeAssociativeDimensions(state.data);
+            state.isDirty = true;
+          }
         });
         return result;
       },
@@ -539,7 +427,10 @@ export const useProjectStore = create<ProjectState>()(
         set((state) => {
           if (!state.data) return;
           result = extendMemberFn(state.data, memberId, targetMemberId);
-          if (result) state.isDirty = true;
+          if (result) {
+            state.data = recomputeAssociativeDimensions(state.data);
+            state.isDirty = true;
+          }
         });
         return result;
       },
@@ -549,7 +440,10 @@ export const useProjectStore = create<ProjectState>()(
         set((state) => {
           if (!state.data) return;
           result = filletWallsFn(state.data, wallId1, wallId2, radius);
-          if (result) state.isDirty = true;
+          if (result) {
+            state.data = recomputeAssociativeDimensions(state.data);
+            state.isDirty = true;
+          }
         });
         return result;
       },
@@ -563,6 +457,7 @@ export const useProjectStore = create<ProjectState>()(
           if (!member || member.type !== 'slab') return;
           if (vertexIndex < 0 || vertexIndex >= member.polygon.length) return;
           member.polygon[vertexIndex] = { x: point.x, y: point.y };
+          state.data = recomputeAssociativeDimensions(state.data);
           state.isDirty = true;
         }),
 
@@ -579,6 +474,7 @@ export const useProjectStore = create<ProjectState>()(
             y: (member.polygon[afterIndex].y + member.polygon[nextIndex].y) / 2,
           };
           member.polygon.splice(afterIndex + 1, 0, midpoint);
+          state.data = recomputeAssociativeDimensions(state.data);
           state.isDirty = true;
         }),
 
@@ -590,6 +486,7 @@ export const useProjectStore = create<ProjectState>()(
           if (member.polygon.length <= 3) return; // minimum 3 vertices
           if (vertexIndex < 0 || vertexIndex >= member.polygon.length) return;
           member.polygon.splice(vertexIndex, 1);
+          state.data = recomputeAssociativeDimensions(state.data);
           state.isDirty = true;
         }),
 
@@ -628,7 +525,7 @@ export const useProjectStore = create<ProjectState>()(
       deleteConstructionLine: (id) =>
         set((state) => {
           if (!state.data || !state.data.constructionLines) return;
-          state.data.constructionLines = state.data.constructionLines.filter((cl) => cl.id !== id);
+          state.data.constructionLines = removeById(state.data.constructionLines, id);
           state.isDirty = true;
         }),
 
@@ -645,7 +542,7 @@ export const useProjectStore = create<ProjectState>()(
       removeExternalRef: (id) =>
         set((state) => {
           if (!state.data || !state.data.externalRefs) return;
-          state.data.externalRefs = state.data.externalRefs.filter((r) => r.id !== id);
+          state.data.externalRefs = removeById(state.data.externalRefs, id);
           state.isDirty = true;
         }),
 
@@ -707,7 +604,9 @@ export const useProjectStore = create<ProjectState>()(
           state.data.annotations = state.data.annotations.filter((a) => a.id !== id);
           state.data.dimensions = state.data.dimensions.filter((d) => d.id !== id);
           if (state.data.constructionLines) {
-            state.data.constructionLines = state.data.constructionLines.filter((cl) => cl.id !== id);
+            state.data.constructionLines = state.data.constructionLines.filter(
+              (cl) => cl.id !== id,
+            );
           }
           state.isDirty = true;
         }),

@@ -15,6 +15,7 @@ export interface DxfImportResult {
   annotations: Annotation[];
   members: Member[];
   dimensions: Dimension[];
+  autoSections: Section[];
   primitiveCount: number;
   warnings: string[];
 }
@@ -36,17 +37,28 @@ export interface DxfImportOptions {
  */
 export function insUnitsToMm(code: number | undefined): number | null {
   switch (code) {
-    case 1: return 25.4;       // inches
-    case 2: return 304.8;      // feet
-    case 4: return 1;          // millimetres
-    case 5: return 10;         // centimetres
-    case 6: return 1000;       // metres
-    case 7: return 1e6;        // kilometres
-    case 8: return 0.0000254;  // microinches (1µin = 2.54e-5 mm)
-    case 9: return 0.0254;     // mils (1 mil = 0.001 in = 0.0254 mm)
-    case 13: return 1e-6;      // nanometres → mm
-    case 14: return 100;       // decimetres (1 dm = 100 mm)
-    default: return null;      // 0 = unitless / unknown
+    case 1:
+      return 25.4; // inches
+    case 2:
+      return 304.8; // feet
+    case 4:
+      return 1; // millimetres
+    case 5:
+      return 10; // centimetres
+    case 6:
+      return 1000; // metres
+    case 7:
+      return 1e6; // kilometres
+    case 8:
+      return 0.0000254; // microinches (1µin = 2.54e-5 mm)
+    case 9:
+      return 0.0254; // mils (1 mil = 0.001 in = 0.0254 mm)
+    case 13:
+      return 1e-6; // nanometres → mm
+    case 14:
+      return 100; // decimetres (1 dm = 100 mm)
+    default:
+      return null; // 0 = unitless / unknown
   }
 }
 
@@ -72,10 +84,16 @@ function entityExtent(entities: DxfEntity[]): number {
     if (n > max) max = n;
   };
   for (const e of entities) {
-    acc(e.startPoint?.x); acc(e.startPoint?.y);
-    acc(e.endPoint?.x); acc(e.endPoint?.y);
-    acc(e.center?.x); acc(e.center?.y);
-    for (const v of e.vertices ?? []) { acc(v.x); acc(v.y); }
+    acc(e.startPoint?.x);
+    acc(e.startPoint?.y);
+    acc(e.endPoint?.x);
+    acc(e.endPoint?.y);
+    acc(e.center?.x);
+    acc(e.center?.y);
+    for (const v of e.vertices ?? []) {
+      acc(v.x);
+      acc(v.y);
+    }
   }
   if (!Number.isFinite(min)) return 0;
   return max - min;
@@ -85,10 +103,20 @@ function scaleMember(m: Member, s: number): Member {
   if (s === 1) return m;
   const sp = (p: { x: number; y: number; z: number }) => ({ x: p.x * s, y: p.y * s, z: p.z * s });
   if (m.type === 'slab') {
-    return { ...m, polygon: m.polygon.map((p) => ({ x: p.x * s, y: p.y * s })), level: m.level * s };
+    return {
+      ...m,
+      polygon: m.polygon.map((p) => ({ x: p.x * s, y: p.y * s })),
+      level: m.level * s,
+    };
   }
   if (m.type === 'wall') {
-    return { ...m, start: sp(m.start), end: sp(m.end), height: m.height * s, thickness: m.thickness * s };
+    return {
+      ...m,
+      start: sp(m.start),
+      end: sp(m.end),
+      height: m.height * s,
+      thickness: m.thickness * s,
+    };
   }
   return { ...m, start: sp(m.start), end: sp(m.end) };
 }
@@ -137,7 +165,9 @@ export function importDxf(
       if (fromHeader !== null) {
         unitScale = fromHeader;
         if (unitScale !== 1) {
-          warnings.push(`$INSUNITS=${header.insUnits} を検出: 座標を mm に ${unitScale}倍 でスケールしました`);
+          warnings.push(
+            `$INSUNITS=${header.insUnits} を検出: 座標を mm に ${unitScale}倍 でスケールしました`,
+          );
         }
       } else {
         const guess = heuristicUnitScale(entityExtent(entities));
@@ -234,14 +264,13 @@ export function importDxf(
     annotations: scaledAnnotations,
     members: scaledMembers,
     dimensions: scaledDimensions,
+    autoSections: convertGeometry ? scaledSections : [],
     primitiveCount,
     warnings,
-    /** Expose auto-generated sections for the caller to register */
-    ...( convertGeometry ? { _autoSections: scaledSections } : {}),
-  } as DxfImportResult & { _autoSections?: Section[] };
+  };
 }
 
 /** Helper to retrieve auto-generated sections from an import result */
 export function getAutoSections(result: DxfImportResult): Section[] {
-  return (result as DxfImportResult & { _autoSections?: Section[] })._autoSections ?? [];
+  return result.autoSections;
 }

@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import type { Member, ProjectData, Section } from '@/domain/structural/types';
+import { getSlabThickness } from '@/domain/structural/memberShape';
 
 export type SectionMode = 'off' | 'clip' | 'slice' | 'box';
 export type SectionAxis = 'x' | 'y' | 'z';
@@ -45,7 +46,7 @@ export function computeModelExtents(
   for (const member of members) {
     if (member.type === 'slab') {
       const section = sectionMap.get(member.sectionId);
-      const thickness = section && 'thickness' in section ? section.thickness : 180;
+      const thickness = getSlabThickness(section);
       for (const point of member.polygon) {
         xs.push(point.x);
         ys.push(point.y);

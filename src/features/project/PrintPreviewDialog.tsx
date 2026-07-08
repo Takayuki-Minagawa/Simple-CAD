@@ -2,14 +2,7 @@ import { useState, useMemo } from 'react';
 import { useProjectStore } from '@/app/store';
 import { useI18n } from '@/i18n';
 import { exportSvg } from '@/domain/export/svgExport';
-
-const PAPER_SIZES: Record<string, { width: number; height: number }> = {
-  A0: { width: 1189, height: 841 },
-  A1: { width: 841, height: 594 },
-  A2: { width: 594, height: 420 },
-  A3: { width: 420, height: 297 },
-  A4: { width: 297, height: 210 },
-};
+import { getPaperDimensions } from '@/domain/drawing/paper';
 
 interface Props {
   onClose: () => void;
@@ -33,7 +26,7 @@ export function PrintPreviewDialog({ onClose }: Props) {
 
   const sheet = data.sheets.find((s) => s.id === sheetId);
   const viewports = sheet?.viewports ?? [];
-  const paper = sheet ? PAPER_SIZES[sheet.paperSize] ?? PAPER_SIZES.A3 : PAPER_SIZES.A3;
+  const paper = getPaperDimensions(sheet?.paperSize ?? 'A3');
   const aspectRatio = paper.width / paper.height;
 
   // Compute preview dimensions to fit within a max area
@@ -70,12 +63,29 @@ export function PrintPreviewDialog({ onClose }: Props) {
         }}
         onClick={(e) => e.stopPropagation()}
       >
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 12, marginBottom: 12 }}>
+        <div
+          style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'baseline',
+            gap: 12,
+            marginBottom: 12,
+          }}
+        >
           <h3 style={{ margin: 0, fontSize: 16 }}>{t.printPreviewTitle}</h3>
         </div>
 
         <div style={{ marginBottom: 12 }}>
-          <label style={{ display: 'block', marginBottom: 4, fontSize: 12, color: 'var(--text-secondary)' }}>{t.exportSheet}</label>
+          <label
+            style={{
+              display: 'block',
+              marginBottom: 4,
+              fontSize: 12,
+              color: 'var(--text-secondary)',
+            }}
+          >
+            {t.exportSheet}
+          </label>
           <select
             className="prop-select"
             style={{ maxWidth: '100%', width: '100%' }}
@@ -106,14 +116,29 @@ export function PrintPreviewDialog({ onClose }: Props) {
               dangerouslySetInnerHTML={{ __html: svgContent }}
             />
           ) : (
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: '#999' }}>
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                height: '100%',
+                color: '#999',
+              }}
+            >
               {t.printPreviewEmpty}
             </div>
           )}
         </div>
 
         {sheet && (
-          <div style={{ marginTop: 8, fontSize: 11, color: 'var(--text-secondary)', textAlign: 'center' }}>
+          <div
+            style={{
+              marginTop: 8,
+              fontSize: 11,
+              color: 'var(--text-secondary)',
+              textAlign: 'center',
+            }}
+          >
             {sheet.paperSize} &mdash; {sheet.scale}
             {sheet.titleBlock?.drawingTitle ? ` &mdash; ${sheet.titleBlock.drawingTitle}` : ''}
             {viewports.length > 0 && ` | ${viewports.length} viewport(s)`}
@@ -121,7 +146,11 @@ export function PrintPreviewDialog({ onClose }: Props) {
         )}
 
         <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 16 }}>
-          <button className="toolbar-btn" style={{ background: 'var(--border-color)', color: 'var(--text-primary)' }} onClick={onClose}>
+          <button
+            className="toolbar-btn"
+            style={{ background: 'var(--border-color)', color: 'var(--text-primary)' }}
+            onClick={onClose}
+          >
             {t.printPreviewClose}
           </button>
         </div>

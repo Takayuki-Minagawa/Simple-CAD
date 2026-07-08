@@ -59,4 +59,56 @@ describe('projectStore grid/associative wiring', () => {
     expect(beamPts).toContainEqual(updatedDim.start);
     expect(beamPts).toContainEqual(updatedDim.end);
   });
+
+  it('scaleEntities recomputes associative dimensions for transformed members', () => {
+    const store = useProjectStore.getState();
+    const beam = store.data!.members.find((m) => m.type === 'beam')!;
+    const dim = store.data!.dimensions[0];
+    expect(dim).toBeDefined();
+    store.updateDimension(dim.id, { associative: true, refMemberIds: [beam.id] });
+
+    expect(() =>
+      useProjectStore.getState().scaleEntities([beam.id], { x: 0, y: 0 }, 1.5, 1),
+    ).not.toThrow();
+
+    const after = useProjectStore.getState().data!;
+    const scaledBeam = after.members.find((m) => m.id === beam.id)!;
+    const updatedDim = after.dimensions.find((d) => d.id === dim.id)!;
+    const beamPts =
+      scaledBeam.type === 'beam'
+        ? [
+            { x: scaledBeam.start.x, y: scaledBeam.start.y },
+            { x: scaledBeam.end.x, y: scaledBeam.end.y },
+          ]
+        : [];
+    expect(beamPts).toContainEqual(updatedDim.start);
+    expect(beamPts).toContainEqual(updatedDim.end);
+  });
+
+  it('duplicateEntities remaps copied associative dimensions to copied members', () => {
+    const store = useProjectStore.getState();
+    const beam = store.data!.members.find((m) => m.type === 'beam')!;
+    const dim = store.data!.dimensions[0];
+    expect(dim).toBeDefined();
+    store.updateDimension(dim.id, { associative: true, refMemberIds: [beam.id] });
+
+    const createdIds = useProjectStore.getState().duplicateEntities([beam.id, dim.id], 1000, 0);
+
+    const after = useProjectStore.getState().data!;
+    const copiedBeam = after.members.find((member) => createdIds.includes(member.id));
+    const copiedDim = after.dimensions.find((dimension) => createdIds.includes(dimension.id));
+    expect(copiedBeam).toBeDefined();
+    expect(copiedDim).toBeDefined();
+    expect(copiedDim!.refMemberIds).toEqual([copiedBeam!.id]);
+
+    const copiedBeamPts =
+      copiedBeam!.type === 'beam'
+        ? [
+            { x: copiedBeam!.start.x, y: copiedBeam!.start.y },
+            { x: copiedBeam!.end.x, y: copiedBeam!.end.y },
+          ]
+        : [];
+    expect(copiedBeamPts).toContainEqual(copiedDim!.start);
+    expect(copiedBeamPts).toContainEqual(copiedDim!.end);
+  });
 });

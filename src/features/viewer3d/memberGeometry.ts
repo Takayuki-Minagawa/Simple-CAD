@@ -5,6 +5,12 @@ import {
   linearAxisOffsetToWorld,
   slabAxisOffsetToWorld,
 } from '@/domain/structural/eccentricity';
+import {
+  getBeamRectSize,
+  getColumnRectSize,
+  getSlabThickness,
+  getWallThickness,
+} from '@/domain/structural/memberShape';
 
 export type GeometryEngine = 'native' | 'opencascade';
 
@@ -34,7 +40,10 @@ export function isOpenCascadeRuntimeAvailable(): boolean {
   return typeof window !== 'undefined' && Boolean(window.openCascadeGeometryRuntime);
 }
 
-export function buildMemberGeometry(input: GeometryBuildInput, engine: GeometryEngine): THREE.BufferGeometry | null {
+export function buildMemberGeometry(
+  input: GeometryBuildInput,
+  engine: GeometryEngine,
+): THREE.BufferGeometry | null {
   if (engine === 'opencascade') {
     const geometry = buildWithOpenCascadeRuntime(input);
     if (geometry) return geometry;
@@ -68,7 +77,11 @@ function buildWithOpenCascadeRuntime(input: GeometryBuildInput): THREE.BufferGeo
   return geometry;
 }
 
-function buildNativeGeometry({ member, section, openings }: GeometryBuildInput): THREE.BufferGeometry | null {
+function buildNativeGeometry({
+  member,
+  section,
+  openings,
+}: GeometryBuildInput): THREE.BufferGeometry | null {
   switch (member.type) {
     case 'column':
       return buildColumnGeometry(member, section);
@@ -97,8 +110,7 @@ function buildColumnGeometry(
   member: Member & { type: 'column' },
   section: Section | undefined,
 ): THREE.BufferGeometry {
-  const width = section && 'width' in section ? section.width : 600;
-  const depth = section && 'depth' in section ? section.depth : 600;
+  const { width, depth } = getColumnRectSize(section);
   const height = Math.max(Math.abs(member.end.z - member.start.z), 1);
   const geometry = new THREE.BoxGeometry(width, depth, height);
   // Apply member.rotation (radians, CCW about the vertical Z axis) so the 3D
@@ -120,8 +132,7 @@ function buildBeamGeometry(
   member: Member & { type: 'beam' },
   section: Section | undefined,
 ): THREE.BufferGeometry | null {
-  const width = section && 'width' in section ? section.width : 300;
-  const depth = section && 'depth' in section ? section.depth : 600;
+  const { width, depth } = getBeamRectSize(section);
   const start = new THREE.Vector3(member.start.x, member.start.y, member.start.z);
   const end = new THREE.Vector3(member.end.x, member.end.y, member.end.z);
   const direction = new THREE.Vector3().subVectors(end, start);
@@ -150,7 +161,7 @@ function buildWallGeometry(
   section: Section | undefined,
   openings: Opening[],
 ): THREE.BufferGeometry | null {
-  const thickness = section && 'thickness' in section ? section.thickness : member.thickness;
+  const thickness = getWallThickness(member, section);
   const start = new THREE.Vector3(member.start.x, member.start.y, member.start.z);
   const end = new THREE.Vector3(member.end.x, member.end.y, member.end.z);
   const direction = new THREE.Vector3().subVectors(end, start);
@@ -225,7 +236,7 @@ function buildSlabGeometry(
   openings: Opening[],
 ): THREE.BufferGeometry | null {
   if (member.polygon.length < 3) return null;
-  const thickness = section && 'thickness' in section ? section.thickness : 180;
+  const thickness = getSlabThickness(section);
 
   const shape = new THREE.Shape();
   shape.moveTo(member.polygon[0].x, member.polygon[0].y);

@@ -1,4 +1,5 @@
 import type { ProjectData } from '@/domain/structural/types';
+import { todayIsoDate } from '@/domain/time';
 
 export interface DrawingTemplate {
   key: string;
@@ -56,7 +57,7 @@ function createA1StructureTemplate(): ProjectData {
         titleBlock: {
           projectName: 'Structure Project',
           drawingTitle: '1F Plan',
-          issueDate: new Date().toISOString().slice(0, 10),
+          issueDate: todayIsoDate(),
         },
       },
     ],
@@ -105,7 +106,7 @@ function createA3DetailTemplate(): ProjectData {
         titleBlock: {
           projectName: 'Detail Drawing',
           drawingTitle: 'Detail',
-          issueDate: new Date().toISOString().slice(0, 10),
+          issueDate: todayIsoDate(),
         },
       },
     ],

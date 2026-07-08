@@ -1,4 +1,5 @@
 import type { ProjectData, PlanView, Sheet } from '@/domain/structural/types';
+import { todayIsoDate } from '@/domain/time';
 
 export function createDefaultPlanView(storyId: string): PlanView {
   return {
@@ -12,7 +13,12 @@ export function createDefaultPlanView(storyId: string): PlanView {
   };
 }
 
-export function createDefaultSheet(projectName: string, storyId: string, viewId: string, index = 1): Sheet {
+export function createDefaultSheet(
+  projectName: string,
+  storyId: string,
+  viewId: string,
+  index = 1,
+): Sheet {
   return {
     id: `S-${String(index).padStart(3, '0')}`,
     name: `${storyId}平面図`,
@@ -23,7 +29,7 @@ export function createDefaultSheet(projectName: string, storyId: string, viewId:
     titleBlock: {
       projectName,
       drawingTitle: `${storyId}平面図`,
-      issueDate: new Date().toISOString().slice(0, 10),
+      issueDate: todayIsoDate(),
     },
   };
 }

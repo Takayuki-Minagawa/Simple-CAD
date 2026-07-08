@@ -7,12 +7,18 @@ import { MemberLayer } from './layers/MemberLayer';
 import { DimensionLayer } from './layers/DimensionLayer';
 import { AnnotationLayer } from './layers/AnnotationLayer';
 import { DrawPreview } from './DrawPreview';
-import { canCompleteDrawing, useEditorInteraction } from './useEditorInteraction';
+import {
+  canCompleteDrawing,
+  hasActiveDrawingState,
+  useEditorInteraction,
+} from './useEditorInteraction';
 import { CoordinateInputBar, DynamicInput } from './CoordinateInputDialog';
 import { EditorControls2D } from './EditorControls2D';
 import { DrawingGuide } from './DrawingGuide';
 import { SelectionHandles } from './SelectionHandles';
 import { getAllEntityBounds, getSelectionBounds } from '@/domain/structural/editTransform';
+import { ConstructionLineLayer } from './layers/ConstructionLineLayer';
+import { ExternalRefLayer } from './layers/ExternalRefLayer';
 
 export function Editor2D() {
   const data = useProjectStore((s) => s.data);
@@ -38,6 +44,8 @@ export function Editor2D() {
   } = useEditorInteraction();
 
   const containerRef = useRef<HTMLDivElement>(null);
+  const previousToolRef = useRef(activeTool);
+  const hasActiveDrawing = hasActiveDrawingState(drawState);
 
   const zoomToExtents = useCallback(() => {
     const projectData = useProjectStore.getState().data;
@@ -69,7 +77,7 @@ export function Editor2D() {
   const handleKeyDown = useCallback(
     (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
-        if (drawState.points.length > 0) {
+        if (hasActiveDrawing) {
           resetDrawing();
         } else {
           useEditorStore.getState().setSelectedIds([]);
@@ -78,7 +86,12 @@ export function Editor2D() {
       }
       if (e.key === 'Enter') {
         const target = e.target as HTMLElement;
-        if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT') return;
+        if (
+          target.tagName === 'INPUT' ||
+          target.tagName === 'TEXTAREA' ||
+          target.tagName === 'SELECT'
+        )
+          return;
         if (canCompleteDrawing(activeTool, drawState.points.length)) {
           e.preventDefault();
           completeDrawing();
@@ -98,7 +111,12 @@ export function Editor2D() {
       // Z = Zoom extents, Shift+Z = Zoom to selection
       if ((e.key === 'z' || e.key === 'Z') && !e.ctrlKey && !e.metaKey && !e.altKey) {
         const target = e.target as HTMLElement;
-        if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT') return;
+        if (
+          target.tagName === 'INPUT' ||
+          target.tagName === 'TEXTAREA' ||
+          target.tagName === 'SELECT'
+        )
+          return;
 
         if (e.shiftKey) {
           zoomToSelection();
@@ -107,7 +125,16 @@ export function Editor2D() {
         }
       }
     },
-    [activeTool, completeDrawing, drawState.points.length, resetDrawing, setActiveTool, zoomToExtents, zoomToSelection],
+    [
+      activeTool,
+      completeDrawing,
+      hasActiveDrawing,
+      drawState.points.length,
+      resetDrawing,
+      setActiveTool,
+      zoomToExtents,
+      zoomToSelection,
+    ],
   );
 
   useEffect(() => {
@@ -115,17 +142,19 @@ export function Editor2D() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [handleKeyDown]);
 
+  useEffect(() => {
+    if (previousToolRef.current === activeTool) return;
+    previousToolRef.current = activeTool;
+    resetDrawing();
+  }, [activeTool, resetDrawing]);
+
   if (!data) return null;
 
-  const filteredMembers = data.members.filter(
-    (m) => !activeStory || m.story === activeStory,
-  );
+  const filteredMembers = data.members.filter((m) => !activeStory || m.story === activeStory);
   const filteredAnnotations = data.annotations.filter(
     (a) => !activeStory || a.story === activeStory,
   );
-  const filteredDimensions = data.dimensions.filter(
-    (d) => !activeStory || d.story === activeStory,
-  );
+  const filteredDimensions = data.dimensions.filter((d) => !activeStory || d.story === activeStory);
   const filteredConstructionLines = (data.constructionLines ?? []).filter(
     (cl) => !activeStory || cl.story === activeStory,
   );
@@ -136,7 +165,10 @@ export function Editor2D() {
   const isDrawingTool = isCreationTool(activeTool);
 
   // Last point for coordinate input (relative coordinates)
-  const lastPoint = drawState.points.length > 0 ? drawState.points[drawState.points.length - 1] : null;
+  const lastPoint =
+    drawState.points.length > 0 ? drawState.points[drawState.points.length - 1] : null;
+  const guidePointCount =
+    activeTool === 'extend' && drawState.extendMemberId ? 1 : drawState.points.length;
 
   // Selection rectangle overlay (in screen coordinates)
   let selectionRectOverlay: React.ReactNode = null;
@@ -163,14 +195,17 @@ export function Editor2D() {
   }
 
   return (
-    <div ref={containerRef} style={{ display: 'flex', flexDirection: 'column', height: '100%', position: 'relative' }}>
+    <div
+      ref={containerRef}
+      style={{ display: 'flex', flexDirection: 'column', height: '100%', position: 'relative' }}
+    >
       <div className="editor-canvas-overlay">
         <EditorControls2D
           canZoomSelection={selectedIds.length > 0}
           onZoomExtents={zoomToExtents}
           onZoomSelection={zoomToSelection}
         />
-        <DrawingGuide activeTool={activeTool} pointCount={drawState.points.length} />
+        <DrawingGuide activeTool={activeTool} pointCount={guidePointCount} />
       </div>
       <div style={{ flex: 1, overflow: 'hidden', position: 'relative' }}>
         <SvgCanvas
@@ -181,7 +216,10 @@ export function Editor2D() {
           onWorldMouseUp={handleMouseUp}
         >
           {isVisible('grid') && <GridLayer grids={data.grids} extent={10000} />}
-          {isVisible('member-slab') || isVisible('member-wall') || isVisible('member-beam') || isVisible('member-column') ? (
+          {isVisible('member-slab') ||
+          isVisible('member-wall') ||
+          isVisible('member-beam') ||
+          isVisible('member-column') ? (
             <MemberLayer
               members={filteredMembers.filter((m) => isVisible(`member-${m.type}`))}
               sections={data.sections}
@@ -196,63 +234,9 @@ export function Editor2D() {
             <AnnotationLayer annotations={filteredAnnotations} selectedIds={selectedIds} />
           )}
           {isVisible('construction') && filteredConstructionLines.length > 0 && (
-            <g className="layer-construction">
-              {filteredConstructionLines.map((cl) => {
-                // Extend construction line to very large bounds
-                const ext = 500000;
-                if (cl.type === 'xline') {
-                  return (
-                    <line
-                      key={cl.id}
-                      data-id={cl.id}
-                      x1={cl.origin.x - cl.direction.x * ext}
-                      y1={cl.origin.y - cl.direction.y * ext}
-                      x2={cl.origin.x + cl.direction.x * ext}
-                      y2={cl.origin.y + cl.direction.y * ext}
-                      stroke="var(--color-annotation)"
-                      strokeWidth={10}
-                      strokeDasharray="80 60"
-                      opacity={0.5}
-                    />
-                  );
-                }
-                // ray: origin to +direction
-                return (
-                  <line
-                    key={cl.id}
-                    data-id={cl.id}
-                    x1={cl.origin.x}
-                    y1={cl.origin.y}
-                    x2={cl.origin.x + cl.direction.x * ext}
-                    y2={cl.origin.y + cl.direction.y * ext}
-                    stroke="var(--color-annotation)"
-                    strokeWidth={10}
-                    strokeDasharray="80 60"
-                    opacity={0.5}
-                  />
-                );
-              })}
-            </g>
+            <ConstructionLineLayer constructionLines={filteredConstructionLines} />
           )}
-          {/* External reference overlay */}
-          {data.externalRefs?.map((ref) => {
-            if (!ref.visible) return null;
-            const refMembers = ref.data.members;
-            return (
-              <g key={ref.id} transform={`translate(${ref.offsetX}, ${ref.offsetY})`} opacity={0.35} style={{ pointerEvents: 'none' }}>
-                {refMembers.map((m) => {
-                  if (m.type === 'slab') {
-                    const pts = m.polygon.map((p) => `${p.x},${p.y}`).join(' ');
-                    return <polygon key={m.id} points={pts} fill="none" stroke="#999" strokeWidth={15} />;
-                  }
-                  if ('start' in m && 'end' in m) {
-                    return <line key={m.id} x1={m.start.x} y1={m.start.y} x2={m.end.x} y2={m.end.y} stroke="#999" strokeWidth={15} />;
-                  }
-                  return null;
-                })}
-              </g>
-            );
-          })}
+          <ExternalRefLayer refs={data.externalRefs ?? []} />
           {activeTool === 'select' && <SelectionHandles />}
           <DrawPreview drawState={drawState} activeTool={activeTool} ghostPoint={ghostPoint} />
           {selectionRectOverlay}
