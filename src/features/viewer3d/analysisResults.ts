@@ -1,10 +1,8 @@
-import {
-  JOINT_MERGE_TOLERANCE,
-  SpatialPointIndex3D,
-} from '@/domain/geometry/precision';
+import { JOINT_MERGE_TOLERANCE, SpatialPointIndex3D } from '@/domain/geometry/precision';
 import type {
   AnalysisMemberResult,
   AnalysisNodeDisplacement,
+  Member,
 } from '@/domain/structural/types';
 import type { Point3D } from '@/domain/geometry/types';
 
@@ -20,6 +18,26 @@ export function buildDisplacementMap(
     index.insert(displacement.position, displacement);
   }
   return index;
+}
+
+/** Keep result markers only for nodes belonging to the currently visible members. */
+export function filterNodeDisplacementsForMembers(
+  displacements: AnalysisNodeDisplacement[] | undefined,
+  members: Member[],
+): AnalysisNodeDisplacement[] {
+  if (!displacements || members.length === 0) return [];
+  const nodes = new SpatialPointIndex3D<boolean>(JOINT_MERGE_TOLERANCE);
+  for (const member of members) {
+    if (member.type === 'slab') {
+      for (const point of member.polygon) {
+        nodes.insert({ ...point, z: member.level }, true);
+      }
+    } else {
+      nodes.insert(member.start, true);
+      nodes.insert(member.end, true);
+    }
+  }
+  return displacements.filter((displacement) => nodes.find(displacement.position));
 }
 
 export function displacePoint(

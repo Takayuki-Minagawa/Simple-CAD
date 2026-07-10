@@ -61,17 +61,65 @@ describe('structuralAnalysisJson', () => {
     if (result.ok) expect(result.data.materials).toEqual([woodMaterial]);
   });
 
-  it('rejects mixed material-family properties in structural JSON', () => {
+  it('migrates legacy mixed-family material properties and poissonRatio 0.5', () => {
     const model = exportStructuralAnalysisModel(sampleProject as ProjectData);
     model.materials = [{
       ...model.materials[0],
       type: 'concrete',
       Fc: 24,
       Fy: 235,
+      poissonRatio: 0.5,
     } as unknown as ProjectData['materials'][number]];
 
     const result = importStructuralAnalysisJson(JSON.stringify(model));
-    expect(result.ok).toBe(false);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data.materials[0]).toMatchObject({
+      type: 'concrete',
+      Fc: 24,
+      poissonRatio: 0.499999,
+    });
+    expect(result.data.materials[0]).not.toHaveProperty('Fy');
+  });
+
+  it('bakes face alignment into the v1 axis offset without double-applying it', () => {
+    const base = sampleProject as ProjectData;
+    const sourceBeam = base.members.find((member) => member.type === 'beam')!;
+    const project: ProjectData = {
+      ...base,
+      members: base.members.map((member) =>
+        member.id === sourceBeam.id
+          ? {
+              ...member,
+              axisOffset: { dx: 25, dy: 10 },
+              faceAlign: 'left' as const,
+            }
+          : member,
+      ),
+    };
+
+    const model = exportStructuralAnalysisModel(project);
+    const exported = model.linearMembers.find((member) => member.id === sourceBeam.id)!;
+    // 25mm explicit offset + half the 300mm beam width. No new v1 fields are
+    // emitted, so existing strict structural-analysis consumers remain valid.
+    expect(exported.axisOffset).toEqual({ dx: 175, dy: 10 });
+    expect(exported).not.toHaveProperty('faceAlign');
+    expect(exported).not.toHaveProperty('effectiveAxisOffset');
+
+    const imported = importStructuralAnalysisJson(JSON.stringify(model));
+    expect(imported.ok).toBe(true);
+    if (!imported.ok) return;
+    expect(imported.data.members.find((member) => member.id === sourceBeam.id)).toMatchObject({
+      axisOffset: { dx: 175, dy: 10 },
+    });
+
+    // Re-exporting proves the baked value remains stable rather than applying
+    // face alignment a second time.
+    expect(
+      exportStructuralAnalysisModel(imported.data).linearMembers.find(
+        (member) => member.id === sourceBeam.id,
+      )?.axisOffset,
+    ).toEqual({ dx: 175, dy: 10 });
   });
 
   it('rejects unsupported schemas', () => {

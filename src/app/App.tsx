@@ -350,7 +350,9 @@ export function App() {
               <button
                 className="toolbar-btn"
                 onClick={() => {
-                  void clearAutosave().catch((error) => setStorageWarning(String(error)));
+                  void clearAutosave(recovery.key).catch((error) =>
+                    setStorageWarning(String(error)),
+                  );
                   setRecoveryErrors([]);
                   setRecovery(null);
                 }}
@@ -376,6 +378,9 @@ export function App() {
                   className="toolbar-btn"
                   style={{ background: 'var(--accent)', color: '#fff' }}
                   onClick={() => {
+                    void clearAutosave(recovery.key).catch((error) =>
+                      setStorageWarning(String(error)),
+                    );
                     loadProject(recovery.data);
                     const recoveredRevision = useProjectStore.getState().currentRevision;
                     useProjectStore.setState({

@@ -27,6 +27,9 @@ import { validateGeometry, validateReferences } from '@/domain/validation';
 import { normalizeProjectCoordinates } from '@/domain/geometry/projectCoordinates';
 import { createDefaultSheets, createDefaultViews } from '@/domain/structural/projectDefaults';
 import { nowIsoString } from '@/domain/time';
+import { migrateLegacyMaterials } from '@/domain/migration';
+import { effectiveLinearAxisOffset } from '@/domain/structural/eccentricity';
+import { getBeamRectSize, getWallThickness } from '@/domain/structural/memberShape';
 import {
   computeStructuralAnalysisLoads,
   type StructuralAnalysisLoads,
@@ -68,10 +71,10 @@ export interface StructuralAnalysisLinearMember {
   rotation?: number;
   tags?: string[];
   /**
-   * Axis-line eccentricity in member-local coordinates (mm), passed through so
-   * the analysis model can offset the member axis from the drawn centreline
-   * (2-6). Only emitted when the source member declares an offset, so members
-   * without eccentricity stay byte-identical to before.
+   * Effective axis-line eccentricity in member-local coordinates (mm). For
+   * beams and walls this includes Simple-CAD's face-alignment shift. Baking it
+   * into the existing v1 field preserves compatibility with v1 consumers and
+   * preserves physical placement when imported again.
    */
   axisOffset?: { dx: number; dy: number };
   releases?: Member['releases'];
@@ -239,6 +242,15 @@ export function exportStructuralAnalysisModel(data: ProjectData): StructuralAnal
       warnings.push(`部材 ${member.id} は節点統合許容差 ${JOINT_MERGE_TOLERANCE}mm 内で長さ0となるためスキップしました`);
       continue;
     }
+    const effectiveAxisOffset =
+      member.type === 'column'
+        ? member.axisOffset
+        : effectiveLinearAxisOffset(
+            member,
+            member.type === 'beam'
+              ? getBeamRectSize(section).width
+              : getWallThickness(member, section),
+          );
     linearMembers.push({
       id: member.id,
       type: member.type,
@@ -251,9 +263,9 @@ export function exportStructuralAnalysisModel(data: ProjectData): StructuralAnal
       thickness: member.type === 'wall' ? member.thickness : undefined,
       rotation: member.rotation,
       tags: member.tags,
-      // Pass member-local eccentricity through only when present so members
-      // without an offset stay byte-identical to the previous output (2-6).
-      ...(member.axisOffset ? { axisOffset: member.axisOffset } : {}),
+      // Structural-analysis v1 already defines axisOffset. Bake face alignment
+      // into that field rather than adding v1-incompatible properties.
+      ...(effectiveAxisOffset ? { axisOffset: effectiveAxisOffset } : {}),
       ...(member.releases ? { releases: member.releases } : {}),
       ...(member.rigidZones ? { rigidZones: member.rigidZones } : {}),
       ...(member.localAxis ? { localAxis: member.localAxis } : {}),
@@ -369,6 +381,9 @@ export function importStructuralAnalysisJson(
     };
   }
 
+  // Structural-analysis v1 predates the discriminated material schema. Apply
+  // the same pure compatibility pass as project JSON before strict validation.
+  parsed = migrateLegacyMaterials(parsed);
   const validationErrors = validateStructuralAnalysisModel(parsed, STRUCTURAL_ANALYSIS_SCHEMA);
   if (validationErrors.length > 0) {
     return { ok: false, errors: validationErrors };

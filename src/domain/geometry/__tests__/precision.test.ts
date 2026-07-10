@@ -13,6 +13,7 @@ import {
   GEOM_EPSILON,
   SpatialPointIndex3D,
   JOINT_MERGE_TOLERANCE,
+  radiansToDisplayDegrees,
 } from '../precision';
 
 describe('quantize', () => {
@@ -33,6 +34,14 @@ describe('quantize', () => {
   it('passes through non-finite values unchanged', () => {
     expect(quantize(Infinity)).toBe(Infinity);
     expect(Number.isNaN(quantize(NaN))).toBe(true);
+  });
+});
+
+describe('radiansToDisplayDegrees', () => {
+  it('hides radian-storage quantization noise at a practical UI precision', () => {
+    expect(radiansToDisplayDegrees(0.523599)).toBe(30);
+    expect(radiansToDisplayDegrees(-0.785398)).toBe(-45);
+    expect(radiansToDisplayDegrees(Math.PI / 7)).toBe(25.7143);
   });
 });
 
@@ -82,11 +91,29 @@ describe('SpatialPointIndex3D', () => {
 
     expect(index.find({ x: 0.8, y: 0.8, z: 0 })).toBeUndefined();
   });
+
+  it('returns every tolerance match even when proximity is non-transitive', () => {
+    const index = new SpatialPointIndex3D<string>(1);
+    index.insert({ x: 0, y: 0, z: 0 }, 'left');
+    index.insert({ x: 0.9, y: 0, z: 0 }, 'center');
+    index.insert({ x: 1.8, y: 0, z: 0 }, 'right');
+
+    expect(index.findAll({ x: 0.9, y: 0, z: 0 }).sort()).toEqual([
+      'center',
+      'left',
+      'right',
+    ]);
+  });
 });
 
 describe('segmentIntersection', () => {
   it('finds a crossing inside both segments', () => {
-    const r = segmentIntersection({ x: 0, y: 0 }, { x: 10, y: 10 }, { x: 0, y: 10 }, { x: 10, y: 0 });
+    const r = segmentIntersection(
+      { x: 0, y: 0 },
+      { x: 10, y: 10 },
+      { x: 0, y: 10 },
+      { x: 10, y: 0 },
+    );
     expect(r).not.toBeNull();
     expect(r!.point).toEqual({ x: 5, y: 5 });
   });

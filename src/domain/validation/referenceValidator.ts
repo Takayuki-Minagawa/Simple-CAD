@@ -1,6 +1,6 @@
 import type { MemberType, Section, ProjectData } from '@/domain/structural/types';
 import type { Point3D } from '@/domain/geometry/types';
-import { JOINT_MERGE_TOLERANCE } from '@/domain/geometry/precision';
+import { JOINT_MERGE_TOLERANCE, SpatialPointIndex3D } from '@/domain/geometry/precision';
 import type { ValidationError, ValidationResult } from './types';
 
 /** Section kinds each member.type may reference (joint/consistency mapping). */
@@ -30,11 +30,7 @@ export function validateReferences(data: ProjectData): ValidationResult {
   }
   const analysisNodesByStory = collectAnalysisNodesByStory(data);
   const isConnectedPoint = (storyId: string, point: Point3D) =>
-    (analysisNodesByStory.get(storyId) ?? []).some(
-      (node) =>
-        Math.hypot(node.x - point.x, node.y - point.y, node.z - point.z) <=
-        JOINT_MERGE_TOLERANCE,
-    );
+    analysisNodesByStory.get(storyId)?.find(point) === true;
 
   // Check ID uniqueness within each collection
   checkUniqueness(data.stories.map((s) => s.id), 'stories', errors);
@@ -406,11 +402,13 @@ export function validateReferences(data: ProjectData): ValidationResult {
   return { ok: errors.every((e) => e.level !== 'error'), errors };
 }
 
-function collectAnalysisNodesByStory(data: ProjectData): Map<string, Point3D[]> {
-  const nodes = new Map<string, Point3D[]>();
+function collectAnalysisNodesByStory(
+  data: ProjectData,
+): Map<string, SpatialPointIndex3D<boolean>> {
+  const nodes = new Map<string, SpatialPointIndex3D<boolean>>();
   const add = (storyId: string, point: Point3D) => {
-    const storyNodes = nodes.get(storyId) ?? [];
-    storyNodes.push(point);
+    const storyNodes = nodes.get(storyId) ?? new SpatialPointIndex3D<boolean>(JOINT_MERGE_TOLERANCE);
+    storyNodes.insert(point, true);
     nodes.set(storyId, storyNodes);
   };
   for (const member of data.members) {

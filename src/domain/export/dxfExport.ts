@@ -112,7 +112,7 @@ export function exportDxf(data: ProjectData, storyId: string, warnings: string[]
 
   // Dimensions (decomposed to lines + text)
   const dimensions = data.dimensions.filter((d) => d.story === storyId);
-  for (const d of dimensions) {
+  for (const [dimensionIndex, d] of dimensions.entries()) {
     const dir = normalize2D(sub2D(d.end, d.start));
     const perp = perpendicular2D(dir);
     const s = { x: d.start.x + perp.x * d.offset, y: d.start.y + perp.y * d.offset };
@@ -126,7 +126,7 @@ export function exportDxf(data: ProjectData, storyId: string, warnings: string[]
     const text = d.text ?? len.toFixed(0);
     const mid = { x: (s.x + e.x) / 2, y: (s.y + e.y) / 2 };
     addText(lines, 'DIMENSION', mid.x, mid.y, 250, text);
-    addDimensionMetadata(lines, d, mid.x, mid.y);
+    addDimensionMetadata(lines, d, mid.x, mid.y, dimensionIndex + 1);
   }
 
   // Annotations
@@ -241,9 +241,15 @@ function addDimensionMetadata(
   dimension: ProjectData['dimensions'][number],
   lineX: number,
   lineY: number,
+  anonymousBlockIndex: number,
 ) {
   lines.push('0', 'DIMENSION');
   lines.push('8', 'SIMPLECAD_META');
+  // Group 2 (anonymous block name) and group 70 (dimension type) are required
+  // by strict DXF readers even though this hidden entity only carries our
+  // round-trip metadata; visible dimension graphics are emitted above.
+  lines.push('2', `*D${anonymousBlockIndex}`);
+  lines.push('70', '0');
   lines.push('10', fmt(lineX), '20', fmt(lineY), '30', '0');
   lines.push('13', fmt(dimension.start.x), '23', fmt(dimension.start.y), '33', '0');
   lines.push('14', fmt(dimension.end.x), '24', fmt(dimension.end.y), '34', '0');

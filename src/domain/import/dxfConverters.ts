@@ -126,12 +126,16 @@ export class SectionRegistry {
   private sections = new Map<string, Section>();
 
   getWallSection(thickness: number): Section {
-    const key = `rc_wall:${thickness}`;
+    // DXF coordinates often carry tiny floating-point noise after rotation or
+    // unit scaling. Match beam/column behaviour so visually identical walls do
+    // not create duplicate master sections such as 200 and 200.00000036 mm.
+    const roundedThickness = Math.round(thickness);
+    const key = `rc_wall:${roundedThickness}`;
     if (!this.sections.has(key)) {
       this.sections.set(key, {
-        id: `SEC-DXF-WALL-${thickness}`,
+        id: `SEC-DXF-WALL-${roundedThickness}`,
         kind: 'rc_wall',
-        thickness,
+        thickness: roundedThickness,
       });
     }
     return this.sections.get(key)!;
@@ -232,7 +236,7 @@ function createWallMember(
     start: { x: start.x, y: start.y, z: start.z ?? 0 },
     end: { x: end.x, y: end.y, z: end.z ?? 0 },
     height: DEFAULT_STORY_HEIGHT,
-    thickness,
+    thickness: Math.round(thickness),
   };
 }
 
@@ -429,11 +433,11 @@ function applyDxfMemberMetadata(
       ...(axisOffset ? { axisOffset } : {}),
       ...(faceAlign ? { faceAlign } : {}),
       ...(isLocalAxis(metadata.localAxis) ? { localAxis: metadata.localAxis } : {}),
-      ...(isRecord(metadata.releases)
-        ? { releases: metadata.releases as unknown as NonNullable<Member['releases']> }
+      ...(isMemberReleases(metadata.releases)
+        ? { releases: metadata.releases }
         : {}),
-      ...(isRecord(metadata.rigidZones)
-        ? { rigidZones: metadata.rigidZones as unknown as NonNullable<Member['rigidZones']> }
+      ...(isRigidZones(metadata.rigidZones)
+        ? { rigidZones: metadata.rigidZones }
         : {}),
     };
   });
@@ -526,6 +530,35 @@ function isLocalAxis(value: unknown): value is NonNullable<Member['localAxis']> 
             Number.isFinite((value.referenceVector as Record<string, unknown>)[axis]),
         )))
   );
+}
+
+const DOF_KEYS = ['ux', 'uy', 'uz', 'rx', 'ry', 'rz'] as const;
+
+function hasOnlyKeys(value: Record<string, unknown>, allowed: readonly string[]): boolean {
+  return Object.keys(value).every((key) => allowed.includes(key));
+}
+
+function isDofRelease(value: unknown): value is NonNullable<Member['releases']>['start'] {
+  return (
+    isRecord(value) &&
+    hasOnlyKeys(value, DOF_KEYS) &&
+    Object.values(value).every((release) => typeof release === 'boolean')
+  );
+}
+
+function isMemberReleases(value: unknown): value is NonNullable<Member['releases']> {
+  if (!isRecord(value) || !hasOnlyKeys(value, ['start', 'end'])) return false;
+  return ['start', 'end'].every(
+    (end) => value[end] === undefined || isDofRelease(value[end]),
+  );
+}
+
+function isRigidZones(value: unknown): value is NonNullable<Member['rigidZones']> {
+  if (!isRecord(value) || !hasOnlyKeys(value, ['start', 'end'])) return false;
+  return ['start', 'end'].every((end) => {
+    const length = value[end];
+    return length === undefined || (typeof length === 'number' && Number.isFinite(length) && length >= 0);
+  });
 }
 
 function rectangleAxis(

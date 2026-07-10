@@ -113,7 +113,7 @@ export function MasterDataDialog({ onClose }: Props) {
     if (index < 0 || nextIndex < 0 || nextIndex >= data.stories.length) return;
     const ids = data.stories.map((story) => story.id);
     [ids[index], ids[nextIndex]] = [ids[nextIndex], ids[index]];
-    reorderStories(ids);
+    reorderStories(ids, elChainMode);
   };
 
   const handleDeleteStory = (id: string) => {

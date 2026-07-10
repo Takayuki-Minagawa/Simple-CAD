@@ -71,6 +71,8 @@ export const en: Translations = {
   propFillColor: 'Fill Color',
   propFillOpacity: 'Fill Opacity',
   propRotation: 'Rotation',
+  propMixed: 'Mixed',
+  propApply: 'Apply',
 
   statusZoom: 'Zoom',
   statusSnap: 'Snap',
@@ -191,7 +193,8 @@ export const en: Translations = {
   transformInvalidScale: 'Scale factor must not be 0.',
   transformInvalidCount: 'Copy count must be an integer greater than 0.',
   transformInvalidStretch: 'Width and height must be 0 or greater.',
-  transformInvalidSelection: 'The selection has no transformable geometry. Close this dialog and select another object.',
+  transformInvalidSelection:
+    'The selection has no transformable geometry. Close this dialog and select another object.',
   transformLockedWidth: 'The current selection width is 0, so width stretching is not available.',
   transformLockedHeight:
     'The current selection height is 0, so height stretching is not available.',

@@ -196,16 +196,17 @@ export function applyProjectImport(
     summary,
     validGrid,
   ).map((grid) => ({ ...deepClone(grid), position: quantize(grid.position) }));
-  const gridPlan = planIds(
-    validGrids,
-    'grids',
-    new Set(data.grids.map((item) => item.id)),
-    summary,
-  );
-  const usedGridNames = new Set(data.grids.map((item) => item.name));
+  // Grid references share one token namespace: exact IDs take precedence over
+  // names. Reserve both together so an imported ID cannot silently steal an
+  // existing name reference (or vice versa).
+  const usedGridTokens = new Set(data.grids.flatMap((item) => [item.id, item.name]));
+  const gridPlan = planIds(validGrids, 'grids', usedGridTokens, summary);
   const gridNameMap = new Map<string, string>();
   gridPlan.items = gridPlan.items.map((grid, index) => {
-    const name = reserveUnique(grid.name, usedGridNames);
+    const source = validGrids[index];
+    const name = source.id === source.name
+      ? grid.id
+      : reserveUnique(grid.name, usedGridTokens);
     if (!gridNameMap.has(grid.name)) gridNameMap.set(grid.name, name);
     if (name !== grid.name) summary.remappedIds[`gridNames:${grid.name}:${index}`] = name;
     return { ...grid, name };

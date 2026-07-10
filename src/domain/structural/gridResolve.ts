@@ -17,6 +17,14 @@ import { isLinearMember } from './types';
  * dimensions and real members in agreement.
  */
 
+/** Resolve one token with the same exact-ID-before-name policy used everywhere. */
+export function resolveGridToken(grids: Grid[], token: string): Grid | undefined {
+  const byId = grids.find((grid) => grid.id === token);
+  if (byId) return byId;
+  const byName = grids.filter((grid) => grid.name === token);
+  return byName.length === 1 ? byName[0] : undefined;
+}
+
 function byToken(grids: Grid[]): Map<string, Grid> {
   const map = new Map<string, Grid>();
   const nameGroups = new Map<string, Grid[]>();

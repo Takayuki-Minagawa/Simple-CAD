@@ -108,6 +108,7 @@ export function GridHelper3D({ grids, stories, activeStoryId }: Props) {
           </mesh>
           <Html
             position={[maxX + margin * 1.2, minY - margin, story.elevation]}
+            zIndexRange={[5, 0]}
             style={{
               color: active ? '#e0f2fe' : '#cbd5e1',
               fontSize: 11,
@@ -126,6 +127,7 @@ export function GridHelper3D({ grids, stories, activeStoryId }: Props) {
           key={`label-x-${grid.id}`}
           position={[grid.position, minY - margin * 1.6, minElevation]}
           center
+          zIndexRange={[5, 0]}
           style={{ color: '#86efac', fontSize: 11, whiteSpace: 'nowrap', pointerEvents: 'none' }}
         >
           {grid.name}
@@ -136,6 +138,7 @@ export function GridHelper3D({ grids, stories, activeStoryId }: Props) {
           key={`label-y-${grid.id}`}
           position={[minX - margin * 1.6, grid.position, minElevation]}
           center
+          zIndexRange={[5, 0]}
           style={{ color: '#93c5fd', fontSize: 11, whiteSpace: 'nowrap', pointerEvents: 'none' }}
         >
           {grid.name}
@@ -166,6 +169,7 @@ export function GridHelper3D({ grids, stories, activeStoryId }: Props) {
           />
           <Html
             position={[levelRailX + margin * 0.4, levelRailY, story.elevation]}
+            zIndexRange={[5, 0]}
             style={{
               color: story.id === activeStoryId ? '#e0f2fe' : '#f8fafc',
               fontSize: 10,

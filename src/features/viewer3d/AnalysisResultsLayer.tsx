@@ -4,6 +4,7 @@ import {
   buildDisplacementMap,
   buildUtilizationMap,
   displacePoint,
+  filterNodeDisplacementsForMembers,
   utilizationColor,
 } from './analysisResults';
 
@@ -11,11 +12,20 @@ interface AnalysisResultsLayerProps {
   members: Member[];
   results: AnalysisResultsMetadata;
   scale: number;
+  showAllStories: boolean;
 }
 
-export function AnalysisResultsLayer({ members, results, scale }: AnalysisResultsLayerProps) {
+export function AnalysisResultsLayer({
+  members,
+  results,
+  scale,
+  showAllStories,
+}: AnalysisResultsLayerProps) {
   const displacementMap = buildDisplacementMap(results.nodeDisplacements);
   const utilizationMap = buildUtilizationMap(results.memberResults);
+  const visibleNodeDisplacements = showAllStories
+    ? (results.nodeDisplacements ?? [])
+    : filterNodeDisplacementsForMembers(results.nodeDisplacements, members);
 
   return (
     <group>
@@ -29,7 +39,9 @@ export function AnalysisResultsLayer({ members, results, scale }: AnalysisResult
           return (
             <Line
               key={member.id}
-              points={[...points, points[0]].map(({ x, y, z }) => [x, y, z] as [number, number, number])}
+              points={[...points, points[0]].map(
+                ({ x, y, z }) => [x, y, z] as [number, number, number],
+              )}
               color={color}
               lineWidth={2.5}
             />
@@ -52,14 +64,17 @@ export function AnalysisResultsLayer({ members, results, scale }: AnalysisResult
         );
       })}
 
-      {(results.nodeDisplacements ?? []).map((node, index) => {
+      {visibleNodeDisplacements.map((node, index) => {
         const point = {
           x: node.position.x + node.dx * scale,
           y: node.position.y + node.dy * scale,
           z: node.position.z + node.dz * scale,
         };
         return (
-          <mesh key={node.id ?? `${point.x}:${point.y}:${point.z}:${index}`} position={[point.x, point.y, point.z]}>
+          <mesh
+            key={node.id ?? `${point.x}:${point.y}:${point.z}:${index}`}
+            position={[point.x, point.y, point.z]}
+          >
             <sphereGeometry args={[70, 8, 8]} />
             <meshBasicMaterial color="#e0f2fe" depthTest={false} />
           </mesh>

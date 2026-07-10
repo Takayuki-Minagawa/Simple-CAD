@@ -275,6 +275,10 @@ export function importDxf(
             } else if (role === 'construction') {
               const line = convertConstructionLine(entity, defaultStory, usedIds);
               if (line) constructionLines.push(line);
+            } else if (role === 'column' || role === 'slab') {
+              warnings.push(
+                `${role === 'column' ? 'COLUMN' : 'SLAB'} レイヤーの LINE は部材形状を表せないためスキップしました`,
+              );
             } else if (role !== 'dimension' && role !== 'annotation') {
               const member = convertLineToMember(entity, defaultStory, sections, usedIds, role);
               if (member) {
@@ -336,13 +340,12 @@ export function importDxf(
             role !== 'grid' &&
             isFiniteDxfPoint(entity.startPoint)
           ) {
-            const fontSize =
+            const hasValidTextHeight =
               entity.textHeight !== undefined &&
               Number.isFinite(entity.textHeight) &&
-              entity.textHeight > 0
-                ? entity.textHeight
-                : 250;
-            if (entity.textHeight !== undefined && fontSize === 250) {
+              entity.textHeight > 0;
+            const fontSize = hasValidTextHeight ? entity.textHeight! : 250;
+            if (entity.textHeight !== undefined && !hasValidTextHeight) {
               warnings.push(`${entity.type} の文字高さが無効なため 250mm を使用しました`);
             }
             annotations.push({

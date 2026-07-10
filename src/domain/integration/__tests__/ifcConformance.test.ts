@@ -72,6 +72,16 @@ describe('IFC STEP conformance', () => {
     expect(asString(entity.args[0])).toBe(source);
   });
 
+  it('decodes legacy STEP S escapes with PA-PI code-page directives', () => {
+    expect(decodeStepString(String.raw`St\PA\\S\|tzenraster`)).toBe('Stützenraster');
+    expect(decodeStepString(String.raw`\PE\\S\0`)).toBe('А');
+    const unsupported = String.raw`\PZ\\S\|`;
+    expect(decodeStepString(unsupported)).toBe(unsupported);
+
+    const ifc = String.raw`ISO-10303-21;HEADER;ENDSEC;DATA;#1=IFCMATERIAL('St\PA\\S\|tzenraster',$,$);ENDSEC;END-ISO-10303-21;`;
+    expect(asString(parseIfcEntities(ifc).get(1)?.args[0])).toBe('Stützenraster');
+  });
+
   it('unwraps typed conversion measures and rejects unknown SI prefixes', () => {
     const wrap = (body: string) =>
       `ISO-10303-21;HEADER;ENDSEC;DATA;${body}ENDSEC;END-ISO-10303-21;`;
@@ -236,6 +246,65 @@ describe('IFC geometry and identity interoperability', () => {
     expect(result.data.members.map((member) => member.story)).toEqual(['Level', 'Level-2']);
   });
 
+  it('migrates legacy mixed material JSON embedded in IFC descriptions', () => {
+    const project = makeProject({
+      sections: [{ id: 'B1', kind: 'rc_beam_rect', width: 300, depth: 500 }],
+      materials: [{
+        id: 'M1',
+        name: 'Legacy concrete',
+        type: 'concrete',
+        Fc: 24,
+        Fy: 235,
+        poissonRatio: 0.5,
+      } as unknown as Material],
+      members: [{
+        id: 'B1',
+        type: 'beam',
+        story: 'S1',
+        sectionId: 'B1',
+        materialId: 'M1',
+        start: { x: 0, y: 0, z: 0 },
+        end: { x: 4000, y: 0, z: 0 },
+      }],
+    });
+
+    const result = importIfc(exportIfc(project));
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data.materials[0]).toMatchObject({
+      type: 'concrete',
+      Fc: 24,
+      poissonRatio: 0.499999,
+    });
+    expect(result.data.materials[0]).not.toHaveProperty('Fy');
+  });
+
+  it('preserves distinct source section IDs even when their dimensions are identical', () => {
+    const project = makeProject({
+      sections: [
+        { id: 'H1', kind: 's_beam_h', width: 300, depth: 500, tw: 10, tf: 16 },
+        { id: 'H2', kind: 's_beam_h', width: 300, depth: 500, tw: 10, tf: 16 },
+      ],
+      members: [
+        {
+          id: 'B1', type: 'beam', story: 'S1', sectionId: 'H1', materialId: 'M1',
+          start: { x: 0, y: 0, z: 0 }, end: { x: 4000, y: 0, z: 0 },
+        },
+        {
+          id: 'B2', type: 'beam', story: 'S1', sectionId: 'H2', materialId: 'M1',
+          start: { x: 0, y: 1000, z: 0 }, end: { x: 4000, y: 1000, z: 0 },
+        },
+      ],
+    });
+
+    const result = importIfc(exportIfc(project));
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data.sections.map((section) => section.id).sort()).toEqual(['H1', 'H2']);
+    expect(result.data.members.map((member) => member.sectionId)).toEqual(['H1', 'H2']);
+  });
+
   it('exports penetrating wall openings with lower-edge semantics and restores metadata', () => {
     const wall: Extract<Member, { type: 'wall' }> = {
       id: 'W1',
@@ -288,6 +357,15 @@ describe('IFC geometry and identity interoperability', () => {
       faceAlign: 'left',
     });
     expect(result.data.openings[0]).toEqual({ ...opening, id: 'W1-2' });
+
+    const withoutOpeningMetadata = exportIfc(project).replace(
+      /'SIMPLECAD_OPENING:[^']*'/,
+      '$',
+    );
+    const inferred = importIfc(withoutOpeningMetadata);
+    expect(inferred.ok).toBe(true);
+    if (!inferred.ok) return;
+    expect(inferred.data.openings[0].position).toEqual(opening.position);
   });
 
   it('penetrates the full slab thickness and applies slab eccentricity', () => {

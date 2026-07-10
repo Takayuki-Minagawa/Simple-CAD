@@ -216,6 +216,73 @@ describe('importDxf', () => {
     expect(result.warnings.some((warning) => warning.includes('文字高さ'))).toBe(true);
   });
 
+  it('accepts an explicit 250mm text height without a fallback warning', () => {
+    const dxf = [
+      '0', 'SECTION', '2', 'ENTITIES',
+      '0', 'TEXT', '8', 'NOTES', '10', '10', '20', '20', '40', '250', '1', 'note',
+      '0', 'ENDSEC', '0', 'EOF',
+    ].join('\n');
+    const result = importDxf(dxf, '1F');
+
+    expect(result.annotations[0]).toMatchObject({ text: 'note', fontSize: 250 });
+    expect(result.warnings.some((warning) => warning.includes('文字高さ'))).toBe(false);
+  });
+
+  it('warns when LINE geometry is placed on COLUMN or SLAB layers', () => {
+    const dxf = [
+      '0', 'SECTION', '2', 'ENTITIES',
+      '0', 'LINE', '8', 'COLUMN', '10', '0', '20', '0', '11', '1000', '21', '0',
+      '0', 'LINE', '8', 'SLAB', '10', '0', '20', '1000', '11', '1000', '21', '1000',
+      '0', 'ENDSEC', '0', 'EOF',
+    ].join('\n');
+    const result = importDxf(dxf, '1F', { convertGeometry: true });
+
+    expect(result.members).toEqual([]);
+    expect(result.warnings.some((warning) => warning.includes('COLUMN'))).toBe(true);
+    expect(result.warnings.some((warning) => warning.includes('SLAB'))).toBe(true);
+  });
+
+  it('rounds noisy wall outline thicknesses to stable section dimensions', () => {
+    const dxf = [
+      '0', 'SECTION', '2', 'ENTITIES',
+      '0', 'LWPOLYLINE', '8', 'WALL', '70', '1',
+      '10', '0', '20', '0',
+      '10', '5000', '20', '0',
+      '10', '5000', '20', '200.00000036',
+      '10', '0', '20', '200.00000036',
+      '0', 'ENDSEC', '0', 'EOF',
+    ].join('\n');
+    const result = importDxf(dxf, '1F', { convertGeometry: true, unitScale: 1 });
+
+    expect(result.members[0]).toMatchObject({ type: 'wall', thickness: 200 });
+    expect(result.autoSections).toContainEqual({
+      id: 'SEC-DXF-WALL-200',
+      kind: 'rc_wall',
+      thickness: 200,
+    });
+  });
+
+  it('rejects malformed releases and rigid-zone values from member metadata', () => {
+    const maliciousPayload =
+      '{"id":"B-MALFORMED","releases":{"start":{"rz":true,"custom":false}},"rigidZones":{"start":1e309}}';
+    const metadata = `SIMPLECAD_MEMBER:${encodeURIComponent(maliciousPayload)}`;
+    const dxf = [
+      '0', 'SECTION', '2', 'ENTITIES',
+      '0', 'LWPOLYLINE', '8', 'BEAM', '70', '1',
+      '10', '0', '20', '0',
+      '10', '5000', '20', '0',
+      '10', '5000', '20', '300',
+      '10', '0', '20', '300',
+      '999', metadata,
+      '0', 'ENDSEC', '0', 'EOF',
+    ].join('\n');
+    const result = importDxf(dxf, '1F', { convertGeometry: true, unitScale: 1 });
+
+    expect(result.members[0]).toMatchObject({ id: 'B-MALFORMED', type: 'beam' });
+    expect(result.members[0].releases).toBeUndefined();
+    expect(result.members[0].rigidZones).toBeUndefined();
+  });
+
   it('does not turn GRID, DIMENSION, or CONSTRUCTION lines into walls', () => {
     const dxf = [
       '0', 'SECTION', '2', 'HEADER',

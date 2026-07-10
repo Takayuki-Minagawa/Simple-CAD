@@ -28,6 +28,9 @@ export const JOINT_MERGE_TOLERANCE = 1;
 /** Default angular epsilon (radians). */
 export const ANGLE_EPSILON = 1e-9;
 
+/** Display precision for angles edited in degrees. */
+export const ANGLE_DISPLAY_PRECISION = 1e-4;
+
 /** Round a value to the nearest multiple of `step`, normalizing -0 to 0. */
 export function quantize(value: number, step: number = COORD_PRECISION): number {
   if (!Number.isFinite(value) || step <= 0) return value;
@@ -37,6 +40,17 @@ export function quantize(value: number, step: number = COORD_PRECISION): number 
   // Re-round to the decimal precision implied by `step` to clear FP residue.
   const decimals = Math.max(0, Math.round(-Math.log10(step)));
   return Number(normalized.toFixed(Math.min(decimals, 12)));
+}
+
+/**
+ * Convert a stored radian value to a stable degree value for form controls.
+ *
+ * Stored rotations are quantized in radians. Converting that value directly
+ * can otherwise expose artifacts such as `30.000012857...` for an angle the
+ * user entered as 30 degrees.
+ */
+export function radiansToDisplayDegrees(radians: number): number {
+  return quantize((radians * 180) / Math.PI, ANGLE_DISPLAY_PRECISION);
 }
 
 export function quantizePoint2D(p: Point2D, step: number = COORD_PRECISION): Point2D {
@@ -57,11 +71,7 @@ export function equals2D(a: Point2D, b: Point2D, eps: number = GEOM_EPSILON): bo
 }
 
 export function equals3D(a: Point3D, b: Point3D, eps: number = GEOM_EPSILON): boolean {
-  return (
-    Math.abs(a.x - b.x) <= eps &&
-    Math.abs(a.y - b.y) <= eps &&
-    Math.abs(a.z - b.z) <= eps
-  );
+  return Math.abs(a.x - b.x) <= eps && Math.abs(a.y - b.y) <= eps && Math.abs(a.z - b.z) <= eps;
 }
 
 /**
@@ -121,6 +131,30 @@ export class SpatialPointIndex3D<T> {
     }
 
     return best?.value;
+  }
+
+  /** Return every value whose point is within tolerance of the query. */
+  findAll(point: Point3D): T[] {
+    const [cx, cy, cz] = this.cell(point);
+    const matches: T[] = [];
+    for (let dx = -1; dx <= 1; dx++) {
+      for (let dy = -1; dy <= 1; dy++) {
+        for (let dz = -1; dz <= 1; dz++) {
+          for (const candidate of this.cells.get(this.key(cx + dx, cy + dy, cz + dz)) ?? []) {
+            if (
+              Math.hypot(
+                candidate.point.x - point.x,
+                candidate.point.y - point.y,
+                candidate.point.z - point.z,
+              ) <= this.tolerance
+            ) {
+              matches.push(candidate.value);
+            }
+          }
+        }
+      }
+    }
+    return matches;
   }
 
   insert(point: Point3D, value: T): void {

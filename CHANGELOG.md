@@ -24,6 +24,13 @@
 - Added recursive external-reference validation plus section plausibility, column/story-level, and slab-boundary support checks.
 - Serialized explicit saves and guarded asynchronous open/import completion so stale work cannot overwrite a newer document or file handle.
 
+### Fixed
+
+- Preserved explicit optional-field clears, prevented no-op history entries, and made member/grid/import edits validate and commit atomically.
+- Kept supports, nodal loads, and masses attached to moved joints while safely cleaning newly orphaned analysis points on deletion.
+- Preserved legacy material files, face-aligned analysis eccentricity, metadata-free IFC wall openings, IFC section identity, and strict DXF/STEP round trips.
+- Isolated autosaves across duplicated tabs with recoverable session ownership, corrected stacked-modal keyboard handling, and hardened PWA update precaching.
+
 ### Security
 
 - Hardened SVG generation and rebuilt preview SVG through a strict element/attribute allowlist.

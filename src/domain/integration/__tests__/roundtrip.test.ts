@@ -291,6 +291,11 @@ describe('roundtrip: DXF', () => {
     expect(dxf).toContain('$EXTMAX');
   });
 
+  it('writes required block-name and type groups on DIMENSION metadata entities', () => {
+    const dxf = exportDxf(base, '1F');
+    expect(dxf).toMatch(/0\nDIMENSION\n8\nSIMPLECAD_META\n2\n\*D1\n70\n0\n/);
+  });
+
   it('scales metre-unit DXF to mm via $INSUNITS=6', () => {
     // A 5m line in metres → 5000mm after import.
     const dxf = [

@@ -245,6 +245,7 @@ export function Viewer3D() {
           analysisResults={data.analysisResults}
           showAnalysisResults={showAnalysisResults}
           analysisScale={analysisScale}
+          showAllStories={showAllStories}
         />
       </Canvas>
     </div>

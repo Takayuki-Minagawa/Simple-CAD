@@ -9,8 +9,18 @@ interface AnalysisResultsPanelProps {
   setScale: (scale: number) => void;
 }
 
-export function AnalysisResultsPanel({ labels, results, scale, setScale }: AnalysisResultsPanelProps) {
+export function AnalysisResultsPanel({
+  labels,
+  results,
+  scale,
+  setScale,
+}: AnalysisResultsPanelProps) {
   const range = utilizationRange(results.memberResults);
+  // Keep the slider range stable while dragging down from an imported scale
+  // above the default. Deriving max from the live value creates a one-way
+  // ratchet where every downward step permanently lowers the maximum.
+  const importedScale = Number.isFinite(results.deformationScale) ? results.deformationScale! : 0;
+  const scaleMax = Math.max(200, Math.ceil(importedScale));
   return (
     <div
       style={{
@@ -33,13 +43,15 @@ export function AnalysisResultsPanel({ labels, results, scale, setScale }: Analy
       <span style={{ color: 'rgba(255,255,255,0.76)' }}>
         {results.solver ?? results.source} / {results.analysisType}
       </span>
-      <label style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: 6, alignItems: 'center' }}>
+      <label
+        style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: 6, alignItems: 'center' }}
+      >
         <span>{labels.deformationScale}</span>
         <output>{scale.toFixed(1)}x</output>
         <input
           type="range"
           min={0}
-          max={Math.max(200, Math.ceil(scale))}
+          max={scaleMax}
           step={0.5}
           value={scale}
           onChange={(event) => setScale(Number(event.target.value))}
@@ -49,7 +61,9 @@ export function AnalysisResultsPanel({ labels, results, scale, setScale }: Analy
       </label>
       {range && (
         <div style={{ display: 'grid', gap: 3 }}>
-          <span>{labels.utilization}: {range.min.toFixed(2)} - {range.max.toFixed(2)}</span>
+          <span>
+            {labels.utilization}: {range.min.toFixed(2)} - {range.max.toFixed(2)}
+          </span>
           <div
             aria-hidden="true"
             style={{
@@ -58,13 +72,23 @@ export function AnalysisResultsPanel({ labels, results, scale, setScale }: Analy
               background: 'linear-gradient(90deg, #22c55e 0%, #f59e0b 66.7%, #dc2626 100%)',
             }}
           />
-          <div style={{ display: 'flex', justifyContent: 'space-between', color: 'rgba(255,255,255,0.7)' }}>
-            <span>0.0</span><span>1.0</span><span>1.5+</span>
+          <div
+            style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              color: 'rgba(255,255,255,0.7)',
+            }}
+          >
+            <span>0.0</span>
+            <span>1.0</span>
+            <span>1.5+</span>
           </div>
         </div>
       )}
       {(results.warnings?.length ?? 0) > 0 && (
-        <span style={{ color: '#fde68a' }}>{labels.analysisWarnings}: {results.warnings!.length}</span>
+        <span style={{ color: '#fde68a' }}>
+          {labels.analysisWarnings}: {results.warnings!.length}
+        </span>
       )}
     </div>
   );

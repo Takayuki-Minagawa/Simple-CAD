@@ -13,6 +13,7 @@ import { useMemo } from 'react';
 import { polygonArea, polygonPerimeter, linearLength } from '@/domain/geometry/measurement';
 import { CoordRow, VertexCoordInput } from './PropertyInputs';
 import { isEntityLayerInteractive } from '@/domain/rendering/layerLock';
+import { radiansToDisplayDegrees } from '@/domain/geometry/precision';
 
 const LINE_TYPE_OPTIONS: LineType[] = ['solid', 'dashed', 'dotted', 'chain', 'dashdot'];
 const TEXT_ALIGN_OPTIONS: TextAlign[] = ['left', 'center', 'right'];
@@ -153,15 +154,35 @@ function BulkMemberProps({ members, groupName }: { members: Member[]; groupName?
         </div>
         <CoordRow
           label={`${t.propRotation} (°)`}
-          value={rotation == null ? 0 : (rotation * 180) / Math.PI}
+          value={rotation == null ? 0 : radiansToDisplayDegrees(rotation)}
+          mixed={rotation == null}
+          mixedLabel={t.propMixed}
           placeholder={rotation == null ? '—' : undefined}
           onChange={(value) => updateMembers(ids, { rotation: (value * Math.PI) / 180 })}
         />
         <div className="prop-row">
           <span className="prop-label">{t.propColor}</span>
-          <input type="color" value={color ?? '#000000'} onChange={(event) =>
-            updateMembers(ids, { color: event.target.value })
-          } />
+          <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+            <input
+              type="color"
+              aria-label={t.propColor}
+              value={color ?? '#000000'}
+              onChange={(event) => updateMembers(ids, { color: event.target.value })}
+            />
+            {color == null && (
+              <>
+                <small style={{ color: 'var(--text-secondary)' }}>{t.propMixed}</small>
+                <button
+                  type="button"
+                  className="toolbar-btn"
+                  aria-label={`${t.propApply} ${t.propColor}`}
+                  onClick={() => updateMembers(ids, { color: '#000000' })}
+                >
+                  {t.propApply}
+                </button>
+              </>
+            )}
+          </span>
         </div>
         {groupName && <div className="prop-row"><span className="prop-label">{t.groupName}</span><span>{groupName}</span></div>}
       </div>
@@ -253,7 +274,7 @@ function MemberProps({ member }: { member: Member }) {
         </div>
         <CoordRow
           label={`${t.propRotation} (°)`}
-          value={((member.rotation ?? 0) * 180) / Math.PI}
+          value={radiansToDisplayDegrees(member.rotation ?? 0)}
           onChange={(value) => updateMember(member.id, { rotation: (value * Math.PI) / 180 })}
         />
         <CoordRow

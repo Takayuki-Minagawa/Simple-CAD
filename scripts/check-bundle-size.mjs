@@ -6,10 +6,25 @@ import { readFile } from 'node:fs/promises';
 const assetsDir = join(process.cwd(), 'dist', 'assets');
 // Three.js remains isolated behind the lazy-loaded 3D viewer. Its minified raw
 // chunk is ~1.1 MB while transfer size stays below the stricter 350 kB budget.
-const maxRawBytes = Number(process.env.MAX_CHUNK_BYTES ?? 1_200_000);
-const maxGzipBytes = Number(process.env.MAX_CHUNK_GZIP_BYTES ?? 350_000);
+function readBudget(name, fallback) {
+  const raw = process.env[name];
+  if (raw === undefined) return fallback;
+  const value = Number(raw);
+  if (!Number.isSafeInteger(value) || value <= 0) {
+    process.stderr.write(`${name} must be a positive integer byte count; received "${raw}".\n`);
+    process.exit(1);
+  }
+  return value;
+}
+
+const maxRawBytes = readBudget('MAX_CHUNK_BYTES', 1_200_000);
+const maxGzipBytes = readBudget('MAX_CHUNK_GZIP_BYTES', 350_000);
 
 const files = (await readdir(assetsDir)).filter((file) => file.endsWith('.js'));
+if (files.length === 0) {
+  process.stderr.write(`No JavaScript chunks found in ${assetsDir}; build output is incomplete.\n`);
+  process.exit(1);
+}
 const failures = [];
 
 for (const file of files) {

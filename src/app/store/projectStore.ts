@@ -3,7 +3,7 @@ import { immer } from 'zustand/middleware/immer';
 import { temporal } from 'zundo';
 import { collectAllIds, generateId } from '@/domain/idGenerator';
 import { JOINT_MERGE_TOLERANCE, quantize } from '@/domain/geometry/precision';
-import type { Group, Member, Story } from '@/domain/structural/types';
+import type { Group, Member, ProjectData, Story } from '@/domain/structural/types';
 import { deepClone } from '@/libs/clone';
 import { applyGridGeometry } from '@/domain/structural/gridResolve';
 import { mergeMaterial } from '@/domain/structural/materials';
@@ -31,6 +31,7 @@ import { validateGeometry, validateReferences } from '@/domain/validation';
 import {
   deleteEntitiesInProject,
   detachGridReferences,
+  cloneUpdatePatch,
   constrainOpeningToHost,
   constrainProjectOpenings,
   isValidMemberGeometry,
@@ -42,6 +43,8 @@ import {
   normalizeMember,
   normalizeOpening,
   normalizeProjectMemberGeometry,
+  projectValuesEqual,
+  reconcileAnalysisPointsForMembers,
   renameGridReferences,
   shiftMemberToStory,
   shiftStoryElevation,
@@ -82,6 +85,49 @@ function selectionInvalidatesAnalysis(
     data.members.some((member) => selected.has(member.id)) ||
     data.openings.some((opening) => selected.has(opening.id))
   );
+}
+
+function changedMemberIds(
+  before: { members: readonly Member[] },
+  after: { members: readonly Member[] },
+): string[] {
+  const previousById = new Map(before.members.map((member) => [member.id, member]));
+  return after.members
+    .filter((member) => !projectValuesEqual(previousById.get(member.id), member))
+    .map((member) => member.id);
+}
+
+function validationErrors(data: ProjectData) {
+  return [...validateGeometry(data).errors, ...validateReferences(data).errors]
+    .filter((issue) => issue.level === 'error');
+}
+
+/** Allow an edit to repair or coexist with legacy errors, but never introduce a new one. */
+function introducedValidationErrors(before: ProjectData, after: ProjectData) {
+  const existing = new Map<string, number>();
+  for (const issue of validationErrors(before)) {
+    const key = `${issue.path}\u0000${issue.message}`;
+    existing.set(key, (existing.get(key) ?? 0) + 1);
+  }
+  return validationErrors(after).filter((issue) => {
+    const key = `${issue.path}\u0000${issue.message}`;
+    const remaining = existing.get(key) ?? 0;
+    if (remaining === 0) return true;
+    existing.set(key, remaining - 1);
+    return false;
+  });
+}
+
+function finalizeMemberCandidate(
+  before: ProjectData,
+  candidate: ProjectData,
+  affectedMemberIds: Iterable<string>,
+): ProjectData | null {
+  const affected = [...new Set(affectedMemberIds)];
+  if (!normalizeProjectMemberGeometry(candidate, affected)) return null;
+  reconcileAnalysisPointsForMembers(before, candidate, affected);
+  const next = recomputeAssociativeDimensions(constrainProjectOpenings(candidate));
+  return introducedValidationErrors(before, next).length === 0 ? next : null;
 }
 
 function resetEditorForDocument(activeStory: string | null) {
@@ -162,11 +208,13 @@ export const useProjectStore = create<ProjectState>()(
         set((state) => {
           if (!state.data) return;
           if (updates.id !== undefined && updates.id !== id) return;
-          const idx = state.data.members.findIndex((m) => m.id === id);
+          const before = state.data as ProjectData;
+          const candidate = deepClone(before);
+          const idx = candidate.members.findIndex((m) => m.id === id);
           if (idx < 0) return;
-          const current = state.data.members[idx];
-          const sourceStory = state.data.stories.find((story) => story.id === current.story);
-          const targetStory = state.data.stories.find(
+          const current = candidate.members[idx];
+          const sourceStory = candidate.stories.find((story) => story.id === current.story);
+          const targetStory = candidate.stories.find(
             (story) => story.id === (updates.story ?? current.story),
           );
           if (!sourceStory || !targetStory) return;
@@ -175,48 +223,57 @@ export const useProjectStore = create<ProjectState>()(
           const elevationDelta = targetStory.elevation - sourceStory.elevation;
           if (updates.story && updates.story !== current.story) {
             next = shiftMemberToStory(next, elevationDelta);
-            for (const opening of state.data.openings) {
+          }
+          if (projectValuesEqual(current, next)) return;
+          if (updates.story && updates.story !== current.story) {
+            for (const opening of candidate.openings) {
               if (opening.memberId === id) {
                 opening.position.z = quantize(opening.position.z + elevationDelta);
               }
             }
           }
-          state.data.members[idx] = next;
-          // Associative dimensions follow the edited member.
-          state.data = recomputeAssociativeDimensions(constrainProjectOpenings(state.data));
+          candidate.members[idx] = next;
+          const finalized = finalizeMemberCandidate(before, candidate, [id]);
+          if (!finalized) return;
+          state.data = finalized;
           markModified(state, memberUpdateInvalidatesAnalysis(updates));
         }),
 
       updateMembers: (ids, updates) =>
         set((state) => {
           if (!state.data || ids.length === 0 || updates.id !== undefined) return;
+          const before = state.data as ProjectData;
+          const candidate = deepClone(before);
           const selected = new Set(ids);
           const targetStory = updates.story
-            ? state.data.stories.find((story) => story.id === updates.story)
+            ? candidate.stories.find((story) => story.id === updates.story)
             : undefined;
           if (updates.story && !targetStory) return;
           const elevationDeltaByMember = new Map<string, number>();
-          let changed = false;
-          state.data.members = state.data.members.map((member) => {
+          const changedIds: string[] = [];
+          candidate.members = candidate.members.map((member) => {
             if (!selected.has(member.id)) return member;
             let next = mergeMemberUpdate(member, updates);
             if (!next) return member;
             if (targetStory && targetStory.id !== member.story) {
-              const sourceStory = state.data!.stories.find((story) => story.id === member.story);
+              const sourceStory = candidate.stories.find((story) => story.id === member.story);
               if (!sourceStory) return member;
               const delta = targetStory.elevation - sourceStory.elevation;
               next = shiftMemberToStory(next, delta);
               elevationDeltaByMember.set(member.id, delta);
             }
-            changed = true;
+            if (projectValuesEqual(member, next)) return member;
+            changedIds.push(member.id);
             return next;
           });
-          if (!changed) return;
-          for (const opening of state.data.openings) {
+          if (changedIds.length === 0) return;
+          for (const opening of candidate.openings) {
             const delta = elevationDeltaByMember.get(opening.memberId);
             if (delta != null) opening.position.z = quantize(opening.position.z + delta);
           }
-          state.data = recomputeAssociativeDimensions(constrainProjectOpenings(state.data));
+          const finalized = finalizeMemberCandidate(before, candidate, changedIds);
+          if (!finalized) return;
+          state.data = finalized;
           markModified(state, memberUpdateInvalidatesAnalysis(updates));
         }),
 
@@ -233,8 +290,9 @@ export const useProjectStore = create<ProjectState>()(
           if (!state.data.members.some((member) => member.id === id)) return;
           const candidate = deepClone(state.data);
           translateSelection(candidate, [id], dx, dy);
-          if (!normalizeProjectMemberGeometry(candidate)) return;
-          state.data = recomputeAssociativeDimensions(candidate);
+          const finalized = finalizeMemberCandidate(state.data as ProjectData, candidate, [id]);
+          if (!finalized) return;
+          state.data = finalized;
           markModified(state, true);
         }),
 
@@ -246,11 +304,16 @@ export const useProjectStore = create<ProjectState>()(
           const createdIds = duplicateSelection(candidate, [id], { dx: 0, dy: 0, count: 1 });
           newId = createdIds[0] ?? null;
           if (!newId) return;
-          if (!normalizeProjectMemberGeometry(candidate)) {
+          const finalized = finalizeMemberCandidate(
+            state.data as ProjectData,
+            candidate,
+            createdIds,
+          );
+          if (!finalized) {
             newId = null;
             return;
           }
-          state.data = recomputeAssociativeDimensions(candidate);
+          state.data = finalized;
           markModified(state, true);
         });
         return newId;
@@ -262,8 +325,9 @@ export const useProjectStore = create<ProjectState>()(
           const invalidatesAnalysis = selectionInvalidatesAnalysis(state.data, ids);
           const candidate = deepClone(state.data);
           translateSelection(candidate, ids, dx, dy);
-          if (!normalizeProjectMemberGeometry(candidate)) return;
-          state.data = recomputeAssociativeDimensions(candidate);
+          const finalized = finalizeMemberCandidate(state.data as ProjectData, candidate, ids);
+          if (!finalized) return;
+          state.data = finalized;
           markModified(state, invalidatesAnalysis);
         }),
 
@@ -275,11 +339,16 @@ export const useProjectStore = create<ProjectState>()(
           const candidate = deepClone(state.data);
           createdIds = duplicateSelection(candidate, ids, { dx, dy, count });
           if (createdIds.length === 0) return;
-          if (!normalizeProjectMemberGeometry(candidate)) {
+          const finalized = finalizeMemberCandidate(
+            state.data as ProjectData,
+            candidate,
+            createdIds,
+          );
+          if (!finalized) {
             createdIds = [];
             return;
           }
-          state.data = recomputeAssociativeDimensions(candidate);
+          state.data = finalized;
           markModified(state, invalidatesAnalysis);
         });
         return createdIds;
@@ -298,8 +367,9 @@ export const useProjectStore = create<ProjectState>()(
           const invalidatesAnalysis = selectionInvalidatesAnalysis(state.data, ids);
           const candidate = deepClone(state.data);
           scaleSelection(candidate, ids, origin, scaleX, scaleY);
-          if (!normalizeProjectMemberGeometry(candidate)) return;
-          state.data = recomputeAssociativeDimensions(candidate);
+          const finalized = finalizeMemberCandidate(state.data as ProjectData, candidate, ids);
+          if (!finalized) return;
+          state.data = finalized;
           markModified(state, invalidatesAnalysis);
         }),
 
@@ -309,8 +379,9 @@ export const useProjectStore = create<ProjectState>()(
           const invalidatesAnalysis = selectionInvalidatesAnalysis(state.data, ids);
           const candidate = deepClone(state.data);
           stretchSelection(candidate, ids, options);
-          if (!normalizeProjectMemberGeometry(candidate)) return;
-          state.data = recomputeAssociativeDimensions(candidate);
+          const finalized = finalizeMemberCandidate(state.data as ProjectData, candidate, ids);
+          if (!finalized) return;
+          state.data = finalized;
           markModified(state, invalidatesAnalysis);
         }),
 
@@ -322,11 +393,16 @@ export const useProjectStore = create<ProjectState>()(
           const candidate = deepClone(state.data);
           createdIds = offsetSelection(candidate, ids, distance);
           if (createdIds.length === 0) return;
-          if (!normalizeProjectMemberGeometry(candidate)) {
+          const finalized = finalizeMemberCandidate(
+            state.data as ProjectData,
+            candidate,
+            createdIds,
+          );
+          if (!finalized) {
             createdIds = [];
             return;
           }
-          state.data = recomputeAssociativeDimensions(candidate);
+          state.data = finalized;
           markModified(state, invalidatesAnalysis);
         });
         return createdIds;
@@ -340,11 +416,17 @@ export const useProjectStore = create<ProjectState>()(
           const candidate = deepClone(state.data);
           createdIds = mirrorSelection(candidate, ids, axisStart, axisEnd, copy);
           if (copy && createdIds.length === 0) return;
-          if (!normalizeProjectMemberGeometry(candidate)) {
+          const affectedIds = copy ? createdIds : ids;
+          const finalized = finalizeMemberCandidate(
+            state.data as ProjectData,
+            candidate,
+            affectedIds,
+          );
+          if (!finalized) {
             createdIds = [];
             return;
           }
-          state.data = recomputeAssociativeDimensions(candidate);
+          state.data = finalized;
           markModified(state, invalidatesAnalysis);
         });
         return createdIds;
@@ -358,11 +440,16 @@ export const useProjectStore = create<ProjectState>()(
           const candidate = deepClone(state.data);
           createdIds = arraySelection(candidate, ids, options);
           if (createdIds.length === 0) return;
-          if (!normalizeProjectMemberGeometry(candidate)) {
+          const finalized = finalizeMemberCandidate(
+            state.data as ProjectData,
+            candidate,
+            createdIds,
+          );
+          if (!finalized) {
             createdIds = [];
             return;
           }
-          state.data = recomputeAssociativeDimensions(candidate);
+          state.data = finalized;
           markModified(state, invalidatesAnalysis);
         });
         return createdIds;
@@ -604,7 +691,7 @@ export const useProjectStore = create<ProjectState>()(
         return deleted;
       },
 
-      reorderStories: (orderedIds) =>
+      reorderStories: (orderedIds, chainElevations = false) =>
         set((state) => {
           if (!state.data || orderedIds.length !== state.data.stories.length) return;
           const uniqueIds = new Set(orderedIds);
@@ -614,8 +701,28 @@ export const useProjectStore = create<ProjectState>()(
           ) return;
           const byId = new Map(state.data.stories.map((story) => [story.id, story]));
           const reordered = orderedIds.map((id) => byId.get(id)!);
-          if (reordered.every((story, index) => story.id === state.data!.stories[index].id)) return;
+          const orderChanged = reordered.some(
+            (story, index) => story.id !== state.data!.stories[index].id,
+          );
+          const elevationShifts: Array<{ storyId: string; delta: number }> = [];
+          if (chainElevations && reordered.length > 1) {
+            let elevation = reordered[0].elevation;
+            for (let index = 1; index < reordered.length; index += 1) {
+              const previous = reordered[index - 1];
+              elevation += previous.height;
+              const story = reordered[index];
+              const delta = elevation - story.elevation;
+              if (delta !== 0) {
+                story.elevation = elevation;
+                elevationShifts.push({ storyId: story.id, delta });
+              }
+            }
+          }
+          if (!orderChanged && elevationShifts.length === 0) return;
           state.data.stories = reordered;
+          for (const shift of elevationShifts) {
+            shiftStoryElevation(state.data, shift.storyId, shift.delta);
+          }
           markModified(state, true);
         }),
 
@@ -625,48 +732,81 @@ export const useProjectStore = create<ProjectState>()(
         set((state) => {
           if (!state.data) return;
           if (
-            state.data.grids.some((item) => item.id === grid.id || item.name === grid.name) ||
+            state.data.grids.some(
+              (item) =>
+                item.id === grid.id ||
+                item.name === grid.name ||
+                item.id === grid.name ||
+                item.name === grid.id,
+            ) ||
             !Number.isFinite(grid.position)
           ) return;
-          state.data.grids.push(grid);
+          const candidate = deepClone(state.data);
+          candidate.grids.push(deepClone(grid));
           // Re-resolve gridRef-pinned members, then follow associative dims.
-          state.data = recomputeAssociativeDimensions(
-            constrainProjectOpenings(applyGridGeometry(state.data)),
+          const resolved = applyGridGeometry(candidate);
+          const affectedMemberIds = changedMemberIds(state.data, resolved);
+          const nextData = finalizeMemberCandidate(
+            state.data as ProjectData,
+            resolved,
+            affectedMemberIds,
           );
+          if (!nextData) return;
+          state.data = nextData;
           markModified(state, true);
         }),
 
       updateGrid: (id, updates) =>
         set((state) => {
           if (!state.data) return;
-          const grid = state.data.grids.find((item) => item.id === id);
+          if (updates.id !== undefined && updates.id !== id) return;
+          const candidate = deepClone(state.data);
+          const grid = candidate.grids.find((item) => item.id === id);
           if (!grid) return;
           if (
             updates.name &&
-            state.data.grids.some((item) => item.id !== id && item.name === updates.name)
+            candidate.grids.some(
+              (item) =>
+                item.id !== id && (item.name === updates.name || item.id === updates.name),
+            )
           ) return;
           if (updates.position != null && !Number.isFinite(updates.position)) return;
-          const previousName = grid.name;
+          const gridsBeforeRename = deepClone(candidate.grids);
           Object.assign(grid, updates, { id });
-          renameGridReferences(state.data, previousName, grid.name);
+          renameGridReferences(candidate, gridsBeforeRename, id, grid.name);
           // Editing a grid's position/axis/name moves pinned members, so
           // associative dimensions tied to them must follow too.
-          state.data = recomputeAssociativeDimensions(
-            constrainProjectOpenings(applyGridGeometry(state.data)),
+          const resolved = applyGridGeometry(candidate);
+          const affectedMemberIds = changedMemberIds(state.data, resolved);
+          const nextData = finalizeMemberCandidate(
+            state.data as ProjectData,
+            resolved,
+            affectedMemberIds,
           );
+          if (!nextData) return;
+          if (projectValuesEqual(state.data, nextData)) return;
+          state.data = nextData;
           markModified(state, true);
         }),
 
       deleteGrid: (id) =>
         set((state) => {
           if (!state.data) return;
-          const grid = state.data.grids.find((item) => item.id === id);
+          const candidate = deepClone(state.data);
+          const grid = candidate.grids.find((item) => item.id === id);
           if (!grid) return;
-          detachGridReferences(state.data, [grid.id, grid.name]);
-          state.data.grids = removeById(state.data.grids, id);
-          state.data = recomputeAssociativeDimensions(
-            constrainProjectOpenings(applyGridGeometry(state.data)),
+          const gridsBeforeDelete = deepClone(candidate.grids);
+          detachGridReferences(candidate, gridsBeforeDelete, grid.id);
+          candidate.grids = removeById(candidate.grids, id);
+          const resolved = applyGridGeometry(candidate);
+          const affectedMemberIds = changedMemberIds(state.data, resolved);
+          const nextData = finalizeMemberCandidate(
+            state.data as ProjectData,
+            resolved,
+            affectedMemberIds,
           );
+          if (!nextData) return;
+          state.data = nextData;
           markModified(state, true);
         }),
 
@@ -689,9 +829,10 @@ export const useProjectStore = create<ProjectState>()(
           if (updates.id !== undefined && updates.id !== id) return;
           const current = state.data.loadCases.find((item) => item.id === id);
           if (!current) return;
-          const candidate = { ...current, ...deepClone(updates), id };
+          const candidate = { ...current, ...cloneUpdatePatch(updates), id };
           if (!candidate.name.trim() ||
             (candidate.factor !== undefined && !Number.isFinite(candidate.factor))) return;
+          if (projectValuesEqual(current, candidate)) return;
           Object.assign(current, candidate);
           markModified(state, true);
         }),
@@ -731,8 +872,9 @@ export const useProjectStore = create<ProjectState>()(
           const index = state.data.materials.findIndex((item) => item.id === id);
           if (index < 0) return;
           const current = state.data.materials[index];
-          const candidate = mergeMaterial(current, { ...deepClone(updates), id });
+          const candidate = mergeMaterial(current, { ...cloneUpdatePatch(updates), id });
           if (!isValidMaterial(candidate)) return;
+          if (projectValuesEqual(current, candidate)) return;
           state.data.materials[index] = candidate;
           markModified(state, true);
         }),
@@ -760,8 +902,9 @@ export const useProjectStore = create<ProjectState>()(
           if (updates.id !== undefined && updates.id !== id) return;
           const current = state.data.sections.find((item) => item.id === id);
           if (!current) return;
-          const candidate = { ...current, ...deepClone(updates), id } as typeof current;
+          const candidate = { ...current, ...cloneUpdatePatch(updates), id } as typeof current;
           if (!isValidSection(candidate)) return;
+          if (projectValuesEqual(current, candidate)) return;
           Object.assign(current, candidate);
           markModified(state, true);
         }),
@@ -866,11 +1009,16 @@ export const useProjectStore = create<ProjectState>()(
           const candidate = deepClone(state.data);
           result = trimMemberFn(candidate, memberId, cutPoint, side);
           if (result) {
-            if (!normalizeProjectMemberGeometry(candidate)) {
+            const finalized = finalizeMemberCandidate(
+              state.data as ProjectData,
+              candidate,
+              [memberId],
+            );
+            if (!finalized) {
               result = false;
               return;
             }
-            state.data = recomputeAssociativeDimensions(constrainProjectOpenings(candidate));
+            state.data = finalized;
             markModified(state, true);
           }
         });
@@ -884,11 +1032,16 @@ export const useProjectStore = create<ProjectState>()(
           const candidate = deepClone(state.data);
           result = extendMemberFn(candidate, memberId, targetMemberId);
           if (result) {
-            if (!normalizeProjectMemberGeometry(candidate)) {
+            const finalized = finalizeMemberCandidate(
+              state.data as ProjectData,
+              candidate,
+              [memberId],
+            );
+            if (!finalized) {
               result = false;
               return;
             }
-            state.data = recomputeAssociativeDimensions(constrainProjectOpenings(candidate));
+            state.data = finalized;
             markModified(state, true);
           }
         });
@@ -902,11 +1055,16 @@ export const useProjectStore = create<ProjectState>()(
           const candidate = deepClone(state.data);
           result = filletWallsFn(candidate, wallId1, wallId2, radius);
           if (result) {
-            if (!normalizeProjectMemberGeometry(candidate)) {
+            const finalized = finalizeMemberCandidate(
+              state.data as ProjectData,
+              candidate,
+              [wallId1, wallId2],
+            );
+            if (!finalized) {
               result = false;
               return;
             }
-            state.data = recomputeAssociativeDimensions(constrainProjectOpenings(candidate));
+            state.data = finalized;
             markModified(state, true);
           }
         });
@@ -918,25 +1076,31 @@ export const useProjectStore = create<ProjectState>()(
       updateSlabVertex: (memberId, vertexIndex, point) =>
         set((state) => {
           if (!state.data) return;
-          const member = state.data.members.find((m) => m.id === memberId);
+          const before = state.data as ProjectData;
+          const project = deepClone(before);
+          const member = project.members.find((m) => m.id === memberId);
           if (!member || member.type !== 'slab') return;
           if (vertexIndex < 0 || vertexIndex >= member.polygon.length) return;
-          const candidate = normalizeMember({
+          const updated = normalizeMember({
             ...member,
             polygon: member.polygon.map((current, index) =>
               index === vertexIndex ? point : current,
             ),
           });
-          if (candidate.type !== 'slab' || !isValidMemberGeometry(candidate)) return;
-          state.data.members[state.data.members.indexOf(member)] = candidate;
-          state.data = recomputeAssociativeDimensions(state.data);
+          if (updated.type !== 'slab' || !isValidMemberGeometry(updated)) return;
+          project.members[project.members.indexOf(member)] = updated;
+          const finalized = finalizeMemberCandidate(before, project, [memberId]);
+          if (!finalized) return;
+          state.data = finalized;
           markModified(state, true);
         }),
 
       addSlabVertex: (memberId, afterIndex) =>
         set((state) => {
           if (!state.data) return;
-          const member = state.data.members.find((m) => m.id === memberId);
+          const before = state.data as ProjectData;
+          const project = deepClone(before);
+          const member = project.members.find((m) => m.id === memberId);
           if (!member || member.type !== 'slab') return;
           const n = member.polygon.length;
           if (afterIndex < 0 || afterIndex >= n) return;
@@ -947,25 +1111,31 @@ export const useProjectStore = create<ProjectState>()(
           };
           const polygon = [...member.polygon];
           polygon.splice(afterIndex + 1, 0, midpoint);
-          const candidate = normalizeMember({ ...member, polygon });
-          if (candidate.type !== 'slab' || !isValidMemberGeometry(candidate)) return;
-          state.data.members[state.data.members.indexOf(member)] = candidate;
-          state.data = recomputeAssociativeDimensions(state.data);
+          const updated = normalizeMember({ ...member, polygon });
+          if (updated.type !== 'slab' || !isValidMemberGeometry(updated)) return;
+          project.members[project.members.indexOf(member)] = updated;
+          const finalized = finalizeMemberCandidate(before, project, [memberId]);
+          if (!finalized) return;
+          state.data = finalized;
           markModified(state, true);
         }),
 
       removeSlabVertex: (memberId, vertexIndex) =>
         set((state) => {
           if (!state.data) return;
-          const member = state.data.members.find((m) => m.id === memberId);
+          const before = state.data as ProjectData;
+          const project = deepClone(before);
+          const member = project.members.find((m) => m.id === memberId);
           if (!member || member.type !== 'slab') return;
           if (member.polygon.length <= 3) return; // minimum 3 vertices
           if (vertexIndex < 0 || vertexIndex >= member.polygon.length) return;
           const polygon = member.polygon.filter((_, index) => index !== vertexIndex);
-          const candidate = normalizeMember({ ...member, polygon });
-          if (candidate.type !== 'slab' || !isValidMemberGeometry(candidate)) return;
-          state.data.members[state.data.members.indexOf(member)] = candidate;
-          state.data = recomputeAssociativeDimensions(state.data);
+          const updated = normalizeMember({ ...member, polygon });
+          if (updated.type !== 'slab' || !isValidMemberGeometry(updated)) return;
+          project.members[project.members.indexOf(member)] = updated;
+          const finalized = finalizeMemberCandidate(before, project, [memberId]);
+          if (!finalized) return;
+          state.data = finalized;
           markModified(state, true);
         }),
 
@@ -1104,9 +1274,11 @@ export const useProjectStore = create<ProjectState>()(
           for (const key of keys) {
             if (!Object.prototype.hasOwnProperty.call(updates, key)) continue;
             // All fields are replaced together in this one undoable command.
-            candidate[key] = (
+            const nextValue = (
               updates[key] === undefined ? undefined : deepClone(updates[key])
             ) as never;
+            if (projectValuesEqual(candidate[key], nextValue)) continue;
+            candidate[key] = nextValue;
             changed = true;
             if (key !== 'analysisResults') modelChanged = true;
           }
@@ -1117,11 +1289,7 @@ export const useProjectStore = create<ProjectState>()(
           ) {
             candidate.analysisResults = undefined;
           }
-          const validationErrors = [
-            ...validateGeometry(candidate).errors,
-            ...validateReferences(candidate).errors,
-          ];
-          if (validationErrors.some((issue) => issue.level === 'error')) return;
+          if (introducedValidationErrors(state.data, candidate).length > 0) return;
           state.data = candidate;
           markModified(state);
         }),
@@ -1134,23 +1302,28 @@ export const useProjectStore = create<ProjectState>()(
           summary = applyProjectImport(candidate, batch);
           const totalAdded = Object.values(summary.added).reduce((sum, count) => sum + count, 0);
           if (totalAdded === 0) return;
-          const validationErrors = [
-            ...validateGeometry(candidate).errors,
-            ...validateReferences(candidate).errors,
-          ].filter((issue) => issue.level === 'error');
-          if (validationErrors.length > 0) {
+          const resolved = applyGridGeometry(candidate);
+          const affectedMemberIds = changedMemberIds(state.data, resolved);
+          const nextData = finalizeMemberCandidate(
+            state.data as ProjectData,
+            resolved,
+            affectedMemberIds,
+          );
+          if (!nextData) {
+            const rejected = recomputeAssociativeDimensions(constrainProjectOpenings(resolved));
+            const newErrors = introducedValidationErrors(state.data, rejected);
             for (const category of Object.keys(summary.added) as Array<keyof typeof summary.added>) {
               summary.skipped[category] += summary.added[category];
               summary.added[category] = 0;
             }
             summary.warnings.push(
-              ...validationErrors.map((issue) => `Import rejected: ${issue.message}`),
+              ...(newErrors.length > 0
+                ? newErrors.map((issue) => `Import rejected: ${issue.message}`)
+                : ['Import rejected: final project validation failed']),
             );
             return;
           }
-          state.data = recomputeAssociativeDimensions(
-            constrainProjectOpenings(applyGridGeometry(candidate)),
-          );
+          state.data = nextData;
           const modelChanged =
             summary.added.materials > 0 ||
             summary.added.sections > 0 ||
@@ -1179,8 +1352,14 @@ export const useProjectStore = create<ProjectState>()(
           if (!state.data || tolerance < 0 || !Number.isFinite(tolerance)) return;
           const candidate = deepClone(state.data);
           if (!moveConnectedJointInProject(candidate, origin, point, storyId, tolerance)) return;
-          if (!candidate.members.every(isValidMemberGeometry)) return;
-          state.data = recomputeAssociativeDimensions(constrainProjectOpenings(candidate));
+          const affectedMemberIds = changedMemberIds(state.data, candidate);
+          const finalized = finalizeMemberCandidate(
+            state.data as ProjectData,
+            candidate,
+            affectedMemberIds,
+          );
+          if (!finalized) return;
+          state.data = finalized;
           markModified(state, true);
         }),
 

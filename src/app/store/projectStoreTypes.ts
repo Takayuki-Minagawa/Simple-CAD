@@ -68,7 +68,7 @@ export interface ProjectState {
   updateStories: (updates: Array<{ id: string; updates: Partial<Story> }>) => void;
   duplicateStory: (sourceId: string, story: Story) => string | null;
   deleteStory: (id: string) => boolean;
-  reorderStories: (orderedIds: string[]) => void;
+  reorderStories: (orderedIds: string[], chainElevations?: boolean) => void;
 
   addGrid: (grid: Grid) => void;
   updateGrid: (id: string, updates: Partial<Grid>) => void;

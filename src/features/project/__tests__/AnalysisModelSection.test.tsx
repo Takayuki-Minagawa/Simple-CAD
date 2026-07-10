@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 import sampleProject from '@/samples/sample-project.json';
 import type { ProjectData } from '@/domain/structural/types';
 import { AnalysisModelSection } from '../AnalysisModelSection';
+import { useI18n } from '@/i18n';
 
 describe('AnalysisModelSection', () => {
   it('adds a support at the first story and emits one analysis-data patch', () => {
@@ -38,5 +39,16 @@ describe('AnalysisModelSection', () => {
       expect.any(String),
       expect.objectContaining({ rigidZones: expect.objectContaining({ start: 120 }) }),
     );
+  });
+
+  it('rounds stored local-axis radians before displaying degrees', () => {
+    useI18n.getState().setLocale('en');
+    const data = structuredClone(sampleProject) as unknown as ProjectData;
+    const member = data.members.find((item) => item.type !== 'slab')!;
+    member.localAxis = { rotation: 0.523599 };
+
+    render(<AnalysisModelSection data={data} onUpdate={vi.fn()} onUpdateMember={vi.fn()} />);
+
+    expect(screen.getByLabelText('Local-axis rotation (deg)')).toHaveValue(30);
   });
 });

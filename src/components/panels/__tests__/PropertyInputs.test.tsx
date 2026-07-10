@@ -1,6 +1,31 @@
 import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
-import { VertexCoordInput } from '../PropertyInputs';
+import { CoordRow, VertexCoordInput } from '../PropertyInputs';
+
+describe('CoordRow', () => {
+  it('commits a fallback-equal value when it resolves a mixed selection', () => {
+    const onChange = vi.fn();
+
+    render(
+      <CoordRow
+        label="Rotation"
+        value={0}
+        mixed
+        mixedLabel="Mixed"
+        placeholder="—"
+        onChange={onChange}
+      />,
+    );
+    const input = screen.getByRole('textbox', { name: 'Rotation' });
+
+    expect(input).toHaveValue('');
+    expect(screen.getByText('Mixed')).toBeInTheDocument();
+    fireEvent.change(input, { target: { value: '0' } });
+    fireEvent.blur(input);
+
+    expect(onChange).toHaveBeenCalledWith(0);
+  });
+});
 
 describe('VertexCoordInput', () => {
   it('does not commit the rounded display value on an untouched blur', () => {

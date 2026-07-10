@@ -43,11 +43,14 @@ export function normalizeProjectCoordinates(
               },
             }
           : {}),
+        // Reference vectors are dimensionless directions, not millimetre
+        // coordinates. Preserve their precision so repeated imports cannot
+        // rotate the member's local basis.
         ...(member.localAxis?.referenceVector
           ? {
               localAxis: {
                 ...member.localAxis,
-                referenceVector: q3(member.localAxis.referenceVector),
+                referenceVector: { ...member.localAxis.referenceVector },
               },
             }
           : {}),
@@ -115,7 +118,9 @@ export function normalizeProjectCoordinates(
           constructionLines: data.constructionLines.map((line) => ({
             ...line,
             origin: q2(line.origin),
-            direction: q2(line.direction),
+            // Direction components are dimensionless and must not use the
+            // 0.001 mm coordinate step.
+            direction: { ...line.direction },
           })),
         }
       : {}),

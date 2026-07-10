@@ -1,7 +1,6 @@
 const CACHE_PREFIX = 'simple-cad-runtime-';
 const BUILD_ID =
-  new URL(self.location.href).searchParams.get('v')?.replace(/[^a-zA-Z0-9_-]/g, '_') ??
-  'legacy';
+  new URL(self.location.href).searchParams.get('v')?.replace(/[^a-zA-Z0-9_-]/g, '_') ?? 'legacy';
 const CACHE_NAME = `${CACHE_PREFIX}${BUILD_ID}`;
 const SCOPE_PATH = new URL(self.registration.scope).pathname;
 const APP_SHELL = [
@@ -15,7 +14,12 @@ const APP_SHELL = [
 
 async function precacheAppShell() {
   const cache = await caches.open(CACHE_NAME);
-  await cache.addAll(APP_SHELL);
+  const reloadRequest = (asset) =>
+    new Request(new URL(asset, self.registration.scope), { cache: 'reload' });
+  // A changed service-worker URL identifies a new build. Bypass the browser's
+  // HTTP cache for the mutable shell and manifest so the new runtime cache can
+  // never be populated from the previous generation's index or asset list.
+  await cache.addAll(APP_SHELL.map(reloadRequest));
   const manifestResponse = await cache.match('offline-assets.json', { ignoreVary: true });
   if (manifestResponse) {
     const manifest = await manifestResponse.json();
@@ -25,20 +29,18 @@ async function precacheAppShell() {
     // The generated list is the offline contract (lazy views and workers
     // included). Reject installation if any item is unavailable so the browser
     // retries instead of activating a permanently incomplete cache.
-    await cache.addAll(builtAssets);
+    await cache.addAll(builtAssets.map(reloadRequest));
   }
   const documentResponse = await cache.match('./', { ignoreVary: true });
   if (!documentResponse) return;
   const html = await documentResponse.text();
   const urls = [...html.matchAll(/(?:src|href)="([^"]+)"/g)]
     .map((match) => new URL(match[1], self.location.href))
-    .filter(
-      (url) => url.origin === self.location.origin && url.pathname.startsWith(SCOPE_PATH),
-    );
+    .filter((url) => url.origin === self.location.origin && url.pathname.startsWith(SCOPE_PATH));
   await Promise.all(
     urls.map(async (url) => {
       try {
-        await cache.add(url);
+        await cache.add(new Request(url, { cache: 'reload' }));
       } catch {
         // One optional asset must not prevent the service worker from installing.
       }
@@ -113,17 +115,16 @@ self.addEventListener('fetch', (event) => {
   event.respondWith(
     caches.open(CACHE_NAME).then(async (cache) => {
       const cached =
-        (await cache.match(request, { ignoreVary: true })) ||
-        (await matchOtherBuildCache(request));
+        (await cache.match(request, { ignoreVary: true })) || (await matchOtherBuildCache(request));
       const refresh = fetch(request)
-          .then((response) => {
-            if (response.ok) {
-              const copy = response.clone();
-              void cache.put(request, copy);
-            }
-            return response;
-          })
-          .catch(() => cached);
+        .then((response) => {
+          if (response.ok) {
+            const copy = response.clone();
+            void cache.put(request, copy);
+          }
+          return response;
+        })
+        .catch(() => cached);
       return cached || refresh;
     }),
   );

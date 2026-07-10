@@ -5,7 +5,7 @@ import { drawingTemplates } from '@/domain/templates/drawingTemplates';
 import { MenuBar } from './MenuBar';
 import { ToolButtonGroups } from './ToolButtonGroups';
 import { useMenuState } from './useMenuState';
-import { showConfirm } from '@/app/browserDialogs';
+import { showAlert, showConfirm } from '@/app/browserDialogs';
 import { saveWorkspace, type RecentProjectRecord } from '@/libs/persistence';
 
 const TemplatePickerDialog = lazy(() =>
@@ -71,8 +71,14 @@ export function MainToolbar({
 
   const handleRecentOpen = async (record: RecentProjectRecord) => {
     if (isDirty && !showConfirm(t.confirmUnsaved)) return;
-    loadProject(record.data);
-    await saveWorkspace(record.data, false).catch(() => undefined);
+    const { importProjectJson } = await import('@/domain/import/jsonImport');
+    const imported = importProjectJson(JSON.stringify(record.data));
+    if (!imported.ok) {
+      showAlert(imported.errors.map((error) => error.message).join('\n'));
+      return;
+    }
+    loadProject(imported.data);
+    await saveWorkspace(imported.data, false).catch(() => undefined);
     setShowRecentProjects(false);
   };
 

@@ -41,6 +41,7 @@ interface SceneContentsProps {
   analysisResults?: AnalysisResultsMetadata;
   showAnalysisResults: boolean;
   analysisScale: number;
+  showAllStories: boolean;
 }
 
 export function SceneContents({
@@ -67,6 +68,7 @@ export function SceneContents({
   analysisResults,
   showAnalysisResults,
   analysisScale,
+  showAllStories,
 }: SceneContentsProps) {
   // Inner group that holds members in CAD coordinates (mm). Used to convert
   // world-space raycast hit points back into CAD space for measuring/snapping.
@@ -214,6 +216,7 @@ export function SceneContents({
               members={filteredMembers}
               results={analysisResults}
               scale={analysisScale}
+              showAllStories={showAllStories}
             />
           )}
 

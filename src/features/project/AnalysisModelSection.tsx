@@ -16,6 +16,7 @@ import type {
 } from '@/domain/structural/types';
 import type { AnalysisDataPatch } from '@/app/store/projectStoreTypes';
 import { NumberField, ReadonlyField, SelectField, TextField } from './masterDataFields';
+import { radiansToDisplayDegrees } from '@/domain/geometry/precision';
 
 interface AnalysisModelSectionProps {
   data: ProjectData;
@@ -308,7 +309,7 @@ export function AnalysisModelSection({ data, onUpdate, onUpdateMember }: Analysi
               />
               <NumberField
                 label={labels.localRotation}
-                value={((selectedMember.localAxis?.rotation ?? 0) * 180) / Math.PI}
+                value={radiansToDisplayDegrees(selectedMember.localAxis?.rotation ?? 0)}
                 onChange={(degrees) => onUpdateMember(selectedMember.id, { localAxis: { ...selectedMember.localAxis, rotation: (degrees * Math.PI) / 180 } })}
               />
             </FieldGrid>

@@ -81,6 +81,8 @@ export interface Translations {
   propFillColor: string;
   propFillOpacity: string;
   propRotation: string;
+  propMixed: string;
+  propApply: string;
 
   // Status bar
   statusZoom: string;

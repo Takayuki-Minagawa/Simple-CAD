@@ -19,17 +19,43 @@ function memberEndpoints(m: Member): Point2D[] {
   ];
 }
 
-function nearest(points: Point2D[], to: Point2D): Point2D {
-  let best = to;
-  let bestD = Infinity;
-  for (const p of points) {
-    const d = distance2D(p, to);
-    if (d < bestD) {
-      bestD = d;
-      best = p;
+function nearestDistinctPair(
+  points: Point2D[],
+  start: Point2D,
+  end: Point2D,
+): { start: Point2D; end: Point2D } | null {
+  const unique = [...new Map(points.map((point) => [`${point.x}\u0000${point.y}`, point])).values()];
+  if (unique.length < 2) return null;
+
+  const twoNearest = (target: Point2D) => {
+    let first = { index: -1, distance: Infinity };
+    let second = { index: -1, distance: Infinity };
+    for (let index = 0; index < unique.length; index += 1) {
+      const distance = distance2D(unique[index], target);
+      if (distance < first.distance) {
+        second = first;
+        first = { index, distance };
+      } else if (distance < second.distance) {
+        second = { index, distance };
+      }
     }
+    return { first, second };
+  };
+
+  const startNearest = twoNearest(start);
+  const endNearest = twoNearest(end);
+  if (startNearest.first.index !== endNearest.first.index) {
+    return {
+      start: unique[startNearest.first.index],
+      end: unique[endNearest.first.index],
+    };
   }
-  return best;
+
+  const keepStartBest = startNearest.first.distance + endNearest.second.distance;
+  const keepEndBest = startNearest.second.distance + endNearest.first.distance;
+  return keepStartBest <= keepEndBest
+    ? { start: unique[startNearest.first.index], end: unique[endNearest.second.index] }
+    : { start: unique[startNearest.second.index], end: unique[endNearest.first.index] };
 }
 
 /**
@@ -47,8 +73,11 @@ export function recomputeAssociativeDimensions(data: ProjectData): ProjectData {
       const m = memberById.get(id);
       if (m) pts.push(...memberEndpoints(m));
     }
-    if (pts.length === 0) return d;
-    return { ...d, start: nearest(pts, d.start), end: nearest(pts, d.end) };
+    const snapped = nearestDistinctPair(pts, d.start, d.end);
+    // A valid member normally provides at least two distinct points. If a
+    // legacy/partial reference does not, keep the previous valid dimension
+    // instead of collapsing start and end to the same coordinate.
+    return snapped ? { ...d, ...snapped } : d;
   });
 
   return { ...data, dimensions };

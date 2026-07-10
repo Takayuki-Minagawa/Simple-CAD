@@ -36,12 +36,76 @@ export function encodeStepString(value: string): string {
   return result;
 }
 
-/** Decode STEP \X2\ / \X4\ sequences and doubled literal backslashes. */
+const STEP_CODE_PAGE_LABELS: Record<string, string> = {
+  A: 'iso-8859-1',
+  B: 'iso-8859-2',
+  C: 'iso-8859-3',
+  D: 'iso-8859-4',
+  E: 'iso-8859-5',
+  F: 'iso-8859-6',
+  G: 'iso-8859-7',
+  H: 'iso-8859-8',
+  I: 'iso-8859-9',
+};
+
+function decodeCodePageByte(page: string, byte: number): string | null {
+  const label = STEP_CODE_PAGE_LABELS[page];
+  if (!label) return null;
+  try {
+    return new TextDecoder(label, { fatal: true }).decode(Uint8Array.of(byte));
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Decode ISO 10303-21 strings, including modern X escapes and the legacy
+ * `\PA\`..`\PI\` code-page / `\S\c` high-byte form. Unknown or malformed
+ * directives remain literal rather than being silently discarded.
+ */
 export function decodeStepString(value: string): string {
   let result = '';
   let index = 0;
+  let codePage: string | null = 'A';
 
   while (index < value.length) {
+    if (
+      value[index] === '\\' &&
+      value[index + 1] === 'P' &&
+      value[index + 3] === '\\'
+    ) {
+      const selectedPage = value[index + 2];
+      if (STEP_CODE_PAGE_LABELS[selectedPage]) {
+        codePage = selectedPage;
+      } else {
+        // Keep unsupported page selections and all subsequent S escapes
+        // literal until a supported page is selected; guessing a character
+        // set would silently corrupt IFC names and identifiers.
+        result += value.slice(index, index + 4);
+        codePage = null;
+      }
+      index += 4;
+      continue;
+    }
+
+    if (value.startsWith('\\S\\', index) && index + 3 < value.length) {
+      const sourceCode = value.charCodeAt(index + 3);
+      const decoded =
+        codePage !== null && sourceCode <= 0x7f
+          ? decodeCodePageByte(codePage, sourceCode + 0x80)
+          : null;
+      if (decoded !== null) {
+        result += decoded;
+        index += 4;
+        continue;
+      }
+      // Preserve the complete directive if the selected code page cannot
+      // safely represent it, allowing callers to diagnose/reprocess the data.
+      result += value.slice(index, index + 4);
+      index += 4;
+      continue;
+    }
+
     if (value.startsWith('\\X2\\', index) || value.startsWith('\\X4\\', index)) {
       const width = value[index + 2] === '2' ? 4 : 8;
       const bodyStart = index + 4;

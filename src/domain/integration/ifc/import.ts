@@ -30,6 +30,7 @@ import {
   decodeIfcOpeningMetadata,
   type IfcMemberMetadata,
 } from './simpleCadMetadata';
+import { migrateLegacyMaterials } from '@/domain/migration';
 
 const MATERIAL_ID = 'MAT-IFC';
 const SUPPORTED_ELEMENT_TYPES = ['IFCCOLUMN', 'IFCBEAM', 'IFCWALL', 'IFCSLAB'];
@@ -468,6 +469,21 @@ function extrusionSpan(resolved: ResolvedSolid): { start: Point3D; end: Point3D 
 }
 
 function ensureSection(sections: Map<string, Section>, section: Section): string {
+  const sourceId = section.id.trim();
+  if (sourceId) {
+    const existingById = sections.get(sourceId);
+    if (existingById && sectionSignature(existingById) === sectionSignature(section)) {
+      return sourceId;
+    }
+
+    // A SECTION:<id> profile name is an explicit identity signal. Preserve it
+    // even when another section has identical dimensions: equal geometry does
+    // not imply equal engineering/master-data identity.
+    const nextId = reserveUniqueId(sourceId, new Set(sections.keys()), sourceId);
+    sections.set(nextId, { ...section, id: nextId });
+    return nextId;
+  }
+
   const key = sectionSignature(section);
   const existing = [...sections.values()].find((item) => sectionSignature(item) === key);
   if (existing) return existing.id;
@@ -514,12 +530,13 @@ function resolveIfcMaterials(
     if (serialized) {
       try {
         const parsed = JSON.parse(serialized) as Partial<Material>;
+        const migrated = migrateLegacyMaterials({ materials: [parsed] }).materials[0] as Partial<Material>;
         if (
-          typeof parsed.id === 'string' &&
-          typeof parsed.name === 'string' &&
-          ['concrete', 'steel', 'wood', 'other'].includes(parsed.type ?? '')
+          typeof migrated.id === 'string' &&
+          typeof migrated.name === 'string' &&
+          ['concrete', 'steel', 'wood', 'other'].includes(migrated.type ?? '')
         ) {
-          material = { ...(parsed as Material), id };
+          material = { ...(migrated as Material), id };
         }
       } catch {
         // Third-party descriptions are commonly plain text; fall through.
@@ -646,8 +663,17 @@ function openingPositionFromGeometry(resolved: ResolvedSolid, lowerEdge: boolean
   const placement = resolved.profile.placement;
   const centerX = placement?.origin.x ?? 0;
   const centerY = placement?.origin.y ?? 0;
-  const center = add3(
+  // An IfcOpeningElement is commonly extruded beyond both faces of its host.
+  // Its placement origin therefore lies on the beginning face, not on the
+  // wall/slab reference plane. Move to the extrusion mid-plane before reading
+  // the profile centre so metadata-free imports do not retain half the host
+  // thickness plus the penetration allowance as a lateral shift.
+  const extrusionCenter = add3(
     resolved.transform.origin,
+    scale3(resolved.transform.zAxis, resolved.depth / 2),
+  );
+  const center = add3(
+    extrusionCenter,
     add3(scale3(resolved.transform.xAxis, centerX), scale3(resolved.transform.yAxis, centerY)),
   );
   return lowerEdge

@@ -6,7 +6,14 @@ import {
 } from '@/domain/geometry/measurement';
 import { distance2D } from '@/domain/geometry/point';
 import type { Point3D } from '@/domain/geometry/types';
-import { GEOM_EPSILON, quantize, quantizePoint2D, quantizePoint3D } from '@/domain/geometry/precision';
+import {
+  GEOM_EPSILON,
+  JOINT_MERGE_TOLERANCE,
+  SpatialPointIndex3D,
+  quantize,
+  quantizePoint2D,
+  quantizePoint3D,
+} from '@/domain/geometry/precision';
 import type {
   Dimension,
   Material,
@@ -15,9 +22,49 @@ import type {
   ProjectData,
   Section,
 } from '@/domain/structural/types';
+import { resolveGridToken } from '@/domain/structural/gridResolve';
 
 function finite(values: number[]): boolean {
   return values.every(Number.isFinite);
+}
+
+/**
+ * Clone an update patch without JSON serialization dropping explicit
+ * `undefined` values. Those values mean "clear this optional field" at the
+ * store boundary.
+ */
+export function cloneUpdatePatch<T>(value: T): T {
+  if (Array.isArray(value)) return value.map(cloneUpdatePatch) as T;
+  if (value !== null && typeof value === 'object') {
+    return Object.fromEntries(
+      Object.entries(value).map(([key, nested]) => [key, cloneUpdatePatch(nested)]),
+    ) as T;
+  }
+  return value;
+}
+
+/** Semantic equality for JSON project values; a missing optional key and an
+ * explicit `undefined` key represent the same persisted value. */
+export function projectValuesEqual(left: unknown, right: unknown): boolean {
+  if (Object.is(left, right)) return true;
+  if (left === null || right === null || typeof left !== 'object' || typeof right !== 'object') {
+    return false;
+  }
+  if (Array.isArray(left) || Array.isArray(right)) {
+    return Array.isArray(left) &&
+      Array.isArray(right) &&
+      left.length === right.length &&
+      left.every((value, index) => projectValuesEqual(value, right[index]));
+  }
+  const leftRecord = left as Record<string, unknown>;
+  const rightRecord = right as Record<string, unknown>;
+  const leftKeys = Object.keys(leftRecord).filter((key) => leftRecord[key] !== undefined).sort();
+  const rightKeys = Object.keys(rightRecord).filter((key) => rightRecord[key] !== undefined).sort();
+  return leftKeys.length === rightKeys.length &&
+    leftKeys.every(
+      (key, index) =>
+        key === rightKeys[index] && projectValuesEqual(leftRecord[key], rightRecord[key]),
+    );
 }
 
 export function normalizeMember(member: Member): Member {
@@ -219,9 +266,19 @@ export function isValidSection(section: Section): boolean {
   }
 }
 
-export function normalizeProjectMemberGeometry(data: ProjectData): boolean {
-  const members = data.members.map(normalizeMember);
-  if (!members.every(isValidMemberGeometry)) return false;
+export function normalizeProjectMemberGeometry(
+  data: ProjectData,
+  memberIds?: Iterable<string>,
+): boolean {
+  const selected = memberIds ? new Set(memberIds) : null;
+  const members = data.members.map((member) =>
+    selected === null || selected.has(member.id) ? normalizeMember(member) : member,
+  );
+  if (
+    !members.every(
+      (member) => selected !== null && !selected.has(member.id) || isValidMemberGeometry(member),
+    )
+  ) return false;
   data.members = members;
   return true;
 }
@@ -239,7 +296,7 @@ export function shiftMemberToStory(member: Member, elevationDelta: number): Memb
 
 export function mergeMemberUpdate(member: Member, updates: Partial<Member>): Member | null {
   if (updates.type != null && updates.type !== member.type) return null;
-  const candidate = normalizeMember({ ...member, ...deepClone(updates) } as Member);
+  const candidate = normalizeMember({ ...member, ...cloneUpdatePatch(updates) } as Member);
   return isValidMemberGeometry(candidate) ? candidate : null;
 }
 
@@ -308,7 +365,114 @@ export function constrainProjectOpenings(data: ProjectData): ProjectData {
   return data;
 }
 
-function removeMemberReferences(data: ProjectData, deletedMemberIds: Set<string>) {
+function memberAnalysisNodes(member: Member): Array<{ storyId: string; position: Point3D }> {
+  if (member.type === 'slab') {
+    return member.polygon.map((point) => ({
+      storyId: member.story,
+      position: { ...point, z: member.level },
+    }));
+  }
+  return [
+    { storyId: member.story, position: member.start },
+    { storyId: member.story, position: member.end },
+  ];
+}
+
+function sameAnalysisNode(
+  left: { storyId: string; position: Point3D },
+  right: { storyId: string; position: Point3D },
+): boolean {
+  return left.storyId === right.storyId &&
+    Math.hypot(
+      left.position.x - right.position.x,
+      left.position.y - right.position.y,
+      left.position.z - right.position.z,
+  ) <= JOINT_MERGE_TOLERANCE;
+}
+
+interface AnalysisNodeMapping {
+  from: { storyId: string; position: Point3D };
+  to: { storyId: string; position: Point3D };
+}
+
+function memberAnalysisNodeMappings(before: Member, after: Member): AnalysisNodeMapping[] {
+  const from = memberAnalysisNodes(before);
+  const to = memberAnalysisNodes(after);
+  if (from.length !== to.length) return [];
+  return from.map((node, index) => ({ from: node, to: to[index] }));
+}
+
+/**
+ * Move point-based analysis data with member joints when every owner of the
+ * old joint moves to the same new joint. Points shared by an unchanged member
+ * or diaphragm master remain in place; divergent edits remain untouched and
+ * are rejected by the final reference-validation gate.
+ */
+export function reconcileAnalysisPointsForMembers(
+  before: ProjectData,
+  after: ProjectData,
+  changedMemberIds: Iterable<string>,
+) {
+  const changed = new Set(changedMemberIds);
+  if (changed.size === 0) return;
+  const beforeById = new Map(before.members.map((member) => [member.id, member]));
+  const mappings = after.members.flatMap((member) => {
+    if (!changed.has(member.id)) return [];
+    const previous = beforeById.get(member.id);
+    return previous ? memberAnalysisNodeMappings(previous, member) : [];
+  });
+  if (mappings.length === 0) return;
+
+  const fixedNodes = [
+    ...after.members
+      .filter((member) => !changed.has(member.id))
+      .flatMap(memberAnalysisNodes),
+    ...(after.diaphragms ?? []).flatMap((diaphragm) =>
+      diaphragm.masterPosition
+        ? [{ storyId: diaphragm.storyId, position: diaphragm.masterPosition }]
+        : [],
+    ),
+  ];
+
+  const fixedByStory = new Map<string, SpatialPointIndex3D<boolean>>();
+  for (const node of fixedNodes) {
+    const index = fixedByStory.get(node.storyId) ??
+      new SpatialPointIndex3D<boolean>(JOINT_MERGE_TOLERANCE);
+    index.insert(node.position, true);
+    fixedByStory.set(node.storyId, index);
+  }
+  const mappingsByStory = new Map<
+    string,
+    SpatialPointIndex3D<AnalysisNodeMapping>
+  >();
+  for (const mapping of mappings) {
+    const index = mappingsByStory.get(mapping.from.storyId) ??
+      new SpatialPointIndex3D<AnalysisNodeMapping>(JOINT_MERGE_TOLERANCE);
+    index.insert(mapping.from.position, mapping);
+    mappingsByStory.set(mapping.from.storyId, index);
+  }
+
+  const reconcile = (item: { storyId: string; position: Point3D }) => {
+    if (fixedByStory.get(item.storyId)?.find(item.position)) return;
+    const targets = (mappingsByStory.get(item.storyId)?.findAll(item.position) ?? [])
+      .map((mapping) => mapping.to);
+    if (targets.length === 0) return;
+    const target = targets[0];
+    if (!targets.every((candidate) => sameAnalysisNode(target, candidate))) return;
+    item.storyId = target.storyId;
+    item.position = { ...target.position };
+  };
+
+  for (const support of after.supports ?? []) reconcile(support);
+  for (const load of after.nodalLoads ?? []) reconcile(load);
+  for (const mass of after.masses ?? []) reconcile(mass);
+}
+
+function removeMemberReferences(
+  data: ProjectData,
+  deletedMemberIds: Set<string>,
+  deletedMembers: Member[],
+) {
   data.openings = data.openings.filter((opening) => !deletedMemberIds.has(opening.memberId));
   data.dimensions = data.dimensions.map((dimension) => {
     if (!dimension.refMemberIds?.some((id) => deletedMemberIds.has(id))) return dimension;
@@ -337,6 +501,26 @@ function removeMemberReferences(data: ProjectData, deletedMemberIds: Set<string>
       memberIds: diaphragm.memberIds?.filter((id) => !deletedMemberIds.has(id)),
     }));
   }
+
+  const deletedNodes = deletedMembers.flatMap(memberAnalysisNodes);
+  if (deletedNodes.length > 0) {
+    const retainedNodes = [
+      ...data.members.flatMap(memberAnalysisNodes),
+      ...(data.diaphragms ?? []).flatMap((diaphragm) =>
+        diaphragm.masterPosition
+          ? [{ storyId: diaphragm.storyId, position: diaphragm.masterPosition }]
+          : [],
+      ),
+    ];
+    const isNewlyOrphaned = (item: { storyId: string; position: Point3D }) =>
+      deletedNodes.some((node) => sameAnalysisNode(item, node)) &&
+      !retainedNodes.some((node) => sameAnalysisNode(item, node));
+    if (data.supports) data.supports = data.supports.filter((item) => !isNewlyOrphaned(item));
+    if (data.nodalLoads) {
+      data.nodalLoads = data.nodalLoads.filter((item) => !isNewlyOrphaned(item));
+    }
+    if (data.masses) data.masses = data.masses.filter((item) => !isNewlyOrphaned(item));
+  }
   if (data.analysisResults?.memberResults) {
     data.analysisResults.memberResults = data.analysisResults.memberResults.filter(
       (result) => !deletedMemberIds.has(result.memberId),
@@ -347,9 +531,8 @@ function removeMemberReferences(data: ProjectData, deletedMemberIds: Set<string>
 export function deleteEntitiesInProject(data: ProjectData, ids: Iterable<string>): boolean {
   const deletedIds = new Set(ids);
   if (deletedIds.size === 0) return false;
-  const deletedMemberIds = new Set(
-    data.members.filter((member) => deletedIds.has(member.id)).map((member) => member.id),
-  );
+  const deletedMembers = data.members.filter((member) => deletedIds.has(member.id));
+  const deletedMemberIds = new Set(deletedMembers.map((member) => member.id));
   const before =
     data.members.length +
     data.openings.length +
@@ -364,7 +547,7 @@ export function deleteEntitiesInProject(data: ProjectData, ids: Iterable<string>
   if (data.constructionLines) {
     data.constructionLines = data.constructionLines.filter((line) => !deletedIds.has(line.id));
   }
-  removeMemberReferences(data, deletedMemberIds);
+  removeMemberReferences(data, deletedMemberIds, deletedMembers);
 
   const after =
     data.members.length +
@@ -375,28 +558,40 @@ export function deleteEntitiesInProject(data: ProjectData, ids: Iterable<string>
   return before !== after;
 }
 
-export function renameGridReferences(data: ProjectData, previousName: string, nextName: string) {
-  if (previousName === nextName) return;
+export function renameGridReferences(
+  data: ProjectData,
+  gridsBeforeRename: ProjectData['grids'],
+  gridId: string,
+  nextName: string,
+) {
   for (const member of data.members) {
     if (!member.gridRef) continue;
     for (const key of ['startGrid', 'endGrid'] as const) {
       const pair = member.gridRef[key];
       if (!pair) continue;
-      member.gridRef[key] = pair.map((name) =>
-        name === previousName ? nextName : name,
-      ) as [string, string];
+      member.gridRef[key] = pair.map((token) => {
+        // Stable ID references never need rewriting. A colliding grid name
+        // must not steal a token that resolves to another grid's exact ID.
+        if (token === gridId) return token;
+        return resolveGridToken(gridsBeforeRename, token)?.id === gridId ? nextName : token;
+      }) as [string, string];
     }
   }
 }
 
-export function detachGridReferences(data: ProjectData, deletedTokens: Iterable<string>) {
-  const deleted = new Set(deletedTokens);
+export function detachGridReferences(
+  data: ProjectData,
+  gridsBeforeDelete: ProjectData['grids'],
+  gridId: string,
+) {
+  const referencesGrid = (pair: [string, string] | undefined) =>
+    pair?.some((token) => resolveGridToken(gridsBeforeDelete, token)?.id === gridId) ?? false;
   for (const member of data.members) {
     if (!member.gridRef) continue;
-    if (member.gridRef.startGrid?.some((token) => deleted.has(token))) {
+    if (referencesGrid(member.gridRef.startGrid)) {
       member.gridRef.startGrid = undefined;
     }
-    if (member.gridRef.endGrid?.some((token) => deleted.has(token))) {
+    if (referencesGrid(member.gridRef.endGrid)) {
       member.gridRef.endGrid = undefined;
     }
     if (!member.gridRef.startGrid && !member.gridRef.endGrid) member.gridRef = undefined;
@@ -461,7 +656,8 @@ export function moveConnectedJointInProject(
   tolerance: number,
 ): boolean {
   const point = quantizePoint2D(target);
-  let changed = false;
+  if (distance2D(origin, point) <= GEOM_EPSILON) return false;
+  let memberChanged = false;
   for (const member of data.members) {
     if (storyId && member.story !== storyId) continue;
     if (member.type === 'slab') continue;
@@ -470,32 +666,26 @@ export function moveConnectedJointInProject(
     if (startMatches) {
       member.start.x = point.x;
       member.start.y = point.y;
-      changed = true;
+      memberChanged = true;
     }
     if (endMatches) {
       member.end.x = point.x;
       member.end.y = point.y;
-      changed = true;
+      memberChanged = true;
     }
   }
+  if (!memberChanged) return false;
   const moveAnalysisPoint = (itemStoryId: string, position: Point3D) => {
     if (storyId && itemStoryId !== storyId) return;
     if (distance2D(position, origin) > tolerance) return;
     position.x = point.x;
     position.y = point.y;
-    changed = true;
   };
-  for (const support of data.supports ?? []) {
-    moveAnalysisPoint(support.storyId, support.position);
-  }
-  for (const load of data.nodalLoads ?? []) {
-    moveAnalysisPoint(load.storyId, load.position);
-  }
-  for (const mass of data.masses ?? []) {
-    moveAnalysisPoint(mass.storyId, mass.position);
-  }
+  for (const support of data.supports ?? []) moveAnalysisPoint(support.storyId, support.position);
+  for (const load of data.nodalLoads ?? []) moveAnalysisPoint(load.storyId, load.position);
+  for (const mass of data.masses ?? []) moveAnalysisPoint(mass.storyId, mass.position);
   for (const diaphragm of data.diaphragms ?? []) {
     if (diaphragm.masterPosition) moveAnalysisPoint(diaphragm.storyId, diaphragm.masterPosition);
   }
-  return changed;
+  return true;
 }
