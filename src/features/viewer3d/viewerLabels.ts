@@ -31,6 +31,13 @@ export function getViewerLabels(locale: Locale) {
         measureHint: '2点をクリックして距離を計測（端点優先スナップ）',
         measureDistance: '距離',
         measureLength: '長さ',
+        analysisResults: '解析結果',
+        showAnalysisResults: '解析結果を表示',
+        deformationScale: '変形倍率',
+        utilization: '検定比',
+        analysisWarnings: '警告',
+        axial: '軸力',
+        moment: '曲げ My/Mz',
       }
     : {
         section: 'Section',
@@ -61,6 +68,13 @@ export function getViewerLabels(locale: Locale) {
         measureHint: 'Click two points to measure distance (snaps to endpoints)',
         measureDistance: 'Distance',
         measureLength: 'Length',
+        analysisResults: 'Analysis results',
+        showAnalysisResults: 'Show analysis results',
+        deformationScale: 'Deformation scale',
+        utilization: 'Utilization',
+        analysisWarnings: 'Warnings',
+        axial: 'Axial',
+        moment: 'Moment My/Mz',
       };
 }
 

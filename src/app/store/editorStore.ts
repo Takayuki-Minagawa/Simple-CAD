@@ -1,19 +1,41 @@
 import { create } from 'zustand';
 import type { ColumnPlacementDirection } from '@/domain/structural/placement';
 
-export type EditorTool =
-  | 'select'
-  | 'pan'
-  | 'column'
-  | 'beam'
-  | 'wall'
-  | 'slab'
-  | 'dimension'
-  | 'annotation'
-  | 'trim'
-  | 'extend'
-  | 'xline'
-  | 'spline';
+export const TOOL_NAMES = [
+  'select',
+  'pan',
+  'column',
+  'beam',
+  'wall',
+  'slab',
+  'opening',
+  'dimension',
+  'annotation',
+  'trim',
+  'extend',
+  'fillet',
+  'xline',
+  'spline',
+] as const;
+
+export type EditorTool = (typeof TOOL_NAMES)[number];
+
+export const TOOL_REGISTRY = {
+  select: { mode: 'select' },
+  pan: { mode: 'navigate' },
+  column: { mode: 'create' },
+  beam: { mode: 'create' },
+  wall: { mode: 'create' },
+  slab: { mode: 'create' },
+  opening: { mode: 'create' },
+  dimension: { mode: 'create' },
+  annotation: { mode: 'create' },
+  trim: { mode: 'modify' },
+  extend: { mode: 'modify' },
+  fillet: { mode: 'modify' },
+  xline: { mode: 'create' },
+  spline: { mode: 'create' },
+} as const satisfies Record<EditorTool, { mode: 'select' | 'navigate' | 'create' | 'modify' }>;
 
 export const SNAP_MODES = ['grid', 'endpoint', 'midpoint', 'intersection', 'perpendicular', 'nearest'] as const;
 
@@ -33,10 +55,14 @@ export const LAYER_NAMES = [
 
 export type LayerName = (typeof LAYER_NAMES)[number];
 
+export const LAYER_REGISTRY = Object.fromEntries(
+  LAYER_NAMES.map((name) => [name, { defaultVisible: true, defaultLocked: false }]),
+) as Record<LayerName, { defaultVisible: boolean; defaultLocked: boolean }>;
+
 export type ThemeMode = 'light' | 'dark';
 
 export function isCreationTool(tool: EditorTool): boolean {
-  return tool !== 'select' && tool !== 'pan' && tool !== 'trim' && tool !== 'extend';
+  return TOOL_REGISTRY[tool].mode === 'create';
 }
 
 interface EditorState {
@@ -82,10 +108,10 @@ interface EditorState {
   cursorWorld: { x: number; y: number } | null;
 
   // Layer visibility
-  layerVisibility: Record<string, boolean>;
+  layerVisibility: Record<LayerName, boolean>;
 
   // Layer lock
-  layerLocked: Record<string, boolean>;
+  layerLocked: Record<LayerName, boolean>;
 
   // 3D options
   wireframe: boolean;
@@ -116,17 +142,20 @@ interface EditorState {
   setPan: (pan: { x: number; y: number }) => void;
   setZoom: (zoom: number) => void;
   setCursorWorld: (pos: { x: number; y: number } | null) => void;
-  toggleLayerVisibility: (layer: string) => void;
-  setLayerLocked: (layer: string, locked: boolean) => void;
+  toggleLayerVisibility: (layer: LayerName) => void;
+  setLayerLocked: (layer: LayerName, locked: boolean) => void;
   setWireframe: (on: boolean) => void;
   setOrthographic: (on: boolean) => void;
   zoomToFit: (bounds: { minX: number; minY: number; maxX: number; maxY: number }, viewportWidth: number, viewportHeight: number) => void;
 }
 
-const defaultLayerVisibility: Record<string, boolean> = {};
-for (const name of LAYER_NAMES) {
-  defaultLayerVisibility[name] = true;
-}
+const defaultLayerVisibility = Object.fromEntries(
+  LAYER_NAMES.map((name) => [name, LAYER_REGISTRY[name].defaultVisible]),
+) as Record<LayerName, boolean>;
+
+const defaultLayerLocked = Object.fromEntries(
+  LAYER_NAMES.map((name) => [name, LAYER_REGISTRY[name].defaultLocked]),
+) as Record<LayerName, boolean>;
 
 export const useEditorStore = create<EditorState>()((set) => ({
   theme: (window.matchMedia?.('(prefers-color-scheme: dark)').matches ? 'dark' : 'light') as ThemeMode,
@@ -151,14 +180,14 @@ export const useEditorStore = create<EditorState>()((set) => ({
   zoom: 0.05,
   cursorWorld: null,
   layerVisibility: { ...defaultLayerVisibility },
-  layerLocked: {},
+  layerLocked: { ...defaultLayerLocked },
   wireframe: false,
   orthographic: true,
 
   setTheme: (theme) => set({ theme }),
   toggleTheme: () => set((state) => ({ theme: state.theme === 'light' ? 'dark' : 'light' })),
   setViewMode: (mode) => set({ viewMode: mode }),
-  setActiveStory: (storyId) => set({ activeStory: storyId }),
+  setActiveStory: (storyId) => set({ activeStory: storyId, selectedIds: [] }),
   setSelectedIds: (ids) => set({ selectedIds: ids }),
   toggleSelection: (id) =>
     set((state) => ({

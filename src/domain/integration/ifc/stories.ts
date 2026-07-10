@@ -2,6 +2,7 @@ import type { Story } from '@/domain/structural/types';
 import { resolveIfcElement, resolveLocalPlacement } from './resolve';
 import { asNumber, asRef, asRefList, asString } from './step';
 import type { IfcStoryInfo, ResolvedSolid, StepEntity } from './types';
+import { resolvedSolidZExtents } from './geometry';
 
 export function resolveStoryMembership(entities: Map<number, StepEntity>): Map<number, number> {
   const membership = new Map<number, number>();
@@ -18,6 +19,7 @@ export function resolveStoryMembership(entities: Map<number, StepEntity>): Map<n
 }
 
 export function collectIfcStories(entities: Map<number, StepEntity>): IfcStoryInfo[] {
+  const usedIds = new Set<string>();
   return [...entities.values()]
     .filter((entity) => entity.type === 'IFCBUILDINGSTOREY')
     .map((entity, index) => {
@@ -25,12 +27,25 @@ export function collectIfcStories(entities: Map<number, StepEntity>): IfcStoryIn
       const placement = resolveLocalPlacement(entities, asRef(entity.args[5]));
       const elevation = asNumber(entity.args[9]) ?? placement.origin.z;
       return {
-        id: sanitizeId(name, index + 1),
+        id: reserveStoryId(sanitizeId(name, index + 1), usedIds),
         name,
         elevation,
+        sourceEntityId: entity.id,
       };
     })
     .sort((a, b) => a.elevation - b.elevation);
+}
+
+function reserveStoryId(base: string, used: Set<string>): string {
+  if (!used.has(base)) {
+    used.add(base);
+    return base;
+  }
+  let suffix = 2;
+  while (used.has(`${base}-${suffix}`)) suffix++;
+  const id = `${base}-${suffix}`;
+  used.add(id);
+  return id;
 }
 
 export function buildStoryHeights(
@@ -55,12 +70,20 @@ export function buildStoryHeights(
     for (const element of elements) {
       const storyRef = membership.get(element.id);
       if (storyRef) {
-        const entity = entities.get(storyRef);
-        if (entity && (asString(entity.args[2]) ?? '') !== story.name) continue;
+        if (story.sourceEntityId !== undefined) {
+          if (storyRef !== story.sourceEntityId) continue;
+        } else {
+          const entity = entities.get(storyRef);
+          if (entity && (asString(entity.args[2]) ?? '') !== story.name) continue;
+        }
       }
       const resolved = resolveIfcElement(element, entities);
       if (!resolved) continue;
-      top = Math.max(top, (resolved.transform.origin.z + resolved.depth) * unitScale);
+      if (!storyRef) {
+        const sourceZ = resolved.transform.origin.z;
+        if (sourceZ < story.elevation || (next && sourceZ >= next.elevation)) continue;
+      }
+      top = Math.max(top, resolvedSolidZExtents(resolved).max * unitScale);
     }
 
     result.push({
@@ -80,9 +103,12 @@ export function resolveElementStoryId(
   membership: Map<number, number>,
   resolved: ResolvedSolid,
   entities: Map<number, StepEntity>,
+  storyIdByEntityRef?: Map<number, string>,
 ): string | null {
   const storyRef = membership.get(elementId);
   if (storyRef) {
+    const directId = storyIdByEntityRef?.get(storyRef);
+    if (directId && stories.some((story) => story.id === directId)) return directId;
     const storyEntity = entities.get(storyRef);
     const storyName = storyEntity ? asString(storyEntity.args[2]) : null;
     const story = stories.find((item) => item.name === storyName);

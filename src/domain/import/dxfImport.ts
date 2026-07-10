@@ -1,12 +1,23 @@
-import type { Annotation, Dimension, Member, Section } from '@/domain/structural/types';
+import type {
+  Annotation,
+  ConstructionLine,
+  Dimension,
+  Grid,
+  Member,
+  Section,
+} from '@/domain/structural/types';
 import { generateId } from '@/domain/idGenerator';
+import { quantize } from '@/domain/geometry/precision';
 import { parseDxfEntities, parseDxfHeader, type DxfEntity } from './dxfParser';
 import {
   SectionRegistry,
+  classifyDxfLayer,
   convertCircleToMember,
   convertDimensionEntity,
   convertLineToMember,
   convertPolylineToMembers,
+  readSimpleCadMetadata,
+  reserveMetadataId,
 } from './dxfConverters';
 
 export { DXF_MATERIAL, DXF_MATERIAL_ID, isRectangle, isSquarish } from './dxfConverters';
@@ -15,6 +26,8 @@ export interface DxfImportResult {
   annotations: Annotation[];
   members: Member[];
   dimensions: Dimension[];
+  grids: Grid[];
+  constructionLines: ConstructionLine[];
   autoSections: Section[];
   primitiveCount: number;
   warnings: string[];
@@ -36,11 +49,14 @@ export interface DxfImportOptions {
  * to a heuristic.
  */
 export function insUnitsToMm(code: number | undefined): number | null {
+  const surveyFootMm = (1200 / 3937) * 1000;
   switch (code) {
     case 1:
       return 25.4; // inches
     case 2:
       return 304.8; // feet
+    case 3:
+      return 1_609_344; // miles
     case 4:
       return 1; // millimetres
     case 5:
@@ -53,10 +69,36 @@ export function insUnitsToMm(code: number | undefined): number | null {
       return 0.0000254; // microinches (1µin = 2.54e-5 mm)
     case 9:
       return 0.0254; // mils (1 mil = 0.001 in = 0.0254 mm)
+    case 10:
+      return 914.4; // yards
+    case 11:
+      return 1e-7; // angstroms
+    case 12:
+      return 1e-6; // nanometres
     case 13:
-      return 1e-6; // nanometres → mm
+      return 1e-3; // microns / micrometres
     case 14:
       return 100; // decimetres (1 dm = 100 mm)
+    case 15:
+      return 10_000; // dekametres
+    case 16:
+      return 100_000; // hectometres
+    case 17:
+      return 1e12; // gigametres
+    case 18:
+      return 149_597_870_700_000; // astronomical units
+    case 19:
+      return 9.4607304725808e18; // light years
+    case 20:
+      return 3.085677581491367e19; // parsecs
+    case 21:
+      return surveyFootMm;
+    case 22:
+      return surveyFootMm / 12;
+    case 23:
+      return surveyFootMm * 3;
+    case 24:
+      return surveyFootMm * 5280;
     default:
       return null; // 0 = unitless / unknown
   }
@@ -67,8 +109,13 @@ export function insUnitsToMm(code: number | undefined): number | null {
  * Structural drawings in mm have extents in the thousands; metre-unit drawings
  * are in the tens. Returns the mm scale and whether a guess was made.
  */
-export function heuristicUnitScale(maxExtent: number): { scale: number; guessed: boolean } {
+export function heuristicUnitScale(
+  maxExtent: number,
+  measurement?: number,
+): { scale: number; guessed: boolean } {
   if (!Number.isFinite(maxExtent) || maxExtent <= 0) return { scale: 1, guessed: false };
+  // $MEASUREMENT=0 is the only reliable hint for a unitless imperial drawing.
+  if (measurement === 0) return { scale: 25.4, guessed: true };
   // A typical building is >= ~3m. If the largest extent is under ~200, the
   // drawing is almost certainly in metres (a 50m building → 50 units).
   if (maxExtent < 200) return { scale: 1000, guessed: true };
@@ -76,60 +123,67 @@ export function heuristicUnitScale(maxExtent: number): { scale: number; guessed:
 }
 
 function entityExtent(entities: DxfEntity[]): number {
-  let min = Infinity;
-  let max = -Infinity;
-  const acc = (n: number | undefined) => {
-    if (typeof n !== 'number' || !Number.isFinite(n)) return;
-    if (n < min) min = n;
-    if (n > max) max = n;
+  let minX = Infinity;
+  let maxX = -Infinity;
+  let minY = Infinity;
+  let maxY = -Infinity;
+  const acc = (x: number | undefined, y: number | undefined) => {
+    if (typeof x === 'number' && Number.isFinite(x)) {
+      minX = Math.min(minX, x);
+      maxX = Math.max(maxX, x);
+    }
+    if (typeof y === 'number' && Number.isFinite(y)) {
+      minY = Math.min(minY, y);
+      maxY = Math.max(maxY, y);
+    }
   };
   for (const e of entities) {
-    acc(e.startPoint?.x);
-    acc(e.startPoint?.y);
-    acc(e.endPoint?.x);
-    acc(e.endPoint?.y);
-    acc(e.center?.x);
-    acc(e.center?.y);
+    acc(e.startPoint?.x, e.startPoint?.y);
+    acc(e.endPoint?.x, e.endPoint?.y);
+    acc(e.dimExt1?.x, e.dimExt1?.y);
+    acc(e.dimExt2?.x, e.dimExt2?.y);
+    acc(e.dimLineOrigin?.x, e.dimLineOrigin?.y);
+    if (e.center && Number.isFinite(e.radius)) {
+      const radius = Math.abs(e.radius ?? 0);
+      acc(e.center.x - radius, e.center.y - radius);
+      acc(e.center.x + radius, e.center.y + radius);
+    } else {
+      acc(e.center?.x, e.center?.y);
+    }
     for (const v of e.vertices ?? []) {
-      acc(v.x);
-      acc(v.y);
+      acc(v.x, v.y);
     }
   }
-  if (!Number.isFinite(min)) return 0;
-  return max - min;
+  const xRange = Number.isFinite(minX) ? maxX - minX : 0;
+  const yRange = Number.isFinite(minY) ? maxY - minY : 0;
+  return Math.max(xRange, yRange);
 }
 
-function scaleMember(m: Member, s: number): Member {
-  if (s === 1) return m;
-  const sp = (p: { x: number; y: number; z: number }) => ({ x: p.x * s, y: p.y * s, z: p.z * s });
-  if (m.type === 'slab') {
-    return {
-      ...m,
-      polygon: m.polygon.map((p) => ({ x: p.x * s, y: p.y * s })),
-      level: m.level * s,
-    };
-  }
-  if (m.type === 'wall') {
-    return {
-      ...m,
-      start: sp(m.start),
-      end: sp(m.end),
-      height: m.height * s,
-      thickness: m.thickness * s,
-    };
-  }
-  return { ...m, start: sp(m.start), end: sp(m.end) };
-}
+function scaleEntityToMillimetres(entity: DxfEntity, scale: number): DxfEntity {
+  const scalar = (value: number | undefined) =>
+    value === undefined ? undefined : quantize(value * scale);
+  const point = (value: { x: number; y: number; z?: number } | undefined) =>
+    value
+      ? {
+          x: quantize(value.x * scale),
+          y: quantize(value.y * scale),
+          ...(value.z !== undefined ? { z: quantize(value.z * scale) } : {}),
+        }
+      : undefined;
 
-function scaleSection(sec: Section, s: number): Section {
-  if (s === 1) return sec;
-  if (sec.kind === 's_pipe') {
-    return { ...sec, diameter: sec.diameter * s, thickness: sec.thickness * s };
-  }
-  if (sec.kind === 'rc_wall' || sec.kind === 'rc_slab') {
-    return { ...sec, thickness: sec.thickness * s };
-  }
-  return { ...sec, width: sec.width * s, depth: sec.depth * s };
+  return {
+    ...entity,
+    startPoint: point(entity.startPoint),
+    endPoint: point(entity.endPoint),
+    center: point(entity.center),
+    vertices: entity.vertices?.map((vertex) => point(vertex)!),
+    dimLineOrigin: point(entity.dimLineOrigin),
+    dimExt1: point(entity.dimExt1),
+    dimExt2: point(entity.dimExt2),
+    radius: scalar(entity.radius),
+    textHeight: scalar(entity.textHeight),
+    majorAxisEndpoint: point(entity.majorAxisEndpoint),
+  };
 }
 
 /**
@@ -145,6 +199,8 @@ export function importDxf(
   const annotations: Annotation[] = [];
   const members: Member[] = [];
   const dimensions: Dimension[] = [];
+  const grids: Grid[] = [];
+  const constructionLines: ConstructionLine[] = [];
   const warnings: string[] = [];
   let primitiveCount = 0;
 
@@ -170,37 +226,90 @@ export function importDxf(
           );
         }
       } else {
-        const guess = heuristicUnitScale(entityExtent(entities));
+        const guess = heuristicUnitScale(entityExtent(entities), header.measurement);
         unitScale = guess.scale;
         if (guess.guessed) {
+          const assumed = unitScale === 25.4 ? 'インチ' : 'メートル';
           warnings.push(
-            `$INSUNITS が無いため図面範囲から単位を推定: メートル単位とみなし ${unitScale}倍 でスケールしました（誤りの場合は単位を指定してください）`,
+            `$INSUNITS が無いため図面範囲から単位を推定: ${assumed}単位とみなし ${unitScale}倍 でスケールしました（誤りの場合は単位を指定してください）`,
           );
         }
       }
     }
 
-    for (const entity of entities) {
+    if (typeof options.unitScale === 'number' && options.unitScale <= 0) {
+      warnings.push(`無効な単位倍率 ${options.unitScale} は使用せず、DXFヘッダーから単位を解決しました`);
+    }
+    if (convertGeometry && options.unitScale === undefined) {
+      const header = parseDxfHeader(content);
+      if (insUnitsToMm(header.insUnits) === null && unitScale === 1) {
+        warnings.push('$INSUNITS が無いため mm と仮定しました（必要に応じて単位を指定してください）');
+      }
+    }
+
+    const warnedLayers = new Set<string>();
+    for (const rawEntity of entities) {
+      // Convert source coordinates first. Converter defaults (200mm wall,
+      // 3000mm storey, etc.) are already expressed in internal mm and must not
+      // be multiplied by the source unit scale.
+      const entity = scaleEntityToMillimetres(rawEntity, unitScale);
+      const role = classifyDxfLayer(entity.layer);
+      if (
+        convertGeometry &&
+        role === 'unknown' &&
+        ['LINE', 'LWPOLYLINE', 'POLYLINE', 'CIRCLE'].includes(entity.type)
+      ) {
+        const layer = entity.layer?.trim() || '(レイヤーなし)';
+        if (!warnedLayers.has(layer)) {
+          warnings.push(`レイヤー ${layer} は部材種別が不明なため形状から自動判定しました`);
+          warnedLayers.add(layer);
+        }
+      }
       switch (entity.type) {
         case 'LINE':
           primitiveCount++;
           if (convertGeometry) {
-            const member = convertLineToMember(entity, defaultStory, sections, usedIds);
-            if (member) members.push(member);
+            if (role === 'grid') {
+              const grid = convertGridLine(entity, grids, usedIds);
+              if (grid) grids.push(grid);
+            } else if (role === 'construction') {
+              const line = convertConstructionLine(entity, defaultStory, usedIds);
+              if (line) constructionLines.push(line);
+            } else if (role !== 'dimension' && role !== 'annotation') {
+              const member = convertLineToMember(entity, defaultStory, sections, usedIds, role);
+              if (member) {
+                if (isZeroLength(member)) {
+                  warnings.push(`長さ0の ${entity.type} をレイヤー ${entity.layer ?? '(なし)'} でスキップしました`);
+                } else {
+                  members.push(member);
+                }
+              }
+            }
           }
           break;
         case 'LWPOLYLINE':
         case 'POLYLINE':
           primitiveCount++;
           if (convertGeometry) {
-            const polyMembers = convertPolylineToMembers(entity, defaultStory, sections, usedIds);
-            members.push(...polyMembers);
+            if (!['grid', 'dimension', 'annotation', 'construction'].includes(role)) {
+              const polyMembers = convertPolylineToMembers(
+                entity,
+                defaultStory,
+                sections,
+                usedIds,
+                role,
+              );
+              members.push(...polyMembers.filter((member) => !isZeroLength(member)));
+            }
           }
           break;
         case 'CIRCLE':
           primitiveCount++;
           if (convertGeometry) {
-            const colMember = convertCircleToMember(entity, defaultStory, sections, usedIds);
+            const colMember =
+              role !== 'column' && role !== 'unknown'
+                ? null
+                : convertCircleToMember(entity, defaultStory, sections, usedIds);
             if (colMember) members.push(colMember);
           }
           break;
@@ -209,6 +318,7 @@ export function importDxf(
         case 'HATCH':
         case 'ELLIPSE':
           primitiveCount++;
+          warnings.push(`未対応エンティティ: ${entity.type} をスキップ`);
           break;
         case 'DIMENSION':
           primitiveCount++;
@@ -219,7 +329,22 @@ export function importDxf(
           break;
         case 'TEXT':
         case 'MTEXT':
-          if (entity.startPoint && entity.text) {
+          if (
+            entity.startPoint &&
+            entity.text &&
+            role !== 'dimension' &&
+            role !== 'grid' &&
+            isFiniteDxfPoint(entity.startPoint)
+          ) {
+            const fontSize =
+              entity.textHeight !== undefined &&
+              Number.isFinite(entity.textHeight) &&
+              entity.textHeight > 0
+                ? entity.textHeight
+                : 250;
+            if (entity.textHeight !== undefined && fontSize === 250) {
+              warnings.push(`${entity.type} の文字高さが無効なため 250mm を使用しました`);
+            }
             annotations.push({
               id: generateId('ann', usedIds),
               type: 'text',
@@ -227,8 +352,10 @@ export function importDxf(
               x: entity.startPoint.x,
               y: entity.startPoint.y,
               text: entity.text,
-              fontSize: entity.textHeight ?? 250,
+              fontSize,
             });
+          } else if (entity.text && role !== 'dimension' && role !== 'grid') {
+            warnings.push(`${entity.type} の挿入点が有限座標でないためスキップしました`);
           }
           primitiveCount++;
           break;
@@ -240,34 +367,77 @@ export function importDxf(
     warnings.push(`DXF parse error: ${String(e)}`);
   }
 
-  // Apply the unit→mm scale to all imported geometry (3-3 / B4).
-  const scaledMembers = unitScale === 1 ? members : members.map((m) => scaleMember(m, unitScale));
-  const scaledAnnotations =
-    unitScale === 1
-      ? annotations
-      : annotations.map((a) => ({ ...a, x: a.x * unitScale, y: a.y * unitScale }));
-  const scaledDimensions =
-    unitScale === 1
-      ? dimensions
-      : dimensions.map((d) => ({
-          ...d,
-          start: { x: d.start.x * unitScale, y: d.start.y * unitScale },
-          end: { x: d.end.x * unitScale, y: d.end.y * unitScale },
-          offset: d.offset * unitScale,
-        }));
-  const scaledSections =
-    unitScale === 1
-      ? sections.getAllSections()
-      : sections.getAllSections().map((s) => scaleSection(s, unitScale));
-
   return {
-    annotations: scaledAnnotations,
-    members: scaledMembers,
-    dimensions: scaledDimensions,
-    autoSections: convertGeometry ? scaledSections : [],
+    annotations,
+    members,
+    dimensions,
+    grids,
+    constructionLines,
+    autoSections: convertGeometry ? sections.getAllSections() : [],
     primitiveCount,
     warnings,
   };
+}
+
+function isFiniteDxfPoint(point: { x: number; y: number; z?: number }): boolean {
+  return (
+    Number.isFinite(point.x) &&
+    Number.isFinite(point.y) &&
+    (point.z === undefined || Number.isFinite(point.z))
+  );
+}
+
+function convertGridLine(entity: DxfEntity, existing: Grid[], usedIds: Set<string>): Grid | null {
+  if (!entity.startPoint || !entity.endPoint) return null;
+  const dx = Math.abs(entity.endPoint.x - entity.startPoint.x);
+  const dy = Math.abs(entity.endPoint.y - entity.startPoint.y);
+  if (dx === 0 && dy === 0) return null;
+  const metadata = readSimpleCadMetadata<Partial<Grid>>(entity, 'GRID');
+  const axis: Grid['axis'] = metadata?.axis === 'X' || metadata?.axis === 'Y'
+    ? metadata.axis
+    : dy >= dx
+      ? 'X'
+      : 'Y';
+  const position =
+    axis === 'X'
+      ? (entity.startPoint.x + entity.endPoint.x) / 2
+      : (entity.startPoint.y + entity.endPoint.y) / 2;
+  const sameAxisCount = existing.filter((grid) => grid.axis === axis).length + 1;
+  return {
+    id: reserveMetadataId(metadata?.id, 'grid', usedIds),
+    axis,
+    name: typeof metadata?.name === 'string' ? metadata.name : `${axis}${sameAxisCount}`,
+    position: quantize(position),
+  };
+}
+
+function convertConstructionLine(
+  entity: DxfEntity,
+  story: string,
+  usedIds: Set<string>,
+): ConstructionLine | null {
+  if (!entity.startPoint || !entity.endPoint) return null;
+  const dx = entity.endPoint.x - entity.startPoint.x;
+  const dy = entity.endPoint.y - entity.startPoint.y;
+  const length = Math.hypot(dx, dy);
+  if (length === 0) return null;
+  const metadata = readSimpleCadMetadata<Partial<ConstructionLine>>(entity, 'CONSTRUCTION');
+  return {
+    id: reserveMetadataId(metadata?.id, 'construction', usedIds),
+    story,
+    type: metadata?.type === 'ray' ? 'ray' : 'xline',
+    origin: { x: entity.startPoint.x, y: entity.startPoint.y },
+    direction: { x: dx / length, y: dy / length },
+  };
+}
+
+function isZeroLength(member: Member): boolean {
+  if (member.type === 'slab') return false;
+  return (
+    member.start.x === member.end.x &&
+    member.start.y === member.end.y &&
+    member.start.z === member.end.z
+  );
 }
 
 /** Helper to retrieve auto-generated sections from an import result */

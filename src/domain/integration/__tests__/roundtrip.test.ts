@@ -169,6 +169,121 @@ describe('roundtrip: DXF', () => {
     expect(Math.abs((col.rotation ?? 0) % Math.PI)).toBeLessThan(1e-3);
   });
 
+  it('restores non-geometric beam/wall roll metadata and reference-axis offsets', () => {
+    const project: ProjectData = {
+      ...base,
+      grids: [],
+      dimensions: [],
+      annotations: [],
+      constructionLines: [],
+      sections: [
+        { id: 'B', kind: 'rc_beam_rect', width: 300, depth: 600 },
+        { id: 'W', kind: 'rc_wall', thickness: 200 },
+      ],
+      members: [
+        {
+          id: 'B-META',
+          type: 'beam',
+          story: '1F',
+          sectionId: 'B',
+          materialId: base.materials[0].id,
+          start: { x: 0, y: 0, z: 0 },
+          end: { x: 4000, y: 0, z: 0 },
+          rotation: 0.41,
+          axisOffset: { dx: 50, dy: 25 },
+          faceAlign: 'left',
+          localAxis: { rotation: 0.2, referenceVector: { x: 0, y: 0, z: 1 } },
+          releases: { start: { rz: true } },
+          rigidZones: { start: 120, end: 180 },
+        },
+        {
+          id: 'W-META',
+          type: 'wall',
+          story: '1F',
+          sectionId: 'W',
+          materialId: base.materials[0].id,
+          start: { x: 0, y: 1000, z: 0 },
+          end: { x: 4000, y: 1000, z: 0 },
+          height: 3000,
+          thickness: 200,
+          rotation: -0.32,
+          axisOffset: { dx: -20, dy: 0 },
+          faceAlign: 'right',
+          localAxis: { rotation: -0.15 },
+        },
+      ],
+      openings: [],
+    };
+    const result = importDxf(exportDxf(project, '1F'), '1F', { convertGeometry: true });
+    expect(result.warnings).toEqual([]);
+
+    const beam = result.members.find((member) => member.id === 'B-META');
+    expect(beam).toMatchObject({
+      type: 'beam',
+      start: { x: 0, y: 0, z: 0 },
+      end: { x: 4000, y: 0, z: 0 },
+      rotation: 0.41,
+      axisOffset: { dx: 50, dy: 25 },
+      faceAlign: 'left',
+      localAxis: { rotation: 0.2, referenceVector: { x: 0, y: 0, z: 1 } },
+      releases: { start: { rz: true } },
+      rigidZones: { start: 120, end: 180 },
+    });
+    const wall = result.members.find((member) => member.id === 'W-META');
+    expect(wall).toMatchObject({
+      type: 'wall',
+      start: { x: 0, y: 1000, z: 0 },
+      end: { x: 4000, y: 1000, z: 0 },
+      rotation: -0.32,
+      axisOffset: { dx: -20, dy: 0 },
+      faceAlign: 'right',
+      localAxis: { rotation: -0.15 },
+    });
+  });
+
+  it('exports a valid open clamped B-spline definition', () => {
+    const project: ProjectData = {
+      ...base,
+      grids: [],
+      members: [],
+      dimensions: [],
+      constructionLines: [],
+      annotations: [
+        {
+          id: 'SPL-1',
+          type: 'spline',
+          story: '1F',
+          x: 0,
+          y: 0,
+          text: '',
+          points: [
+            { x: 0, y: 0 },
+            { x: 1000, y: 500 },
+            { x: 2000, y: -200 },
+            { x: 3000, y: 600 },
+            { x: 4000, y: 0 },
+          ],
+        },
+      ],
+    };
+    const lines = exportDxf(project, '1F').split('\n');
+    const start = lines.findIndex((value, index) => value === '0' && lines[index + 1] === 'SPLINE');
+    expect(start).toBeGreaterThanOrEqual(0);
+    const values = new Map<string, string[]>();
+    for (let index = start; index < lines.length - 1; index += 2) {
+      if (index > start && lines[index] === '0') break;
+      const code = lines[index];
+      values.set(code, [...(values.get(code) ?? []), lines[index + 1]]);
+    }
+
+    expect(values.get('71')).toEqual(['3']);
+    expect(values.get('72')).toEqual(['9']);
+    expect(values.get('73')).toEqual(['5']);
+    expect(values.get('74')).toEqual(['0']);
+    expect(values.get('40')).toEqual(['0', '0', '0', '0', '0.5', '1', '1', '1', '1']);
+    expect(values.get('10')).toHaveLength(5);
+  });
+
   it('writes $INSUNITS and EXTMIN/EXTMAX headers (B4 / 3-3)', () => {
     const dxf = exportDxf(base, '1F');
     expect(dxf).toContain('$INSUNITS');
@@ -195,5 +310,19 @@ describe('roundtrip: DXF', () => {
       expect(wall.end.x).toBeCloseTo(5000, 3);
     }
     expect(result.warnings.some((w) => w.includes('INSUNITS'))).toBe(true);
+  });
+
+  it('preserves grid metadata and native dimensions without creating reference-layer walls', () => {
+    const dxf = exportDxf(base, '1F');
+    const result = importDxf(dxf, '1F', { convertGeometry: true });
+    const expectedMembers = base.members.filter((member) => member.story === '1F');
+    const expectedDimensions = base.dimensions.filter((dimension) => dimension.story === '1F');
+
+    expect(result.members).toHaveLength(expectedMembers.length);
+    expect(result.grids).toEqual(base.grids);
+    expect(result.dimensions).toEqual(expectedDimensions);
+    expect(
+      result.members.filter((member) => member.type === 'wall'),
+    ).toHaveLength(expectedMembers.filter((member) => member.type === 'wall').length);
   });
 });

@@ -1,8 +1,9 @@
-import { useState, useMemo } from 'react';
+import { useEffect, useState } from 'react';
 import { useProjectStore } from '@/app/store';
 import { useI18n } from '@/i18n';
-import { exportSvg } from '@/domain/export/svgExport';
 import { getPaperDimensions } from '@/domain/drawing/paper';
+import { Modal } from '@/components/common/Modal';
+import { SafeSvgPreview } from '@/components/common/SafeSvgPreview';
 
 interface Props {
   onClose: () => void;
@@ -10,16 +11,29 @@ interface Props {
 
 export function PrintPreviewDialog({ onClose }: Props) {
   const data = useProjectStore((s) => s.data);
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
   const [sheetId, setSheetId] = useState(data?.sheets[0]?.id ?? '');
+  const [svgContent, setSvgContent] = useState<string | null>(null);
+  const [previewError, setPreviewError] = useState('');
 
-  const svgContent = useMemo(() => {
-    if (!data || !sheetId) return null;
-    try {
-      return exportSvg(data, sheetId);
-    } catch {
-      return null;
-    }
+  useEffect(() => {
+    let cancelled = false;
+    setSvgContent(null);
+    setPreviewError('');
+    if (!data || !sheetId) return;
+    void import('@/domain/export/svgExport')
+      .then(({ exportSvg }) => {
+        if (!cancelled) setSvgContent(exportSvg(data, sheetId));
+      })
+      .catch((error) => {
+        if (!cancelled) {
+          setSvgContent(null);
+          setPreviewError(String(error));
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [data, sheetId]);
 
   if (!data) return null;
@@ -40,121 +54,106 @@ export function PrintPreviewDialog({ onClose }: Props) {
   }
 
   return (
-    <div
-      style={{
-        position: 'fixed',
-        inset: 0,
-        background: 'var(--bg-modal-overlay)',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        zIndex: 1000,
-      }}
-      onClick={onClose}
+    <Modal
+      title={t.printPreviewTitle}
+      onClose={onClose}
+      width={800}
+      footer={
+        <button
+          className="toolbar-btn"
+          style={{ background: 'var(--border-color)', color: 'var(--text-primary)' }}
+          onClick={onClose}
+        >
+          {t.printPreviewClose}
+        </button>
+      }
     >
+      <div style={{ marginBottom: 12 }}>
+        <label
+          style={{
+            display: 'block',
+            marginBottom: 4,
+            fontSize: 12,
+            color: 'var(--text-secondary)',
+          }}
+        >
+          {t.exportSheet}
+        </label>
+        <select
+          className="prop-select"
+          style={{ maxWidth: '100%', width: '100%' }}
+          value={sheetId}
+          onChange={(e) => setSheetId(e.target.value)}
+        >
+          {data.sheets.map((s) => (
+            <option key={s.id} value={s.id}>
+              {s.name} ({s.paperSize}, {s.scale})
+            </option>
+          ))}
+        </select>
+      </div>
+
       <div
         style={{
-          background: 'var(--bg-modal)',
-          borderRadius: 8,
-          padding: 24,
-          maxWidth: 'min(800px, calc(100vw - 32px))',
-          boxShadow: '0 8px 32px rgba(0,0,0,0.2)',
-          color: 'var(--text-primary)',
+          width: previewWidth,
+          height: previewHeight,
+          border: '1px solid var(--border-color)',
+          background: '#ffffff',
+          overflow: 'hidden',
+          margin: '0 auto',
         }}
-        onClick={(e) => e.stopPropagation()}
       >
-        <div
-          style={{
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'baseline',
-            gap: 12,
-            marginBottom: 12,
-          }}
-        >
-          <h3 style={{ margin: 0, fontSize: 16 }}>{t.printPreviewTitle}</h3>
-        </div>
-
-        <div style={{ marginBottom: 12 }}>
-          <label
-            style={{
-              display: 'block',
-              marginBottom: 4,
-              fontSize: 12,
-              color: 'var(--text-secondary)',
-            }}
+        {previewError ? (
+          <div
+            role="alert"
+            style={{ padding: 16, color: 'var(--error)', overflowWrap: 'anywhere' }}
           >
-            {t.exportSheet}
-          </label>
-          <select
-            className="prop-select"
-            style={{ maxWidth: '100%', width: '100%' }}
-            value={sheetId}
-            onChange={(e) => setSheetId(e.target.value)}
-          >
-            {data.sheets.map((s) => (
-              <option key={s.id} value={s.id}>
-                {s.name} ({s.paperSize}, {s.scale})
-              </option>
-            ))}
-          </select>
-        </div>
-
-        <div
-          style={{
-            width: previewWidth,
-            height: previewHeight,
-            border: '1px solid var(--border-color)',
-            background: '#ffffff',
-            overflow: 'hidden',
-            margin: '0 auto',
-          }}
-        >
-          {svgContent ? (
-            <div
-              style={{ width: '100%', height: '100%' }}
-              dangerouslySetInnerHTML={{ __html: svgContent }}
-            />
-          ) : (
-            <div
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                height: '100%',
-                color: '#999',
-              }}
-            >
-              {t.printPreviewEmpty}
-            </div>
-          )}
-        </div>
-
-        {sheet && (
+            {locale === 'ja'
+              ? 'プレビューを生成できませんでした: '
+              : 'Could not generate preview: '}
+            {previewError}
+          </div>
+        ) : svgContent ? (
+          <SafeSvgPreview
+            markup={svgContent}
+            label={`${sheet?.name ?? t.printPreviewTitle} preview`}
+            style={{ width: '100%', height: '100%' }}
+          />
+        ) : (
           <div
             style={{
-              marginTop: 8,
-              fontSize: 11,
-              color: 'var(--text-secondary)',
-              textAlign: 'center',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              height: '100%',
+              color: '#999',
             }}
           >
-            {sheet.paperSize} &mdash; {sheet.scale}
-            {sheet.titleBlock?.drawingTitle ? ` &mdash; ${sheet.titleBlock.drawingTitle}` : ''}
-            {viewports.length > 0 && ` | ${viewports.length} viewport(s)`}
+            <span role="status">
+              {sheetId
+                ? locale === 'ja'
+                  ? 'プレビューを読み込み中…'
+                  : 'Loading preview…'
+                : t.printPreviewEmpty}
+            </span>
           </div>
         )}
-
-        <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 16 }}>
-          <button
-            className="toolbar-btn"
-            style={{ background: 'var(--border-color)', color: 'var(--text-primary)' }}
-            onClick={onClose}
-          >
-            {t.printPreviewClose}
-          </button>
-        </div>
       </div>
-    </div>
+
+      {sheet && (
+        <div
+          style={{
+            marginTop: 8,
+            fontSize: 11,
+            color: 'var(--text-secondary)',
+            textAlign: 'center',
+          }}
+        >
+          {sheet.paperSize} &mdash; {sheet.scale}
+          {sheet.titleBlock?.drawingTitle ? ` &mdash; ${sheet.titleBlock.drawingTitle}` : ''}
+          {viewports.length > 0 && ` | ${viewports.length} viewport(s)`}
+        </div>
+      )}
+    </Modal>
   );
 }

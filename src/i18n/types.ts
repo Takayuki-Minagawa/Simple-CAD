@@ -187,6 +187,7 @@ export interface Translations {
   transformInvalidScale: string;
   transformInvalidCount: string;
   transformInvalidStretch: string;
+  transformInvalidSelection: string;
   transformLockedWidth: string;
   transformLockedHeight: string;
   transformOffset: string;

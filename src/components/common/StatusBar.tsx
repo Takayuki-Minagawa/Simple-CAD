@@ -73,13 +73,14 @@ export function StatusBar() {
 
       {drawDelta && (
         <span className="status-item">
-          {L.dx}: {fmt(drawDelta.dx)}  {L.dy}: {fmt(drawDelta.dy)}  {L.dist}: {fmt(drawDelta.dist)}  {L.angle}: {drawDelta.angle.toFixed(1)}°
+          {L.dx}: {fmt(drawDelta.dx)} {L.dy}: {fmt(drawDelta.dy)} {L.dist}: {fmt(drawDelta.dist)}{' '}
+          {L.angle}: {drawDelta.angle.toFixed(1)}°
         </span>
       )}
 
       {selBounds && (
         <span className="status-item">
-          {L.width}: {fmt(selBounds.width)}  {L.height}: {fmt(selBounds.height)} {unit}
+          {L.width}: {fmt(selBounds.width)} {L.height}: {fmt(selBounds.height)} {unit}
         </span>
       )}
 
@@ -89,17 +90,36 @@ export function StatusBar() {
         </span>
       )}
 
-      <span className="status-item">{t.statusZoom}: {(zoom * 1000).toFixed(0)}%</span>
-      <span className="status-item">{L.grid}: {fmt(gridSpacing)} {unit}</span>
-      <span className="status-item">{t.statusSnap}: {snapEnabled ? t.statusOn : t.statusOff}</span>
-      <span className="status-item">{t.statusSnapModes}: {activeSnapModeLabels.length > 0 ? activeSnapModeLabels.join(', ') : '---'}</span>
-      <span className="status-item">{t.statusTool}: {getToolStatusLabel(activeTool, t)}</span>
-      <span className="status-item">{t.statusStory}: {activeStory ?? '---'}</span>
-      <span className="status-item">{t.statusSelected}: {selectedIds.length}</span>
+      <span className="status-item">
+        {t.statusZoom}: {(zoom * 1000).toFixed(0)}%
+      </span>
+      <span className="status-item">
+        {L.grid}: {fmt(gridSpacing)} {unit}
+      </span>
+      <span className="status-item">
+        {t.statusSnap}: {snapEnabled ? t.statusOn : t.statusOff}
+      </span>
+      <span className="status-item">
+        {t.statusSnapModes}:{' '}
+        {activeSnapModeLabels.length > 0 ? activeSnapModeLabels.join(', ') : '---'}
+      </span>
+      <span className="status-item">
+        {t.statusTool}: {getToolStatusLabel(activeTool, t)}
+      </span>
+      <span className="status-item">
+        {t.statusStory}: {activeStory ?? '---'}
+      </span>
+      <span className="status-item">
+        {t.statusSelected}: {selectedIds.length}
+      </span>
 
-      <span className="status-item" style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+      <span
+        className="status-item"
+        style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}
+      >
         {L.unit}:
         <select
+          aria-label={L.unit}
           value={statusUnit}
           onChange={(e) => setStatusUnit(e.target.value as 'mm' | 'm')}
           style={{ fontSize: 'inherit' }}
@@ -109,12 +129,15 @@ export function StatusBar() {
         </select>
         {L.prec}:
         <select
+          aria-label={L.prec}
           value={statusDecimals}
           onChange={(e) => setStatusDecimals(Number(e.target.value))}
           style={{ fontSize: 'inherit' }}
         >
           {[0, 1, 2, 3, 4].map((d) => (
-            <option key={d} value={d}>{d}</option>
+            <option key={d} value={d}>
+              {d}
+            </option>
           ))}
         </select>
       </span>

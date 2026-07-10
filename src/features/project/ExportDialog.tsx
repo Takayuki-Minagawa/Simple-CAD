@@ -1,13 +1,9 @@
 import { useState } from 'react';
 import { useProjectStore, useEditorStore } from '@/app/store';
 import { useI18n } from '@/i18n';
-import { exportSvg } from '@/domain/export/svgExport';
-import { exportPdf } from '@/domain/export/pdfExport';
-import { exportDxf } from '@/domain/export/dxfExport';
-import { exportIfc } from '@/domain/integration/ifc';
-import { exportStructuralAnalysisJson } from '@/domain/integration/structuralAnalysisJson';
-import { downloadBlob, saveFile } from '@/libs/fileSystem';
-import { showAlert } from '@/app/browserDialogs';
+import { downloadBlob, isAbortError, saveFile } from '@/libs/fileSystem';
+import { showAlert, showConfirm } from '@/app/browserDialogs';
+import { Modal } from '@/components/common/Modal';
 
 interface Props {
   onClose: () => void;
@@ -31,31 +27,97 @@ export function ExportDialog({ onClose }: Props) {
   const handleExport = async () => {
     setExporting(true);
     try {
+      const { validateProject } = await import('@/domain/validation');
+      const validation = validateProject(data);
+      const errors = validation.errors.filter((issue) => issue.level === 'error');
+      if (errors.length > 0) {
+        showAlert(
+          `${locale === 'ja' ? '出力を中止しました。先にエラーを修正してください。' : 'Export stopped. Fix validation errors first.'}\n\n${errors
+            .slice(0, 12)
+            .map((issue) => issue.message)
+            .join('\n')}`,
+        );
+        return;
+      }
+      const warnings = validation.errors.filter((issue) => issue.level === 'warning');
+      if (
+        warnings.length > 0 &&
+        !showConfirm(
+          `${locale === 'ja' ? `警告が ${warnings.length} 件あります。出力を続けますか？` : `${warnings.length} warning(s) found. Continue export?`}\n\n${warnings
+            .slice(0, 8)
+            .map((issue) => issue.message)
+            .join('\n')}`,
+        )
+      ) {
+        return;
+      }
+
+      if (
+        (format === 'svg' || format === 'pdf') &&
+        (!sheetId || !data.sheets.some((sheet) => sheet.id === sheetId)) &&
+        !(format === 'pdf' && exportAllSheets && data.sheets.length > 0)
+      ) {
+        showAlert(
+          locale === 'ja' ? '出力するシートを選択してください。' : 'Select a sheet to export.',
+        );
+        return;
+      }
+      if (format === 'dxf' && !(activeStory ?? data.stories[0]?.id)) {
+        showAlert(locale === 'ja' ? '出力する階がありません。' : 'There is no story to export.');
+        return;
+      }
+
       const name = data.project.name;
       switch (format) {
         case 'svg': {
+          const { exportSvg } = await import('@/domain/export/svgExport');
           const svg = exportSvg(data, sheetId);
           await saveFile(svg, `${name}.svg`, 'image/svg+xml');
           break;
         }
         case 'pdf': {
+          const { exportPdf } = await import('@/domain/export/pdfExport');
           const targetSheets = exportAllSheets ? data.sheets.map((sheet) => sheet.id) : sheetId;
           const blob = await exportPdf(data, targetSheets);
           downloadBlob(blob, `${name}${exportAllSheets ? '-sheets' : ''}.pdf`, 'application/pdf');
           break;
         }
         case 'dxf': {
+          const { exportDxfWithWarnings } = await import('@/domain/export/dxfExport');
           const sid = activeStory ?? data.stories[0]?.id ?? '';
-          const dxf = exportDxf(data, sid);
-          await saveFile(dxf, `${name}.dxf`, 'application/dxf');
+          const result = exportDxfWithWarnings(data, sid);
+          if (
+            result.warnings.length > 0 &&
+            !showConfirm(
+              `${locale === 'ja' ? 'DXF出力時に次の置換・省略があります。続けますか？' : 'DXF export has substitutions or omissions. Continue?'}\n\n${result.warnings
+                .slice(0, 12)
+                .join('\n')}`,
+            )
+          ) {
+            return;
+          }
+          await saveFile(result.content, `${name}.dxf`, 'application/dxf');
           break;
         }
         case 'ifc': {
-          const ifc = exportIfc(data);
-          await saveFile(ifc, `${name}.ifc`, 'application/octet-stream');
+          const { exportIfcWithWarnings } = await import('@/domain/integration/ifc');
+          const result = exportIfcWithWarnings(data);
+          if (
+            result.warnings.length > 0 &&
+            !showConfirm(
+              `${locale === 'ja' ? 'IFC出力時に次の置換・省略があります。続けますか？' : 'IFC export has substitutions or omissions. Continue?'}\n\n${result.warnings
+                .slice(0, 12)
+                .join('\n')}`,
+            )
+          ) {
+            return;
+          }
+          await saveFile(result.content, `${name}.ifc`, 'application/octet-stream');
           break;
         }
         case 'structural-json': {
+          const { exportStructuralAnalysisJson } =
+            await import('@/domain/integration/structuralAnalysisJson');
           const json = exportStructuralAnalysisJson(data);
           await saveFile(json, `${name}.structural.json`, 'application/json');
           break;
@@ -63,6 +125,7 @@ export function ExportDialog({ onClose }: Props) {
       }
       onClose();
     } catch (e) {
+      if (isAbortError(e)) return;
       showAlert(`Export error: ${String(e)}`);
     } finally {
       setExporting(false);
@@ -70,103 +133,12 @@ export function ExportDialog({ onClose }: Props) {
   };
 
   return (
-    <div
-      style={{
-        position: 'fixed',
-        inset: 0,
-        background: 'var(--bg-modal-overlay)',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        zIndex: 1000,
-      }}
-      onClick={onClose}
-    >
-      <div
-        style={{
-          background: 'var(--bg-modal)',
-          borderRadius: 8,
-          padding: 24,
-          minWidth: 320,
-          boxShadow: '0 8px 32px rgba(0,0,0,0.2)',
-          color: 'var(--text-primary)',
-        }}
-        onClick={(e) => e.stopPropagation()}
-      >
-        <h3 style={{ margin: '0 0 16px', fontSize: 16 }}>{t.exportTitle}</h3>
-        <div style={{ marginBottom: 12 }}>
-          <label
-            style={{
-              display: 'block',
-              marginBottom: 4,
-              fontSize: 12,
-              color: 'var(--text-secondary)',
-            }}
-          >
-            {t.exportFormat}
-          </label>
-          <select
-            className="prop-select"
-            style={{ maxWidth: '100%', width: '100%' }}
-            value={format}
-            onChange={(e) =>
-              setFormat(e.target.value as 'svg' | 'pdf' | 'dxf' | 'ifc' | 'structural-json')
-            }
-          >
-            <option value="svg">SVG</option>
-            <option value="pdf">PDF</option>
-            <option value="dxf">DXF</option>
-            <option value="ifc">{ifcLabel}</option>
-            <option value="structural-json">{structuralJsonLabel}</option>
-          </select>
-        </div>
-        {(format === 'svg' || format === 'pdf') && (
-          <div style={{ marginBottom: 12 }}>
-            <label
-              style={{
-                display: 'block',
-                marginBottom: 4,
-                fontSize: 12,
-                color: 'var(--text-secondary)',
-              }}
-            >
-              {t.exportSheet}
-            </label>
-            <select
-              className="prop-select"
-              style={{ maxWidth: '100%', width: '100%' }}
-              value={sheetId}
-              onChange={(e) => setSheetId(e.target.value)}
-              disabled={format === 'pdf' && exportAllSheets}
-            >
-              {data.sheets.map((s) => (
-                <option key={s.id} value={s.id}>
-                  {s.name} ({s.paperSize}, {s.scale})
-                </option>
-              ))}
-            </select>
-          </div>
-        )}
-        {format === 'pdf' && data.sheets.length > 1 && (
-          <label
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 8,
-              fontSize: 12,
-              color: 'var(--text-primary)',
-              marginBottom: 4,
-            }}
-          >
-            <input
-              type="checkbox"
-              checked={exportAllSheets}
-              onChange={(e) => setExportAllSheets(e.target.checked)}
-            />
-            <span>{allSheetsLabel}</span>
-          </label>
-        )}
-        <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 16 }}>
+    <Modal
+      title={t.exportTitle}
+      onClose={onClose}
+      width={360}
+      footer={
+        <>
           <button
             className="toolbar-btn"
             style={{ background: 'var(--border-color)', color: 'var(--text-primary)' }}
@@ -178,12 +150,87 @@ export function ExportDialog({ onClose }: Props) {
             className="toolbar-btn"
             style={{ background: 'var(--accent)', color: '#fff' }}
             onClick={handleExport}
-            disabled={exporting}
+            disabled={
+              exporting || ((format === 'svg' || format === 'pdf') && data.sheets.length === 0)
+            }
           >
             {exporting ? t.exportExporting : t.exportExecute}
           </button>
-        </div>
+        </>
+      }
+    >
+      <div style={{ marginBottom: 12 }}>
+        <label
+          style={{
+            display: 'block',
+            marginBottom: 4,
+            fontSize: 12,
+            color: 'var(--text-secondary)',
+          }}
+        >
+          {t.exportFormat}
+        </label>
+        <select
+          className="prop-select"
+          style={{ maxWidth: '100%', width: '100%' }}
+          value={format}
+          onChange={(e) =>
+            setFormat(e.target.value as 'svg' | 'pdf' | 'dxf' | 'ifc' | 'structural-json')
+          }
+        >
+          <option value="svg">SVG</option>
+          <option value="pdf">PDF</option>
+          <option value="dxf">DXF</option>
+          <option value="ifc">{ifcLabel}</option>
+          <option value="structural-json">{structuralJsonLabel}</option>
+        </select>
       </div>
-    </div>
+      {(format === 'svg' || format === 'pdf') && (
+        <div style={{ marginBottom: 12 }}>
+          <label
+            style={{
+              display: 'block',
+              marginBottom: 4,
+              fontSize: 12,
+              color: 'var(--text-secondary)',
+            }}
+          >
+            {t.exportSheet}
+          </label>
+          <select
+            className="prop-select"
+            style={{ maxWidth: '100%', width: '100%' }}
+            value={sheetId}
+            onChange={(e) => setSheetId(e.target.value)}
+            disabled={format === 'pdf' && exportAllSheets}
+          >
+            {data.sheets.map((s) => (
+              <option key={s.id} value={s.id}>
+                {s.name} ({s.paperSize}, {s.scale})
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
+      {format === 'pdf' && data.sheets.length > 1 && (
+        <label
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 8,
+            fontSize: 12,
+            color: 'var(--text-primary)',
+            marginBottom: 4,
+          }}
+        >
+          <input
+            type="checkbox"
+            checked={exportAllSheets}
+            onChange={(e) => setExportAllSheets(e.target.checked)}
+          />
+          <span>{allSheetsLabel}</span>
+        </label>
+      )}
+    </Modal>
   );
 }

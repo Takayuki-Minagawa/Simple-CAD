@@ -11,19 +11,28 @@ import { isLinearMember } from './types';
  *  - axis 'Y' grids are horizontal lines at y = position
  * The intersection of an X-grid and a Y-grid is { x: xGrid.position, y: yGrid.position }.
  *
- * A member's `gridRef` pins its endpoints to named grid-axis intersections so
+ * A member's `gridRef` pins its endpoints to grid-axis intersections. Tokens
+ * may be stable grid IDs or human-readable names; IDs take precedence.
  * that editing a grid's position moves the dependent members, keeping drawn
  * dimensions and real members in agreement.
  */
 
-function byName(grids: Grid[]): Map<string, Grid> {
+function byToken(grids: Grid[]): Map<string, Grid> {
   const map = new Map<string, Grid>();
-  for (const g of grids) map.set(g.name, g);
+  const nameGroups = new Map<string, Grid[]>();
+  for (const grid of grids) {
+    nameGroups.set(grid.name, [...(nameGroups.get(grid.name) ?? []), grid]);
+  }
+  for (const [name, matches] of nameGroups) {
+    if (matches.length === 1) map.set(name, matches[0]);
+  }
+  // Match referenceValidator: an exact ID wins over a colliding name.
+  for (const grid of grids) map.set(grid.id, grid);
   return map;
 }
 
 /**
- * Resolve the intersection point of two named grid axes. The pair may be given
+ * Resolve the intersection point of two grid ID/name tokens. The pair may be given
  * in either order (X-then-Y or Y-then-X); axes are assigned by each grid's axis.
  * Returns null when either name is unknown or both grids share the same axis.
  */
@@ -32,7 +41,7 @@ export function gridIntersection(
   nameA: string,
   nameB: string,
 ): Point2D | null {
-  return gridIntersectionFromMap(byName(grids), nameA, nameB);
+  return gridIntersectionFromMap(byToken(grids), nameA, nameB);
 }
 
 function gridIntersectionFromMap(
@@ -78,7 +87,7 @@ export function resolveMemberEndpoints(
  */
 export function applyGridGeometry(data: ProjectData): ProjectData {
   if (!data.members.some((m) => m.gridRef)) return data;
-  const gridMap = byName(data.grids);
+  const gridMap = byToken(data.grids);
 
   const members = data.members.map((m): Member => {
     if (!m.gridRef || !isLinearMember(m)) return m;

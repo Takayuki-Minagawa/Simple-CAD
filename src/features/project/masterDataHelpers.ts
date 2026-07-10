@@ -1,4 +1,5 @@
 import type { Grid, LoadCase, Material, Section, Sheet, Story, TitleBlockTemplate } from '@/domain/structural/types';
+import { mergeMaterial } from '@/domain/structural/materials';
 
 export type SectionKindDraft = Section['kind'];
 
@@ -9,6 +10,12 @@ export interface Labels {
   addStory: string;
   duplicateStory: string;
   addSheet: string;
+  moveUp: string;
+  moveDown: string;
+  deleteStory: string;
+  deleteSheet: string;
+  confirmDeleteStory: string;
+  confirmDeleteSheet: string;
   activate: string;
   active: string;
   materials: string;
@@ -46,10 +53,17 @@ export interface Labels {
   y: string;
   // ── Material strength props (2-2) ──
   elasticModulus: string;
+  shearModulus: string;
+  poissonRatio: string;
   unitWeight: string;
   fc: string;
   steelF: string;
   fy: string;
+  referenceStrength: string;
+  moistureContent: string;
+  allowableBendingStress: string;
+  allowableCompressionStress: string;
+  allowableShearStress: string;
   preset: string;
   applyPreset: string;
   // ── Section library (2-3) ──
@@ -110,27 +124,37 @@ export function sectionIsSteelH(kind: Section['kind']): boolean {
 
 // ── Material strength presets (2-2) ──
 
+type MaterialPresetValues<T extends Material = Material> = T extends Material
+  ? Omit<T, 'id' | 'name'>
+  : never;
+
 export interface MaterialPreset {
   id: string;
   label: string;
-  values: Partial<Material> & { type: Material['type'] };
+  values: MaterialPresetValues;
 }
 
-/** JIS-aligned material presets. Values are nominal (N/mm² unless noted). */
+/** Representative editable presets. Values are nominal (N/mm² unless noted). */
 export const MATERIAL_PRESETS: MaterialPreset[] = [
   // Concrete: Fc with typical unit weight ≈ 24 kN/m³, Ec via 3.35e4*(γ/24)^2*(Fc/60)^(1/3) ~ rounded.
-  { id: 'FC21', label: 'FC21', values: { type: 'concrete', Fc: 21, unitWeight: 24, elasticModulus: 21500, poissonRatio: 0.2 } },
-  { id: 'FC24', label: 'FC24', values: { type: 'concrete', Fc: 24, unitWeight: 24, elasticModulus: 22500, poissonRatio: 0.2 } },
-  { id: 'FC27', label: 'FC27', values: { type: 'concrete', Fc: 27, unitWeight: 24, elasticModulus: 23500, poissonRatio: 0.2 } },
-  { id: 'FC30', label: 'FC30', values: { type: 'concrete', Fc: 30, unitWeight: 24, elasticModulus: 24500, poissonRatio: 0.2 } },
+  { id: 'FC21', label: 'FC21', values: { type: 'concrete', Fc: 21, unitWeight: 24, elasticModulus: 21500, shearModulus: 8958, poissonRatio: 0.2 } },
+  { id: 'FC24', label: 'FC24', values: { type: 'concrete', Fc: 24, unitWeight: 24, elasticModulus: 22500, shearModulus: 9375, poissonRatio: 0.2 } },
+  { id: 'FC27', label: 'FC27', values: { type: 'concrete', Fc: 27, unitWeight: 24, elasticModulus: 23500, shearModulus: 9792, poissonRatio: 0.2 } },
+  { id: 'FC30', label: 'FC30', values: { type: 'concrete', Fc: 30, unitWeight: 24, elasticModulus: 24500, shearModulus: 10208, poissonRatio: 0.2 } },
   // Steel: F value / Fy with E ≈ 205000, unit weight ≈ 78.5 kN/m³.
   { id: 'SN400', label: 'SN400', values: { type: 'steel', F: 235, Fy: 235, elasticModulus: 205000, shearModulus: 79000, poissonRatio: 0.3, unitWeight: 78.5 } },
   { id: 'SN490', label: 'SN490', values: { type: 'steel', F: 325, Fy: 325, elasticModulus: 205000, shearModulus: 79000, poissonRatio: 0.3, unitWeight: 78.5 } },
+  // Wood values are editable starting points; allowable stresses depend on the adopted design standard/duration.
+  { id: 'WOOD-E70', label: 'Wood E70', values: { type: 'wood', elasticModulus: 7000, shearModulus: 440, poissonRatio: 0.3, unitWeight: 3.8, referenceStrength: 21.6, moistureContent: 15, allowableBendingStress: 7.2, allowableCompressionStress: 6, allowableShearStress: 0.6 } },
+  { id: 'WOOD-E110', label: 'Wood E110', values: { type: 'wood', elasticModulus: 11000, shearModulus: 690, poissonRatio: 0.3, unitWeight: 5, referenceStrength: 28.2, moistureContent: 15, allowableBendingStress: 9.4, allowableCompressionStress: 7.8, allowableShearStress: 0.8 } },
 ];
 
 /** Apply a preset onto an existing material, preserving id/name. */
 export function applyMaterialPreset(material: Material, preset: MaterialPreset): Material {
-  return { ...material, ...preset.values, id: material.id, name: material.name };
+  return mergeMaterial(
+    material,
+    { ...preset.values, id: material.id, name: material.name } as Partial<Material>,
+  );
 }
 
 /**
@@ -159,6 +183,12 @@ export function getLabels(locale: 'ja' | 'en'): Labels {
       addStory: '階を追加',
       duplicateStory: 'アクティブ階を複製',
       addSheet: 'シート追加',
+      moveUp: '上へ',
+      moveDown: '下へ',
+      deleteStory: '階を削除',
+      deleteSheet: 'シートを削除',
+      confirmDeleteStory: 'この階と所属する部材・寸法・注記を削除しますか？',
+      confirmDeleteSheet: 'このシートを削除しますか？',
       activate: '表示',
       active: '編集中',
       materials: 'Materials',
@@ -194,11 +224,18 @@ export function getLabels(locale: 'ja' | 'en'): Labels {
       viewId: 'ビューID',
       x: 'X',
       y: 'Y',
-      elasticModulus: 'ヤング係数 E',
-      unitWeight: '単位重量 γ',
-      fc: 'Fc',
-      steelF: 'F値',
-      fy: 'Fy',
+      elasticModulus: 'ヤング係数 E (N/mm²)',
+      shearModulus: 'せん断弾性係数 G (N/mm²)',
+      poissonRatio: 'ポアソン比 ν',
+      unitWeight: '単位重量 γ (kN/m³)',
+      fc: 'Fc (N/mm²)',
+      steelF: 'F値 (N/mm²)',
+      fy: 'Fy (N/mm²)',
+      referenceStrength: '基準強度 (N/mm²)',
+      moistureContent: '含水率 (%)',
+      allowableBendingStress: '曲げ許容応力度 (N/mm²)',
+      allowableCompressionStress: '圧縮許容応力度 (N/mm²)',
+      allowableShearStress: 'せん断許容応力度 (N/mm²)',
       preset: 'プリセット',
       applyPreset: '適用',
       diameter: '径 D',
@@ -230,6 +267,12 @@ export function getLabels(locale: 'ja' | 'en'): Labels {
     addStory: 'Add Story',
     duplicateStory: 'Duplicate Active Story',
     addSheet: 'Add Sheet',
+    moveUp: 'Move up',
+    moveDown: 'Move down',
+    deleteStory: 'Delete story',
+    deleteSheet: 'Delete sheet',
+    confirmDeleteStory: 'Delete this story and all of its members, dimensions, and annotations?',
+    confirmDeleteSheet: 'Delete this sheet?',
     activate: 'Activate',
     active: 'Active',
     materials: 'Materials',
@@ -265,11 +308,18 @@ export function getLabels(locale: 'ja' | 'en'): Labels {
     viewId: 'View ID',
     x: 'X',
     y: 'Y',
-    elasticModulus: 'Elastic modulus E',
-    unitWeight: 'Unit weight γ',
-    fc: 'Fc',
-    steelF: 'F value',
-    fy: 'Fy',
+    elasticModulus: 'Elastic modulus E (N/mm²)',
+    shearModulus: 'Shear modulus G (N/mm²)',
+    poissonRatio: "Poisson's ratio ν",
+    unitWeight: 'Unit weight γ (kN/m³)',
+    fc: 'Fc (N/mm²)',
+    steelF: 'F value (N/mm²)',
+    fy: 'Fy (N/mm²)',
+    referenceStrength: 'Reference strength (N/mm²)',
+    moistureContent: 'Moisture content (%)',
+    allowableBendingStress: 'Allowable bending stress (N/mm²)',
+    allowableCompressionStress: 'Allowable compression stress (N/mm²)',
+    allowableShearStress: 'Allowable shear stress (N/mm²)',
     preset: 'Preset',
     applyPreset: 'Apply',
     diameter: 'Diameter D',

@@ -31,6 +31,14 @@ export interface ProjectData {
   constructionLines?: ConstructionLine[];
   externalRefs?: ExternalRef[];
   loadCases?: LoadCase[];
+  supports?: StructuralSupport[];
+  nodalLoads?: NodalLoad[];
+  memberLoads?: MemberLoad[];
+  areaLoads?: AreaLoad[];
+  loadCombinations?: LoadCombination[];
+  masses?: LumpedMass[];
+  diaphragms?: Diaphragm[];
+  analysisResults?: AnalysisResultsMetadata;
 }
 
 export interface ProjectMeta {
@@ -63,11 +71,11 @@ export interface Grid {
 
 // ── Material ─────────────────────────────────────────────────
 
-export interface Material {
+export interface MaterialBase {
   id: string;
   name: string;
   type: 'concrete' | 'steel' | 'wood' | 'other';
-  // ── Structural properties (all optional, N/mm² unless noted) ──
+  // ── Common structural properties (all optional, N/mm² unless noted) ──
   /** Young's modulus E (N/mm²). */
   elasticModulus?: number;
   /** Shear modulus G (N/mm²). */
@@ -76,13 +84,73 @@ export interface Material {
   poissonRatio?: number;
   /** Unit weight for self-weight calculation (kN/m³). */
   unitWeight?: number;
+}
+
+/** Concrete material. Steel/wood-only properties are intentionally forbidden. */
+export type ConcreteMaterial = MaterialBase & {
+  type: 'concrete';
   /** Concrete design strength Fc (N/mm²). */
   Fc?: number;
+  F?: never;
+  Fy?: never;
+  referenceStrength?: never;
+  moistureContent?: never;
+  allowableBendingStress?: never;
+  allowableCompressionStress?: never;
+  allowableShearStress?: never;
+};
+
+/** Steel material. Concrete/wood-only properties are intentionally forbidden. */
+export type SteelMaterial = MaterialBase & {
+  type: 'steel';
+  Fc?: never;
   /** Steel reference/allowable strength F (N/mm²). */
   F?: number;
   /** Steel yield strength Fy (N/mm²). */
   Fy?: number;
-}
+  referenceStrength?: never;
+  moistureContent?: never;
+  allowableBendingStress?: never;
+  allowableCompressionStress?: never;
+  allowableShearStress?: never;
+};
+
+/** Wood material, including moisture and allowable-stress design inputs. */
+export type WoodMaterial = MaterialBase & {
+  type: 'wood';
+  Fc?: never;
+  F?: never;
+  Fy?: never;
+  /** Reference strength (N/mm²). */
+  referenceStrength?: number;
+  /** Moisture content (%). */
+  moistureContent?: number;
+  /** Allowable bending stress (N/mm²). */
+  allowableBendingStress?: number;
+  /** Allowable compression stress parallel to grain (N/mm²). */
+  allowableCompressionStress?: number;
+  /** Allowable shear stress (N/mm²). */
+  allowableShearStress?: number;
+};
+
+/** User-defined material. It carries common elastic/weight properties only. */
+export type OtherMaterial = MaterialBase & {
+  type: 'other';
+  Fc?: never;
+  F?: never;
+  Fy?: never;
+  referenceStrength?: never;
+  moistureContent?: never;
+  allowableBendingStress?: never;
+  allowableCompressionStress?: never;
+  allowableShearStress?: never;
+};
+
+/**
+ * Discriminated material union. The `never` fields make mixed concrete,
+ * steel, and wood property bags a compile-time error as well as a schema error.
+ */
+export type Material = ConcreteMaterial | SteelMaterial | WoodMaterial | OtherMaterial;
 
 // ── Load case ────────────────────────────────────────────────
 
@@ -92,6 +160,160 @@ export interface LoadCase {
   type: 'dead' | 'live' | 'snow' | 'wind' | 'seismic' | 'other';
   /** Optional load factor for combinations. */
   factor?: number;
+}
+
+// ── Structural analysis model additions ──────────────────────────────
+
+/** Translational/rotational degrees of freedom; true means restrained. */
+export interface DofRestraint {
+  ux: boolean;
+  uy: boolean;
+  uz: boolean;
+  rx: boolean;
+  ry: boolean;
+  rz: boolean;
+}
+
+/** true means the corresponding member-end degree of freedom is released. */
+export type DofRelease = Partial<DofRestraint>;
+
+export interface MemberReleases {
+  start?: DofRelease;
+  end?: DofRelease;
+}
+
+export interface RigidZones {
+  /** Rigid-zone length from the start end (mm). */
+  start?: number;
+  /** Rigid-zone length from the end end (mm). */
+  end?: number;
+}
+
+export interface LocalAxisDefinition {
+  /** Roll angle about the member axis (radians). */
+  rotation: number;
+  /** Optional global reference vector used to disambiguate the local y-axis. */
+  referenceVector?: Point3D;
+}
+
+export interface StructuralSupport {
+  id: string;
+  storyId: string;
+  position: Point3D;
+  restraints: DofRestraint;
+}
+
+export interface LoadVector3D {
+  x: number;
+  y: number;
+  z: number;
+}
+
+export interface NodalLoad {
+  id: string;
+  loadCaseId: string;
+  storyId: string;
+  position: Point3D;
+  /** Global force components (kN). */
+  force: LoadVector3D;
+  /** Global moment components (kN·m). */
+  moment?: LoadVector3D;
+}
+
+export type LoadDirection =
+  | 'globalX'
+  | 'globalY'
+  | 'globalZ'
+  | 'localX'
+  | 'localY'
+  | 'localZ';
+
+export interface MemberLoad {
+  id: string;
+  loadCaseId: string;
+  memberId: string;
+  kind: 'point' | 'uniform' | 'trapezoidal';
+  direction: LoadDirection;
+  /** kN for point load, kN/m for distributed load. */
+  magnitude: number;
+  /** End intensity for trapezoidal load (kN/m). */
+  endMagnitude?: number;
+  /** Normalized position along the member, 0=start and 1=end. */
+  position?: number;
+}
+
+export interface AreaLoad {
+  id: string;
+  loadCaseId: string;
+  memberId: string;
+  direction: LoadDirection;
+  /** Area load intensity (kN/m²). */
+  magnitude: number;
+}
+
+export interface LoadCombinationFactor {
+  loadCaseId: string;
+  factor: number;
+}
+
+export interface LoadCombination {
+  id: string;
+  name: string;
+  type: 'linear' | 'envelope';
+  factors: LoadCombinationFactor[];
+}
+
+export interface LumpedMass {
+  id: string;
+  storyId: string;
+  position: Point3D;
+  /** Translational masses (tonne). */
+  mass: LoadVector3D;
+  /** Rotational mass moments (tonne·m²). */
+  rotationalMass?: LoadVector3D;
+}
+
+export interface Diaphragm {
+  id: string;
+  storyId: string;
+  type: 'rigid' | 'semiRigid';
+  memberIds?: string[];
+  masterPosition?: Point3D;
+}
+
+export interface AnalysisNodeDisplacement {
+  id?: string;
+  position: Point3D;
+  dx: number;
+  dy: number;
+  dz: number;
+  rx?: number;
+  ry?: number;
+  rz?: number;
+}
+
+export interface AnalysisMemberResult {
+  id?: string;
+  memberId: string;
+  axial?: number;
+  shearY?: number;
+  shearZ?: number;
+  momentY?: number;
+  momentZ?: number;
+  utilization?: number;
+}
+
+export interface AnalysisResultsMetadata {
+  source: string;
+  solver?: string;
+  analysisType: 'static' | 'modal' | 'buckling' | 'timeHistory' | 'other';
+  generatedAt: string;
+  caseId?: string;
+  combinationId?: string;
+  deformationScale?: number;
+  nodeDisplacements?: AnalysisNodeDisplacement[];
+  memberResults?: AnalysisMemberResult[];
+  warnings?: string[];
 }
 
 // ── Section (discriminated union on kind) ────────────────────
@@ -198,6 +420,7 @@ interface MemberBase {
   story: string;
   sectionId: string;
   materialId: string;
+  /** Cross-section roll about the member axis (radians). */
   rotation?: number;
   tags?: string[];
   color?: string;
@@ -209,6 +432,12 @@ interface MemberBase {
   axisOffset?: { dx: number; dy: number };
   /** Face alignment relative to the reference axis (wall/beam). */
   faceAlign?: 'center' | 'left' | 'right';
+  /** Optional member-end releases for structural analysis. */
+  releases?: MemberReleases;
+  /** Optional rigid-zone lengths at member ends (mm). */
+  rigidZones?: RigidZones;
+  /** Explicit local-axis roll/reference definition. */
+  localAxis?: LocalAxisDefinition;
 }
 
 export interface ColumnMember extends MemberBase {

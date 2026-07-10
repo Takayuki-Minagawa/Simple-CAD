@@ -47,14 +47,24 @@ export function CoordinateInputBar({ lastPoint, previewPoint, onSubmit, onGhostC
   const trimmed = value.trim();
   const result = trimmed ? parseCoordinateResult(value, lastPoint, previewPoint) : null;
   const isInvalid = result != null && !result.ok && result.error !== 'empty';
+  const ghostX = result?.ok ? result.point.x : null;
+  const ghostY = result?.ok ? result.point.y : null;
+  const onGhostChangeRef = useRef(onGhostChange);
+
+  // Keep callback identity changes from retriggering ghost updates. Parent state
+  // updates commonly create a fresh callback and could otherwise form a loop.
+  useEffect(() => {
+    onGhostChangeRef.current = onGhostChange;
+  }, [onGhostChange]);
 
   useEffect(() => {
-    if (!onGhostChange) return;
-    onGhostChange(result && result.ok ? result.point : null);
-  }, [result, onGhostChange]);
+    onGhostChangeRef.current?.(
+      ghostX != null && ghostY != null ? { x: ghostX, y: ghostY } : null,
+    );
+  }, [ghostX, ghostY]);
 
   // Clear ghost on unmount.
-  useEffect(() => () => onGhostChange?.(null), [onGhostChange]);
+  useEffect(() => () => onGhostChangeRef.current?.(null), []);
 
   const handleSubmit = useCallback(
     (e: React.FormEvent) => {

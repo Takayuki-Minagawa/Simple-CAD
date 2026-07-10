@@ -1,7 +1,7 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import { isCreationTool, useProjectStore, useEditorStore } from '@/app/store';
 import { collectAllIds } from '@/domain/idGenerator';
-import type { EditorTool } from '@/app/store';
+import type { EditorTool, LayerName } from '@/app/store';
 import { useI18n } from '@/i18n';
 import type { Point2D } from '@/domain/geometry/types';
 import {
@@ -11,7 +11,6 @@ import {
 } from '@/domain/geometry/snap';
 import type { SnapResult, SnapCandidate } from '@/domain/geometry/snap';
 import type { ProjectData } from '@/domain/structural/types';
-import { snapPointToGrid } from '@/domain/geometry/transform';
 import { constrainPointToAngle } from '@/domain/geometry/angleConstraint';
 import { getEntityBoundsList, selectByRectangle } from '@/domain/structural/editTransform';
 import { getEventCandidateIds, pickSelectionCandidate } from './selectionCycle';
@@ -20,12 +19,14 @@ import {
   createColumnMemberAt,
   createConstructionLineFromPoints,
   createDimensionFromPoints,
+  createOpeningAt,
   createSlabMemberFromPoints,
   createSplineAnnotation,
   createTextAnnotationAt,
   createWallMemberFromPoints,
 } from './drawingEntities';
 import { showPrompt } from '@/app/browserDialogs';
+import { isEntityLayerInteractive } from '@/domain/rendering/layerLock';
 
 export interface DrawState {
   /** Points collected so far for multi-click tools */
@@ -38,6 +39,8 @@ export interface DrawState {
   angleStep?: number | null;
   /** Source member selected for the extend tool. */
   extendMemberId?: string | null;
+  /** First wall selected for the fillet tool. */
+  filletWallId?: string | null;
 }
 
 export interface RectSelectState {
@@ -54,11 +57,16 @@ export function createEmptyDrawState(): DrawState {
     snapResult: null,
     angleStep: null,
     extendMemberId: null,
+    filletWallId: null,
   };
 }
 
 export function hasActiveDrawingState(drawState: DrawState): boolean {
-  return drawState.points.length > 0 || Boolean(drawState.extendMemberId);
+  return (
+    drawState.points.length > 0 ||
+    Boolean(drawState.extendMemberId) ||
+    Boolean(drawState.filletWallId)
+  );
 }
 
 export function canCompleteDrawing(tool: EditorTool, pointCount: number): boolean {
@@ -111,15 +119,36 @@ function applyAngleConstraint(points: Point2D[], pos: Point2D, stepDegrees = 45)
 export function buildEditorSnapCandidates(
   data: ProjectData,
   activeStory: string | null,
-  options: { includeMembers?: boolean; excludeId?: string } = {},
+  options: {
+    includeMembers?: boolean;
+    includeGrid?: boolean;
+    excludeId?: string;
+    excludeIds?: Iterable<string>;
+  } = {},
 ): SnapCandidate[] {
-  const { includeMembers = true, excludeId } = options;
+  const { includeMembers = true, includeGrid = true, excludeId, excludeIds } = options;
+  const excluded = new Set(excludeIds ?? []);
+  if (excludeId) excluded.add(excludeId);
+
+  const cacheKey = `${activeStory ?? '*'}:${includeMembers ? 'members' : 'no-members'}:${
+    includeGrid ? 'grid' : 'no-grid'
+  }`;
+  let projectCache = snapCandidateCache.get(data);
+  if (!projectCache) {
+    projectCache = new Map();
+    snapCandidateCache.set(data, projectCache);
+  }
+  const cached = projectCache.get(cacheKey);
+  if (cached) {
+    return excluded.size > 0
+      ? cached.filter((candidate) => !excluded.has(candidate.id))
+      : cached;
+  }
 
   const candidates: SnapCandidate[] = includeMembers
     ? buildSnapCandidatesFromMembers(
         data.members
           .filter((m) => !activeStory || m.story === activeStory)
-          .filter((m) => m.id !== excludeId)
           .map((m) => ({
             id: m.id,
             type: m.type,
@@ -130,14 +159,16 @@ export function buildEditorSnapCandidates(
       )
     : [];
 
-  // Grid intersections as endpoints.
-  for (const gx of data.grids.filter((g) => g.axis === 'X')) {
-    for (const gy of data.grids.filter((g) => g.axis === 'Y')) {
-      candidates.push({
-        id: `${gx.id}-${gy.id}`,
-        endpoints: [{ x: gx.position, y: gy.position }],
-        midpoints: [],
-      });
+  // Grid intersections participate only when the grid snap mode is enabled.
+  if (includeGrid) {
+    for (const gx of data.grids.filter((g) => g.axis === 'X')) {
+      for (const gy of data.grids.filter((g) => g.axis === 'Y')) {
+        candidates.push({
+          id: `${gx.id}-${gy.id}`,
+          endpoints: [{ x: gx.position, y: gy.position }],
+          midpoints: [],
+        });
+      }
     }
   }
 
@@ -156,26 +187,43 @@ export function buildEditorSnapCandidates(
     ),
   );
 
-  return candidates;
+  projectCache.set(cacheKey, candidates);
+  return excluded.size > 0
+    ? candidates.filter((candidate) => !excluded.has(candidate.id))
+    : candidates;
 }
 
-function isSelectableId(id: string, layerLocked: Record<string, boolean>): boolean {
+const snapCandidateCache = new WeakMap<ProjectData, Map<string, SnapCandidate[]>>();
+
+function isSelectableId(
+  id: string,
+  layerLocked: Record<LayerName, boolean>,
+  layerVisibility: Record<LayerName, boolean>,
+): boolean {
   const data = useProjectStore.getState().data;
   if (!data) return true;
-  const member = data.members.find((m) => m.id === id);
-  if (member) return !layerLocked[`member-${member.type}`];
-  if (data.annotations.some((a) => a.id === id)) return !layerLocked.annotation;
-  if (data.dimensions.some((d) => d.id === id)) return !layerLocked.dimension;
-  return true;
+  return isEntityLayerInteractive(data, id, layerLocked, layerVisibility);
 }
 
 export function useEditorInteraction() {
   const [drawState, setDrawState] = useState<DrawState>(createEmptyDrawState);
+  const drawStateRef = useRef<DrawState>(drawState);
 
   const [rectSelect, setRectSelect] = useState<RectSelectState>({
     start: null,
     end: null,
   });
+  const rectSelectRef = useRef<RectSelectState>(rectSelect);
+
+  const commitDrawState = useCallback((next: DrawState) => {
+    drawStateRef.current = next;
+    setDrawState(next);
+  }, []);
+
+  const commitRectSelect = useCallback((next: RectSelectState) => {
+    rectSelectRef.current = next;
+    setRectSelect(next);
+  }, []);
 
   const getSnapPos = useCallback((worldPos: Point2D): { pos: Point2D; snap: SnapResult | null } => {
     const data = useProjectStore.getState().data;
@@ -196,14 +244,13 @@ export function useEditorInteraction() {
       !drawInputAssist || snapToMembersWhileDrawing || !isCreationTool(activeTool);
     const candidates = buildEditorSnapCandidates(data, activeStory, {
       includeMembers: useMemberSnaps,
+      includeGrid: activeSnapModes.includes('grid'),
     });
 
     const snap = findSnap(worldPos, candidates, activeSnapModes, gridSpacing, 15, zoom);
     if (snap) return { pos: snap.point, snap };
 
-    // Fall back to grid snap
-    const gridPos = snapPointToGrid(worldPos, gridSpacing);
-    return { pos: gridPos, snap: null };
+    return { pos: worldPos, snap: null };
   }, []);
 
   const handleDrawingClick = useCallback((tool: EditorTool, pos: Point2D) => {
@@ -231,61 +278,59 @@ export function useEditorInteraction() {
       }
 
       case 'beam': {
-        setDrawState((prev) => {
-          const pts = [...prev.points, pos];
-          if (pts.length >= 2) {
-            const member = createBeamMemberFromPoints(
-              store.data!,
-              activeStory,
-              story,
-              [pts[0], pts[1]],
-              usedIds,
-            );
-            store.addMember(member);
-            return createEmptyDrawState();
-          }
-          return { ...prev, points: pts };
-        });
+        const previous = drawStateRef.current;
+        const pts = [...previous.points, pos];
+        if (pts.length >= 2) {
+          const member = createBeamMemberFromPoints(
+            store.data,
+            activeStory,
+            story,
+            [pts[0], pts[1]],
+            usedIds,
+          );
+          store.addMember(member);
+          commitDrawState(createEmptyDrawState());
+        } else {
+          commitDrawState({ ...previous, points: pts });
+        }
         break;
       }
 
       case 'wall': {
-        setDrawState((prev) => {
-          const pts = [...prev.points, pos];
-          if (pts.length >= 2) {
-            const member = createWallMemberFromPoints(
-              store.data!,
-              activeStory,
-              story,
-              [pts[0], pts[1]],
-              usedIds,
-            );
-            store.addMember(member);
-            return createEmptyDrawState();
-          }
-          return { ...prev, points: pts };
-        });
+        const previous = drawStateRef.current;
+        const pts = [...previous.points, pos];
+        if (pts.length >= 2) {
+          const member = createWallMemberFromPoints(
+            store.data,
+            activeStory,
+            story,
+            [pts[0], pts[1]],
+            usedIds,
+          );
+          store.addMember(member);
+          commitDrawState(createEmptyDrawState());
+        } else {
+          commitDrawState({ ...previous, points: pts });
+        }
         break;
       }
 
       case 'slab': {
-        setDrawState((prev) => {
-          const pts = [...prev.points, pos];
-          return { ...prev, points: pts };
-        });
+        const previous = drawStateRef.current;
+        commitDrawState({ ...previous, points: [...previous.points, pos] });
         break;
       }
 
       case 'dimension': {
-        setDrawState((prev) => {
-          const pts = [...prev.points, pos];
-          if (pts.length >= 2) {
-            const dim = createDimensionFromPoints(activeStory, [pts[0], pts[1]], usedIds);
-            store.addDimension(dim);
-            return createEmptyDrawState();
-          }
-          return { ...prev, points: pts };
-        });
+        const previous = drawStateRef.current;
+        const pts = [...previous.points, pos];
+        if (pts.length >= 2) {
+          const dim = createDimensionFromPoints(activeStory, [pts[0], pts[1]], usedIds);
+          store.addDimension(dim);
+          commitDrawState(createEmptyDrawState());
+        } else {
+          commitDrawState({ ...previous, points: pts });
+        }
         break;
       }
 
@@ -297,38 +342,34 @@ export function useEditorInteraction() {
       }
 
       case 'xline': {
-        setDrawState((prev) => {
-          const pts = [...prev.points, pos];
-          if (pts.length >= 2) {
-            const cl = createConstructionLineFromPoints(activeStory, [pts[0], pts[1]], usedIds);
-            if (cl) {
-              store.addConstructionLine(cl);
-            }
-            return createEmptyDrawState();
-          }
-          return { ...prev, points: pts };
-        });
+        const previous = drawStateRef.current;
+        const pts = [...previous.points, pos];
+        if (pts.length >= 2) {
+          const cl = createConstructionLineFromPoints(activeStory, [pts[0], pts[1]], usedIds);
+          if (cl) store.addConstructionLine(cl);
+          commitDrawState(createEmptyDrawState());
+        } else {
+          commitDrawState({ ...previous, points: pts });
+        }
         break;
       }
 
       case 'spline': {
-        setDrawState((prev) => {
-          const pts = [...prev.points, pos];
-          return { ...prev, points: pts };
-        });
+        const previous = drawStateRef.current;
+        commitDrawState({ ...previous, points: [...previous.points, pos] });
         break;
       }
     }
-  }, []);
+  }, [commitDrawState]);
 
   const handleClick = useCallback(
     (worldPos: Point2D, e: React.MouseEvent) => {
-      const { activeTool, setSelectedIds, toggleSelection, layerLocked } =
+      const { activeTool, setSelectedIds, toggleSelection, layerLocked, layerVisibility } =
         useEditorStore.getState();
 
       if (activeTool === 'select') {
         const candidateIds = getEventCandidateIds(e).filter((id) =>
-          isSelectableId(id, layerLocked),
+          isSelectableId(id, layerLocked, layerVisibility),
         );
         const useCycle = !(e.shiftKey || e.ctrlKey || e.metaKey);
         const id = useCycle
@@ -347,7 +388,11 @@ export function useEditorInteraction() {
             const group = data.groups.find((g) => g.memberIds.includes(id));
             if (group) {
               setSelectedIds(
-                group.memberIds.filter((mid) => data.members.some((m) => m.id === mid)),
+                group.memberIds.filter(
+                  (mid) =>
+                    data.members.some((m) => m.id === mid) &&
+                    isSelectableId(mid, layerLocked, layerVisibility),
+                ),
               );
               return;
             }
@@ -362,6 +407,26 @@ export function useEditorInteraction() {
         return;
       }
 
+      // Opening tool: place a default opening on the clicked wall or slab.
+      if (activeTool === 'opening') {
+        const target = (e.target as SVGElement).closest('[data-id]');
+        const memberId = target?.getAttribute('data-id');
+        if (!memberId) return;
+        const store = useProjectStore.getState();
+        if (!store.data) return;
+        const editor = useEditorStore.getState();
+        if (
+          editor.layerLocked.opening ||
+          editor.layerVisibility.opening === false ||
+          !isSelectableId(memberId, editor.layerLocked, editor.layerVisibility)
+        ) return;
+        const member = store.data.members.find((item) => item.id === memberId);
+        if (!member) return;
+        const opening = createOpeningAt(member, worldPos, collectAllIds(store.data));
+        if (opening) store.addOpening(opening);
+        return;
+      }
+
       // Trim tool: click on a member to trim it at nearest intersection
       if (activeTool === 'trim') {
         const target = (e.target as SVGElement).closest('[data-id]');
@@ -369,6 +434,8 @@ export function useEditorInteraction() {
         const id = target.getAttribute('data-id')!;
         const store = useProjectStore.getState();
         if (!store.data) return;
+        const editor = useEditorStore.getState();
+        if (!isSelectableId(id, editor.layerLocked, editor.layerVisibility)) return;
         const member = store.data.members.find((m) => m.id === id);
         if (!member || member.type === 'slab') return;
         // Determine which side to keep based on click proximity to start/end
@@ -384,70 +451,115 @@ export function useEditorInteraction() {
         const target = (e.target as SVGElement).closest('[data-id]');
         if (!target) return;
         const id = target.getAttribute('data-id')!;
-        setDrawState((prev) => {
-          if (!prev.extendMemberId) {
-            return { ...prev, extendMemberId: id, previewPos: null, snapResult: null };
-          }
-          useProjectStore.getState().extendMember(prev.extendMemberId, id);
-          return createEmptyDrawState();
-        });
+        const previous = drawStateRef.current;
+        const editor = useEditorStore.getState();
+        if (!isSelectableId(id, editor.layerLocked, editor.layerVisibility)) return;
+        if (
+          previous.extendMemberId &&
+          !isSelectableId(
+            previous.extendMemberId,
+            editor.layerLocked,
+            editor.layerVisibility,
+          )
+        ) {
+          commitDrawState(createEmptyDrawState());
+          return;
+        }
+        if (!previous.extendMemberId) {
+          commitDrawState({
+            ...previous,
+            extendMemberId: id,
+            previewPos: null,
+            snapResult: null,
+          });
+        } else {
+          useProjectStore.getState().extendMember(previous.extendMemberId, id);
+          commitDrawState(createEmptyDrawState());
+        }
+        return;
+      }
+
+      if (activeTool === 'fillet') {
+        const target = (e.target as SVGElement).closest('[data-id]');
+        const id = target?.getAttribute('data-id');
+        if (!id) return;
+        const editor = useEditorStore.getState();
+        if (!isSelectableId(id, editor.layerLocked, editor.layerVisibility)) return;
+        const wall = useProjectStore
+          .getState()
+          .data?.members.find((member) => member.id === id && member.type === 'wall');
+        if (!wall) return;
+        const previous = drawStateRef.current;
+        if (
+          previous.filletWallId &&
+          !isSelectableId(
+            previous.filletWallId,
+            editor.layerLocked,
+            editor.layerVisibility,
+          )
+        ) {
+          commitDrawState(createEmptyDrawState());
+          return;
+        }
+        if (!previous.filletWallId) {
+          commitDrawState({ ...previous, filletWallId: id });
+        } else {
+          useProjectStore.getState().filletWalls(previous.filletWallId, id);
+          commitDrawState(createEmptyDrawState());
+        }
         return;
       }
 
       const { orthoMode, polarTrackingEnabled, polarAngleStep } = useEditorStore.getState();
-      const angleStep = resolveAngleConstraintStep(activeTool, drawState.points, e.shiftKey, {
+      const current = drawStateRef.current;
+      const angleStep = resolveAngleConstraintStep(activeTool, current.points, e.shiftKey, {
         orthoMode,
         polarTrackingEnabled,
         polarAngleStep,
       });
-      const { pos } = angleStep != null ? { pos: worldPos } : getSnapPos(worldPos);
+      const { pos, snap } = getSnapPos(worldPos);
       const drawPos =
-        angleStep != null ? applyAngleConstraint(drawState.points, pos, angleStep) : pos;
+        angleStep != null && !snap ? applyAngleConstraint(current.points, pos, angleStep) : pos;
       handleDrawingClick(activeTool, drawPos);
     },
-    [drawState.points, getSnapPos, handleDrawingClick],
+    [commitDrawState, getSnapPos, handleDrawingClick],
   );
 
   const completeDrawing = useCallback(() => {
     const { activeTool } = useEditorStore.getState();
+    const previous = drawStateRef.current;
     // Close slab polygon on double-click or Enter
     if (activeTool === 'slab') {
-      setDrawState((prev) => {
-        if (!canCompleteDrawing(activeTool, prev.points.length)) return prev;
-        const store = useProjectStore.getState();
-        const { activeStory } = useEditorStore.getState();
-        if (!store.data || !activeStory) return prev;
-        const story = store.data.stories.find((s) => s.id === activeStory);
-        if (!story) return prev;
-
-        const usedIds = collectAllIds(store.data);
-        const member = createSlabMemberFromPoints(
-          store.data,
-          activeStory,
-          story,
-          prev.points,
-          usedIds,
-        );
-        store.addMember(member);
-        return createEmptyDrawState();
-      });
+      if (!canCompleteDrawing(activeTool, previous.points.length)) return;
+      const store = useProjectStore.getState();
+      const { activeStory } = useEditorStore.getState();
+      if (!store.data || !activeStory) return;
+      const story = store.data.stories.find((item) => item.id === activeStory);
+      if (!story) return;
+      const member = createSlabMemberFromPoints(
+        store.data,
+        activeStory,
+        story,
+        previous.points,
+        collectAllIds(store.data),
+      );
+      store.addMember(member);
+      commitDrawState(createEmptyDrawState());
+      return;
     }
 
     // Close spline on double-click or Enter
     if (activeTool === 'spline') {
-      setDrawState((prev) => {
-        if (!canCompleteDrawing(activeTool, prev.points.length)) return prev;
-        const store = useProjectStore.getState();
-        const { activeStory } = useEditorStore.getState();
-        if (!store.data || !activeStory) return prev;
-
-        store.addAnnotation(
-          createSplineAnnotation(activeStory, prev.points, collectAllIds(store.data)),
-        );
-        return createEmptyDrawState();
-      });
+      if (!canCompleteDrawing(activeTool, previous.points.length)) return;
+      const store = useProjectStore.getState();
+      const { activeStory } = useEditorStore.getState();
+      if (!store.data || !activeStory) return;
+      store.addAnnotation(
+        createSplineAnnotation(activeStory, previous.points, collectAllIds(store.data)),
+      );
+      commitDrawState(createEmptyDrawState());
     }
-  }, []);
+  }, [commitDrawState]);
 
   const handleDoubleClick = useCallback(() => {
     completeDrawing();
@@ -457,36 +569,28 @@ export function useEditorInteraction() {
     (worldPos: Point2D, e: React.MouseEvent) => {
       const { activeTool, orthoMode, polarTrackingEnabled, polarAngleStep } =
         useEditorStore.getState();
-      setDrawState((prev) => {
-        const angleStep = resolveAngleConstraintStep(activeTool, prev.points, e.shiftKey, {
-          orthoMode,
-          polarTrackingEnabled,
-          polarAngleStep,
-        });
-        const { pos, snap } =
-          angleStep != null ? { pos: worldPos, snap: null } : getSnapPos(worldPos);
-        const previewPos =
-          angleStep != null ? applyAngleConstraint(prev.points, pos, angleStep) : pos;
-        // Publish live draw context for the status bar (anchor / snap).
-        const editor = useEditorStore.getState();
-        editor.setDrawAnchor(prev.points.length > 0 ? prev.points[prev.points.length - 1] : null);
-        editor.setActiveSnapPoint(snap ? snap.point : null);
-        return {
-          ...prev,
-          previewPos,
-          snapResult: snap,
-          angleStep,
-        };
+      const previous = drawStateRef.current;
+      const angleStep = resolveAngleConstraintStep(activeTool, previous.points, e.shiftKey, {
+        orthoMode,
+        polarTrackingEnabled,
+        polarAngleStep,
       });
+      const { pos, snap } = getSnapPos(worldPos);
+      const previewPos =
+        angleStep != null && !snap
+          ? applyAngleConstraint(previous.points, pos, angleStep)
+          : pos;
+      const editor = useEditorStore.getState();
+      editor.setDrawAnchor(
+        previous.points.length > 0 ? previous.points[previous.points.length - 1] : null,
+      );
+      editor.setActiveSnapPoint(snap ? snap.point : null);
+      commitDrawState({ ...previous, previewPos, snapResult: snap, angleStep });
       // Update rect select end if dragging
-      setRectSelect((prev) => {
-        if (prev.start) {
-          return { ...prev, end: worldPos };
-        }
-        return prev;
-      });
+      const rectangle = rectSelectRef.current;
+      if (rectangle.start) commitRectSelect({ ...rectangle, end: worldPos });
     },
-    [getSnapPos],
+    [commitDrawState, commitRectSelect, getSnapPos],
   );
 
   const handleMouseDown = useCallback((worldPos: Point2D, e: React.MouseEvent) => {
@@ -495,18 +599,18 @@ export function useEditorInteraction() {
       // Start rect select only if clicking on empty area (not on an entity)
       const target = (e.target as SVGElement).closest('[data-id]');
       if (!target) {
-        setRectSelect({ start: worldPos, end: worldPos });
+        commitRectSelect({ start: worldPos, end: worldPos });
       }
     }
-  }, []);
+  }, [commitRectSelect]);
 
   const handleMouseUp = useCallback(() => {
-    setRectSelect((prev) => {
-      if (prev.start && prev.end) {
-        const minX = Math.min(prev.start.x, prev.end.x);
-        const maxX = Math.max(prev.start.x, prev.end.x);
-        const minY = Math.min(prev.start.y, prev.end.y);
-        const maxY = Math.max(prev.start.y, prev.end.y);
+    const previous = rectSelectRef.current;
+    if (previous.start && previous.end) {
+        const minX = Math.min(previous.start.x, previous.end.x);
+        const maxX = Math.max(previous.start.x, previous.end.x);
+        const minY = Math.min(previous.start.y, previous.end.y);
+        const maxY = Math.max(previous.start.y, previous.end.y);
         const width = maxX - minX;
         const height = maxY - minY;
 
@@ -516,16 +620,31 @@ export function useEditorInteraction() {
           const { activeStory } = useEditorStore.getState();
           if (data) {
             const entities = getEntityBoundsList(data, activeStory);
+            for (const opening of data.openings) {
+              const host = data.members.find((member) => member.id === opening.memberId);
+              if (!host || (activeStory && host.story !== activeStory)) continue;
+              entities.push({
+                id: opening.id,
+                minX: opening.position.x - opening.width / 2,
+                minY: opening.position.y - opening.width / 2,
+                maxX: opening.position.x + opening.width / 2,
+                maxY: opening.position.y + opening.width / 2,
+              });
+            }
             // left-to-right = window, right-to-left = crossing
-            const mode = prev.end.x >= prev.start.x ? 'window' : 'crossing';
+            const mode = previous.end.x >= previous.start.x ? 'window' : 'crossing';
             const ids = selectByRectangle(entities, minX, minY, maxX, maxY, mode);
-            useEditorStore.getState().setSelectedIds(ids);
+            const editor = useEditorStore.getState();
+            editor.setSelectedIds(
+              ids.filter((id) =>
+                isSelectableId(id, editor.layerLocked, editor.layerVisibility),
+              ),
+            );
           }
         }
       }
-      return { start: null, end: null };
-    });
-  }, []);
+    commitRectSelect({ start: null, end: null });
+  }, [commitRectSelect]);
 
   /** Inject a coordinate point as if user clicked at that position. */
   const injectCoordinate = useCallback(
@@ -539,11 +658,21 @@ export function useEditorInteraction() {
   );
 
   const resetDrawing = useCallback(() => {
-    setDrawState(createEmptyDrawState());
+    commitDrawState(createEmptyDrawState());
     const editor = useEditorStore.getState();
     editor.setDrawAnchor(null);
     editor.setActiveSnapPoint(null);
-  }, []);
+  }, [commitDrawState]);
+
+  useEffect(
+    () =>
+      useEditorStore.subscribe((state, previous) => {
+        if (state.activeStory === previous.activeStory) return;
+        resetDrawing();
+        commitRectSelect({ start: null, end: null });
+      }),
+    [commitRectSelect, resetDrawing],
+  );
 
   return {
     drawState,

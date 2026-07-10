@@ -48,8 +48,8 @@ const round = (value: number): number => quantize(value, LOAD_PRECISION);
  * Section kinds:
  *   - rect (rc_column_rect / rc_beam_rect):  A = w · d
  *   - H-shape (s_column_h / s_beam_h):       A = 2·B·tf + (H − 2·tf)·tw
- *       (when tw/tf are present; otherwise a thin-walled approximation using a
- *        nominal 10mm plate so a rough value is still produced)
+ *       (requires tw/tf; missing plate dimensions return undefined rather than
+ *        emitting a misleading nominal self-weight)
  *   - pipe (s_pipe):                         A = π/4 · (D² − (D − 2t)²)
  */
 export function sectionAreaMm2(section: Section): number | undefined {
@@ -66,10 +66,7 @@ export function sectionAreaMm2(section: Section): number | undefined {
         const tw = section.tw;
         return 2 * B * tf + Math.max(H - 2 * tf, 0) * tw;
       }
-      // No plate thicknesses supplied: approximate with a nominal 10mm plate so
-      // self-weight is non-zero rather than silently dropping the member.
-      const t = 10;
-      return 2 * B * t + Math.max(H - 2 * t, 0) * t;
+      return undefined;
     }
     case 's_pipe': {
       const D = section.diameter;

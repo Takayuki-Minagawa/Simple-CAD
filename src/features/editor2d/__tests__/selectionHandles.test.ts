@@ -40,8 +40,8 @@ describe('getSelectionHandles', () => {
   it('returns endpoints for selected linear members and dimensions', () => {
     const handles = getSelectionHandles(baseProject, ['beam-1', 'dim-1'], '1F');
     expect(handles.map((handle) => handle.kind)).toEqual([
-      'member-start',
-      'member-end',
+      'connected-joint',
+      'connected-joint',
       'dimension-start',
       'dimension-end',
     ]);

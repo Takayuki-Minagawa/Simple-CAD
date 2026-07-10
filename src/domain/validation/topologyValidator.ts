@@ -1,5 +1,6 @@
 import type { ProjectData } from '@/domain/structural/types';
 import type { Point3D } from '@/domain/geometry/types';
+import { JOINT_MERGE_TOLERANCE } from '@/domain/geometry/precision';
 import type { ValidationError, ValidationResult } from './types';
 
 /**
@@ -16,7 +17,7 @@ import type { ValidationError, ValidationResult } from './types';
  */
 
 /** Tolerance for "near" comparisons of elevations / plan positions (mm). */
-const JOINT_TOLERANCE = 1; // 1mm — generous enough for hand-modeled data
+const JOINT_TOLERANCE = JOINT_MERGE_TOLERANCE;
 const LEVEL_TOLERANCE = 1;
 
 export function validateTopology(data: ProjectData): ValidationResult {
@@ -26,8 +27,44 @@ export function validateTopology(data: ProjectData): ValidationResult {
   validateGridDuplication(data, errors);
   validateLevelIntegrity(data, errors);
   validateJointIntegrity(data, errors);
+  validateSlabBoundarySupport(data, errors);
 
   return { ok: errors.every((e) => e.level !== 'error'), errors };
+}
+
+// ── Slab boundary ↔ beam/wall loop consistency ──────────────
+
+function validateSlabBoundarySupport(data: ProjectData, errors: ValidationError[]) {
+  for (const slab of data.members) {
+    if (slab.type !== 'slab' || slab.polygon.length < 3) continue;
+    const supports = data.members.filter(
+      (member): member is Extract<ProjectData['members'][number], { type: 'beam' | 'wall' }> =>
+        member.story === slab.story && (member.type === 'beam' || member.type === 'wall'),
+    );
+    for (let index = 0; index < slab.polygon.length; index += 1) {
+      const start = slab.polygon[index];
+      const end = slab.polygon[(index + 1) % slab.polygon.length];
+      // Multiple collinear beams may support one slab edge. Sampling catches
+      // both a split support line and a material gap without requiring IDs to
+      // be modeled in the same segmentation as the slab polygon.
+      const edgeSupported = [0, 0.25, 0.5, 0.75, 1].every((ratio) => {
+        const point = {
+          x: start.x + (end.x - start.x) * ratio,
+          y: start.y + (end.y - start.y) * ratio,
+        };
+        return supports.some(
+          (member) => pointToSegmentDistance2D(point, member.start, member.end) <= JOINT_TOLERANCE,
+        );
+      });
+      if (!edgeSupported) {
+        errors.push({
+          level: 'warning',
+          message: `Member "${slab.id}": slab外周 edge ${index + 1} が同一階の梁・壁の閉ループに一致しません`,
+          path: `/members/${slab.id}/polygon/${index}`,
+        });
+      }
+    }
+  }
 }
 
 // ── Story elevation monotonicity / duplication ───────────────
@@ -118,7 +155,51 @@ function validateLevelIntegrity(data: ProjectData, errors: ValidationError[]) {
           path: `/members/${m.id}`,
         });
       }
+    } else if (m.type === 'beam') {
+      const expectedLevel = story.elevation + story.height;
+      if (
+        Math.abs(m.start.z - expectedLevel) > LEVEL_TOLERANCE ||
+        Math.abs(m.end.z - expectedLevel) > LEVEL_TOLERANCE
+      ) {
+        errors.push({
+          level: 'warning',
+          message: `Member "${m.id}": 梁端レベル [${m.start.z}, ${m.end.z}] が階の梁レベル ${expectedLevel}mm と不一致`,
+          path: `/members/${m.id}`,
+        });
+      }
+    } else if (m.type === 'column') {
+      const verticalSpan = Math.abs(m.end.z - m.start.z);
+      if (Math.abs(verticalSpan - story.height) > LEVEL_TOLERANCE) {
+        errors.push({
+          level: 'warning',
+          message: `Member "${m.id}": 柱の鉛直スパン ${verticalSpan}mm が階高 ${story.height}mm と不一致`,
+          path: `/members/${m.id}`,
+        });
+      }
+      const columnBottom = Math.min(m.start.z, m.end.z);
+      const columnTop = Math.max(m.start.z, m.end.z);
+      const storyTop = story.elevation + story.height;
+      if (
+        Math.abs(columnBottom - story.elevation) > LEVEL_TOLERANCE ||
+        Math.abs(columnTop - storyTop) > LEVEL_TOLERANCE
+      ) {
+        errors.push({
+          level: 'warning',
+          message: `Member "${m.id}": 柱端レベル [${columnBottom}, ${columnTop}] が階範囲 [${story.elevation}, ${storyTop}] と不一致`,
+          path: `/members/${m.id}`,
+        });
+      }
     } else if (m.type === 'wall') {
+      if (
+        Math.abs(m.start.z - story.elevation) > LEVEL_TOLERANCE ||
+        Math.abs(m.end.z - story.elevation) > LEVEL_TOLERANCE
+      ) {
+        errors.push({
+          level: 'warning',
+          message: `Member "${m.id}": wall基準レベルが階EL ${story.elevation}mm と不一致`,
+          path: `/members/${m.id}`,
+        });
+      }
       if (m.height > story.height + LEVEL_TOLERANCE) {
         errors.push({
           level: 'warning',
@@ -159,7 +240,7 @@ function validateJointIntegrity(data: ProjectData, errors: ValidationError[]) {
       ['start', b.start],
       ['end', b.end],
     ] as const) {
-      const nearColumn = columnPoints.some((p) => near3DPlan(p, ep));
+      const nearColumn = columnPoints.some((p) => near3D(p, ep));
       const nearBeam = beamEndpoints.some((p) => p !== ep && near3D(p, ep));
       if (!nearColumn && !nearBeam) {
         errors.push({
@@ -199,18 +280,30 @@ function validateJointIntegrity(data: ProjectData, errors: ValidationError[]) {
 // ── helpers ──────────────────────────────────────────────────
 
 function near3D(a: Point3D, b: Point3D, tol = JOINT_TOLERANCE): boolean {
-  return (
-    Math.abs(a.x - b.x) <= tol &&
-    Math.abs(a.y - b.y) <= tol &&
-    Math.abs(a.z - b.z) <= tol
-  );
+  return Math.hypot(a.x - b.x, a.y - b.y, a.z - b.z) <= tol;
 }
 
 /** Plan (x, y) proximity, ignoring z. */
 function near3DPlan(a: Point3D, b: Point3D, tol = JOINT_TOLERANCE): boolean {
-  return Math.abs(a.x - b.x) <= tol && Math.abs(a.y - b.y) <= tol;
+  return Math.hypot(a.x - b.x, a.y - b.y) <= tol;
 }
 
 function planKey(p: Point3D): string {
   return `${Math.round(p.x)}:${Math.round(p.y)}`;
+}
+
+function pointToSegmentDistance2D(
+  point: { x: number; y: number },
+  start: { x: number; y: number },
+  end: { x: number; y: number },
+): number {
+  const dx = end.x - start.x;
+  const dy = end.y - start.y;
+  const lengthSquared = dx * dx + dy * dy;
+  if (lengthSquared <= Number.EPSILON) return Math.hypot(point.x - start.x, point.y - start.y);
+  const ratio = Math.max(
+    0,
+    Math.min(1, ((point.x - start.x) * dx + (point.y - start.y) * dy) / lengthSquared),
+  );
+  return Math.hypot(point.x - (start.x + dx * ratio), point.y - (start.y + dy * ratio));
 }

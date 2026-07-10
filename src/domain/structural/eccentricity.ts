@@ -26,6 +26,31 @@ export interface WorldDelta {
   z: number;
 }
 
+export interface FaceAlignedLinearMember {
+  axisOffset?: AxisOffset;
+  faceAlign?: 'center' | 'left' | 'right';
+}
+
+/**
+ * Resolve the effective local offset for a beam/wall reference axis.
+ * `left` places the section on the left-hand side of start→end, while
+ * `right` places it on the right. Explicit eccentricity is additive.
+ */
+export function effectiveLinearAxisOffset(
+  member: FaceAlignedLinearMember,
+  width: number,
+): AxisOffset | undefined {
+  const base = member.axisOffset ?? { dx: 0, dy: 0 };
+  const faceShift =
+    member.faceAlign === 'left'
+      ? width / 2
+      : member.faceAlign === 'right'
+        ? -width / 2
+        : 0;
+  const resolved = { dx: base.dx + faceShift, dy: base.dy };
+  return resolved.dx === 0 && resolved.dy === 0 ? undefined : resolved;
+}
+
 const ZERO: WorldDelta = { x: 0, y: 0, z: 0 };
 
 function isZero(offset: AxisOffset | undefined): offset is undefined {

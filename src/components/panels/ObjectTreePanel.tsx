@@ -1,10 +1,19 @@
 import { useProjectStore, useEditorStore } from '@/app/store';
 import { useI18n } from '@/i18n';
-import { isLayerLockedForEntity } from '@/domain/rendering/layerLock';
+import { isEntityLayerInteractive } from '@/domain/rendering/layerLock';
+import { useShallow } from 'zustand/react/shallow';
 
 export function ObjectTreePanel() {
   const data = useProjectStore((s) => s.data);
-  const { selectedIds, setSelectedIds, activeStory, layerLocked } = useEditorStore();
+  const { selectedIds, setSelectedIds, activeStory, layerLocked, layerVisibility } = useEditorStore(
+    useShallow((state) => ({
+      selectedIds: state.selectedIds,
+      setSelectedIds: state.setSelectedIds,
+      activeStory: state.activeStory,
+      layerLocked: state.layerLocked,
+      layerVisibility: state.layerVisibility,
+    })),
+  );
   const { t } = useI18n();
 
   if (!data) return <div className="panel-content">{t.noProject}</div>;
@@ -25,6 +34,11 @@ export function ObjectTreePanel() {
 
   const annotations = data.annotations.filter((a) => !activeStory || a.story === activeStory);
   const dimensions = data.dimensions.filter((d) => !activeStory || d.story === activeStory);
+  const memberById = new Map(data.members.map((member) => [member.id, member]));
+  const openings = data.openings.filter((opening) => {
+    const host = memberById.get(opening.memberId);
+    return host && (!activeStory || host.story === activeStory);
+  });
 
   return (
     <div>
@@ -34,13 +48,18 @@ export function ObjectTreePanel() {
           <div key={type}>
             <div className="tree-group-label">{typeLabels[type]} ({members.length})</div>
             {members.map((m) => {
-              const locked = isLayerLockedForEntity('member', m.type, layerLocked);
+              const interactive = isEntityLayerInteractive(
+                data,
+                m.id,
+                layerLocked,
+                layerVisibility,
+              );
               return (
                 <div
                   key={m.id}
                   className={`tree-node ${selectedIds.includes(m.id) ? 'selected' : ''}`}
-                  style={locked ? { opacity: 0.4, cursor: 'not-allowed' } : undefined}
-                  onClick={() => { if (!locked) setSelectedIds([m.id]); }}
+                  style={!interactive ? { opacity: 0.4, cursor: 'not-allowed' } : undefined}
+                  onClick={() => { if (interactive) setSelectedIds([m.id]); }}
                 >
                   {m.id}
                 </div>
@@ -50,13 +69,18 @@ export function ObjectTreePanel() {
         ))}
         <div className="tree-group-label">{t.memberAnnotation} ({annotations.length})</div>
         {annotations.map((a) => {
-          const locked = layerLocked['annotation'];
+          const interactive = isEntityLayerInteractive(
+            data,
+            a.id,
+            layerLocked,
+            layerVisibility,
+          );
           return (
             <div
               key={a.id}
               className={`tree-node ${selectedIds.includes(a.id) ? 'selected' : ''}`}
-              style={locked ? { opacity: 0.4, cursor: 'not-allowed' } : undefined}
-              onClick={() => { if (!locked) setSelectedIds([a.id]); }}
+              style={!interactive ? { opacity: 0.4, cursor: 'not-allowed' } : undefined}
+              onClick={() => { if (interactive) setSelectedIds([a.id]); }}
             >
               {a.id}: {a.text}
             </div>
@@ -64,15 +88,39 @@ export function ObjectTreePanel() {
         })}
         <div className="tree-group-label">{t.memberDimension} ({dimensions.length})</div>
         {dimensions.map((d) => {
-          const locked = layerLocked['dimension'];
+          const interactive = isEntityLayerInteractive(
+            data,
+            d.id,
+            layerLocked,
+            layerVisibility,
+          );
           return (
             <div
               key={d.id}
               className={`tree-node ${selectedIds.includes(d.id) ? 'selected' : ''}`}
-              style={locked ? { opacity: 0.4, cursor: 'not-allowed' } : undefined}
-              onClick={() => { if (!locked) setSelectedIds([d.id]); }}
+              style={!interactive ? { opacity: 0.4, cursor: 'not-allowed' } : undefined}
+              onClick={() => { if (interactive) setSelectedIds([d.id]); }}
             >
               {d.id}
+            </div>
+          );
+        })}
+        <div className="tree-group-label">{t.layerOpening} ({openings.length})</div>
+        {openings.map((opening) => {
+          const interactive = isEntityLayerInteractive(
+            data,
+            opening.id,
+            layerLocked,
+            layerVisibility,
+          );
+          return (
+            <div
+              key={opening.id}
+              className={`tree-node ${selectedIds.includes(opening.id) ? 'selected' : ''}`}
+              style={!interactive ? { opacity: 0.4, cursor: 'not-allowed' } : undefined}
+              onClick={() => { if (interactive) setSelectedIds([opening.id]); }}
+            >
+              {opening.id}: {opening.type}
             </div>
           );
         })}

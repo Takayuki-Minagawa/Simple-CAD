@@ -1,22 +1,26 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 
 export function CoordRow({
   label,
   value,
+  placeholder,
   onChange,
 }: {
   label: string;
   value: number;
+  placeholder?: string;
   onChange: (v: number) => void;
 }) {
-  const [text, setText] = useState(String(value));
-  useEffect(() => {
-    setText(String(value));
-  }, [value]);
+  const displayText = placeholder ?? String(value);
+  const [draft, setDraft] = useState<{ text: string; dirty: boolean }>({
+    text: '',
+    dirty: false,
+  });
+  const text = draft.dirty ? draft.text : displayText;
   const commit = () => {
     const num = parseFloat(text);
     if (!isNaN(num) && num !== value) onChange(num);
-    else setText(String(value));
+    setDraft({ text: '', dirty: false });
   };
   return (
     <div className="prop-row">
@@ -24,7 +28,8 @@ export function CoordRow({
       <input
         className="prop-input"
         value={text}
-        onChange={(e) => setText(e.target.value)}
+        placeholder={placeholder}
+        onChange={(e) => setDraft({ text: e.target.value, dirty: true })}
         onBlur={commit}
         onKeyDown={(e) => e.key === 'Enter' && commit()}
       />

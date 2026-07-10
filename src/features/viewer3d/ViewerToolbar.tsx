@@ -15,6 +15,9 @@ interface ViewerToolbarProps {
   toggleMeasure: () => void;
   clearMeasure: () => void;
   measureCount: number;
+  hasAnalysisResults: boolean;
+  showAnalysisResults: boolean;
+  toggleAnalysisResults: () => void;
 }
 
 export function ViewerToolbar({
@@ -31,6 +34,9 @@ export function ViewerToolbar({
   toggleMeasure,
   clearMeasure,
   measureCount,
+  hasAnalysisResults,
+  showAnalysisResults,
+  toggleAnalysisResults,
 }: ViewerToolbarProps) {
   return (
     <div
@@ -81,6 +87,16 @@ export function ViewerToolbar({
           disabled={measureCount === 0}
         >
           {labels.measureClear}
+        </button>
+      )}
+      {hasAnalysisResults && (
+        <button
+          className="toolbar-btn"
+          style={{ background: showAnalysisResults ? 'var(--accent)' : '#555', color: '#fff', fontSize: 11 }}
+          onClick={toggleAnalysisResults}
+          aria-pressed={showAnalysisResults}
+        >
+          {labels.analysisResults}
         </button>
       )}
     </div>

@@ -1,8 +1,7 @@
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import { GizmoHelper, GizmoViewport, OrbitControls, OrthographicCamera, PerspectiveCamera } from '@react-three/drei';
 import * as THREE from 'three';
-import { useEditorStore } from '@/app/store';
-import type { Grid, Member, Opening, Section, Story } from '@/domain/structural/types';
+import type { AnalysisResultsMetadata, Grid, Member, Opening, Section, Story } from '@/domain/structural/types';
 import { GridHelper3D } from './GridHelper3D';
 import { MemberMesh } from './MemberMesh';
 import { MeasureLayer, type MeasurePoint } from './MeasureLayer';
@@ -11,6 +10,8 @@ import { getMemberSnapPoints, getMemberLength, getSectionLabel } from './measure
 import type { GeometryEngine } from './memberGeometry';
 import { SCALE, type ModelExtents, type SectionBoxState, type SectionMode } from './sectionMath';
 import type { ViewerLabels } from './viewerLabels';
+import { AnalysisResultsLayer } from './AnalysisResultsLayer';
+import { buildUtilizationMap, utilizationColor } from './analysisResults';
 
 /** Snap a CAD-space hit point to the nearest member endpoint within this radius (mm). */
 const SNAP_RADIUS = 400;
@@ -27,6 +28,7 @@ interface SceneContentsProps {
   sectionMap: Map<string, Section>;
   openingsMap: Map<string, Opening[]>;
   selectedIds: string[];
+  layerLocked: Record<string, boolean>;
   wireframe: boolean;
   geometryEngine: GeometryEngine;
   clippingPlanes: THREE.Plane[] | undefined;
@@ -36,6 +38,9 @@ interface SceneContentsProps {
   measurePoints: MeasurePoint[];
   addMeasurePoint: (point: MeasurePoint) => void;
   labels: ViewerLabels;
+  analysisResults?: AnalysisResultsMetadata;
+  showAnalysisResults: boolean;
+  analysisScale: number;
 }
 
 export function SceneContents({
@@ -50,6 +55,7 @@ export function SceneContents({
   sectionMap,
   openingsMap,
   selectedIds,
+  layerLocked,
   wireframe,
   geometryEngine,
   clippingPlanes,
@@ -58,11 +64,23 @@ export function SceneContents({
   measurePoints,
   addMeasurePoint,
   labels,
+  analysisResults,
+  showAnalysisResults,
+  analysisScale,
 }: SceneContentsProps) {
   // Inner group that holds members in CAD coordinates (mm). Used to convert
   // world-space raycast hit points back into CAD space for measuring/snapping.
   const cadGroupRef = useRef<THREE.Group>(null);
   const [hover, setHover] = useState<HoverInfo | null>(null);
+  const selectedSet = useMemo(() => new Set(selectedIds), [selectedIds]);
+  const utilizationMap = useMemo(
+    () => buildUtilizationMap(analysisResults?.memberResults),
+    [analysisResults?.memberResults],
+  );
+  const memberResultMap = useMemo(
+    () => new Map((analysisResults?.memberResults ?? []).map((result) => [result.memberId, result])),
+    [analysisResults?.memberResults],
+  );
 
   /** Convert a world-space point into the CAD-coordinate frame (mm). */
   const worldToCad = useCallback((worldPoint: THREE.Vector3): THREE.Vector3 => {
@@ -108,9 +126,12 @@ export function SceneContents({
         sectionName: getSectionLabel(section),
         storyName: story?.name ?? member.story,
         memberType: member.type,
+        ...(showAnalysisResults && memberResultMap.has(member.id)
+          ? { result: memberResultMap.get(member.id) }
+          : {}),
       });
     },
-    [worldToCad, stories, setHover],
+    [worldToCad, stories, showAnalysisResults, memberResultMap, setHover],
   );
 
   const handleHoverEnd = useCallback(() => setHover(null), [setHover]);
@@ -167,7 +188,6 @@ export function SceneContents({
           )}
 
           {filteredMembers.map((member) => {
-            const layerLocked = useEditorStore.getState().layerLocked;
             const locked = !!layerLocked[`member-${member.type}`];
             return (
               <MemberMesh
@@ -175,10 +195,11 @@ export function SceneContents({
                 member={member}
                 section={sectionMap.get(member.sectionId)}
                 openings={openingsMap.get(member.id) ?? []}
-                selected={selectedIds.includes(member.id)}
+                selected={selectedSet.has(member.id)}
                 wireframe={wireframe}
                 engine={geometryEngine}
                 clippingPlanes={clippingPlanes}
+                colorOverride={showAnalysisResults ? utilizationColor(utilizationMap.get(member.id)) : undefined}
                 onClick={() => { if (!locked) setSelectedIds([member.id]); }}
                 measureMode={measureMode}
                 onMeasurePick={handleMeasurePick}
@@ -187,6 +208,14 @@ export function SceneContents({
               />
             );
           })}
+
+          {showAnalysisResults && analysisResults && (
+            <AnalysisResultsLayer
+              members={filteredMembers}
+              results={analysisResults}
+              scale={analysisScale}
+            />
+          )}
 
           {measureMode && (
             <MeasureLayer

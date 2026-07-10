@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import type { Member, Opening, Section } from '@/domain/structural/types';
 import {
   columnAxisOffsetToWorld,
+  effectiveLinearAxisOffset,
   linearAxisOffsetToWorld,
   slabAxisOffsetToWorld,
 } from '@/domain/structural/eccentricity';
@@ -11,6 +12,7 @@ import {
   getSlabThickness,
   getWallThickness,
 } from '@/domain/structural/memberShape';
+import { resolveMemberLocalAxes } from '@/domain/structural/localAxis';
 
 export type GeometryEngine = 'native' | 'opencascade';
 
@@ -109,21 +111,24 @@ function getAxisOffset(member: Member): { dx: number; dy: number } | null {
 function buildColumnGeometry(
   member: Member & { type: 'column' },
   section: Section | undefined,
-): THREE.BufferGeometry {
-  const { width, depth } = getColumnRectSize(section);
-  const height = Math.max(Math.abs(member.end.z - member.start.z), 1);
-  const geometry = new THREE.BoxGeometry(width, depth, height);
-  // Apply member.rotation (radians, CCW about the vertical Z axis) so the 3D
-  // solid matches the DXF/IFC round-trip orientation; square columns unaffected.
-  const rot = member.rotation ?? 0;
-  if (rot) geometry.rotateZ(rot);
-  // Column runs vertically (Z); cross-section lies in the X/Y plane, so the
-  // eccentricity maps directly to X/Y offsets.
+): THREE.BufferGeometry | null {
+  const direction = new THREE.Vector3(
+    member.end.x - member.start.x,
+    member.end.y - member.start.y,
+    member.end.z - member.start.z,
+  );
+  const length = direction.length();
+  if (length < 1e-6) return null;
+
+  const geometry = buildSectionGeometry(section, getColumnRectSize(section), length);
   const ecc = columnAxisOffsetToWorld(getAxisOffset(member) ?? undefined);
-  geometry.translate(
-    member.start.x + ecc.x,
-    member.start.y + ecc.y,
-    (member.start.z + member.end.z) / 2,
+  orientLinearGeometry(
+    geometry,
+    member.start,
+    member.end,
+    member.rotation ?? 0,
+    member.localAxis,
+    ecc,
   );
   return geometry;
 }
@@ -132,28 +137,121 @@ function buildBeamGeometry(
   member: Member & { type: 'beam' },
   section: Section | undefined,
 ): THREE.BufferGeometry | null {
-  const { width, depth } = getBeamRectSize(section);
   const start = new THREE.Vector3(member.start.x, member.start.y, member.start.z);
   const end = new THREE.Vector3(member.end.x, member.end.y, member.end.z);
   const direction = new THREE.Vector3().subVectors(end, start);
   const length = direction.length();
   if (length < 1e-6) return null;
 
-  const geometry = new THREE.BoxGeometry(width, depth, length);
-  const quaternion = new THREE.Quaternion().setFromUnitVectors(
-    new THREE.Vector3(0, 0, 1),
-    direction.clone().normalize(),
-  );
-  geometry.applyQuaternion(quaternion);
+  const geometry = buildSectionGeometry(section, getBeamRectSize(section), length);
   // Axis eccentricity resolved with the shared convention (dx = in-plan
   // perpendicular, dy = vertical) so 2D, 3D and IFC agree on placement.
-  const ecc = linearAxisOffsetToWorld(getAxisOffset(member) ?? undefined, member.start, member.end);
-  geometry.translate(
-    (member.start.x + member.end.x) / 2 + ecc.x,
-    (member.start.y + member.end.y) / 2 + ecc.y,
-    (member.start.z + member.end.z) / 2 + ecc.z,
+  const width = getBeamRectSize(section).width;
+  const ecc = linearAxisOffsetToWorld(
+    effectiveLinearAxisOffset(member, width),
+    member.start,
+    member.end,
+  );
+  orientLinearGeometry(
+    geometry,
+    member.start,
+    member.end,
+    member.rotation ?? 0,
+    member.localAxis,
+    ecc,
   );
   return geometry;
+}
+
+/**
+ * Build a section in the local XY plane and extrude it along local Z. Unlike a
+ * bounding-box approximation, this preserves H-shape flanges/webs and pipe
+ * hollows in the 3D viewer. Missing optional H plate dimensions use a visible,
+ * conservative 5% preview thickness; validation/export preflight reports the
+ * missing engineering values separately.
+ */
+function buildSectionGeometry(
+  section: Section | undefined,
+  fallback: { width: number; depth: number },
+  length: number,
+): THREE.BufferGeometry {
+  if (section?.kind === 's_pipe') {
+    const radius = section.diameter / 2;
+    const innerRadius = Math.max(radius - section.thickness, 0);
+    const shape = new THREE.Shape();
+    shape.absarc(0, 0, radius, 0, Math.PI * 2, false);
+    if (innerRadius > 1e-6) {
+      const hole = new THREE.Path();
+      hole.absarc(0, 0, innerRadius, 0, Math.PI * 2, true);
+      shape.holes.push(hole);
+    }
+    return centerExtrusion(shape, length, 48);
+  }
+
+  if (section?.kind === 's_column_h' || section?.kind === 's_beam_h') {
+    const width = section.width;
+    const depth = section.depth;
+    const web = Math.min(Math.max(section.tw ?? width * 0.05, 0.1), width);
+    const flange = Math.min(Math.max(section.tf ?? depth * 0.05, 0.1), depth / 2);
+    const halfWidth = width / 2;
+    const halfDepth = depth / 2;
+    const halfWeb = web / 2;
+    const shape = new THREE.Shape();
+    shape.moveTo(-halfWidth, -halfDepth);
+    shape.lineTo(halfWidth, -halfDepth);
+    shape.lineTo(halfWidth, -halfDepth + flange);
+    shape.lineTo(halfWeb, -halfDepth + flange);
+    shape.lineTo(halfWeb, halfDepth - flange);
+    shape.lineTo(halfWidth, halfDepth - flange);
+    shape.lineTo(halfWidth, halfDepth);
+    shape.lineTo(-halfWidth, halfDepth);
+    shape.lineTo(-halfWidth, halfDepth - flange);
+    shape.lineTo(-halfWeb, halfDepth - flange);
+    shape.lineTo(-halfWeb, -halfDepth + flange);
+    shape.lineTo(-halfWidth, -halfDepth + flange);
+    shape.closePath();
+    return centerExtrusion(shape, length);
+  }
+
+  return new THREE.BoxGeometry(fallback.width, fallback.depth, length);
+}
+
+function centerExtrusion(shape: THREE.Shape, length: number, curveSegments = 12): THREE.BufferGeometry {
+  const geometry = new THREE.ExtrudeGeometry(shape, {
+    depth: length,
+    bevelEnabled: false,
+    curveSegments,
+  });
+  geometry.translate(0, 0, -length / 2);
+  return geometry;
+}
+
+/**
+ * Place a local-Z extrusion along a member while keeping local Y as close as
+ * possible to global up. This explicit orthonormal basis avoids the shortest-
+ * arc quaternion roll ambiguity that previously swapped beam width/depth based
+ * on member direction.
+ */
+function orientLinearGeometry(
+  geometry: THREE.BufferGeometry,
+  start: { x: number; y: number; z: number },
+  end: { x: number; y: number; z: number },
+  roll: number,
+  localAxis: Member['localAxis'],
+  offset: { x: number; y: number; z: number },
+) {
+  const axes = resolveMemberLocalAxes(start, end, roll, localAxis);
+  const localX = new THREE.Vector3(axes.x.x, axes.x.y, axes.x.z);
+  const localY = new THREE.Vector3(axes.y.x, axes.y.y, axes.y.z);
+  const localZ = new THREE.Vector3(axes.z.x, axes.z.y, axes.z.z);
+
+  const matrix = new THREE.Matrix4().makeBasis(localX, localY, localZ);
+  matrix.setPosition(
+    (start.x + end.x) / 2 + offset.x,
+    (start.y + end.y) / 2 + offset.y,
+    (start.z + end.z) / 2 + offset.z,
+  );
+  geometry.applyMatrix4(matrix);
 }
 
 function buildWallGeometry(
@@ -175,17 +273,24 @@ function buildWallGeometry(
   shape.lineTo(0, member.height);
   shape.closePath();
 
-  const axis = direction.clone().normalize();
+  const axes = resolveMemberLocalAxes(
+    member.start,
+    member.end,
+    member.rotation ?? 0,
+    member.localAxis,
+  );
+  const memberAxis = new THREE.Vector3(axes.z.x, axes.z.y, axes.z.z);
+  const verticalAxis = new THREE.Vector3(axes.y.x, axes.y.y, axes.y.z);
   for (const opening of openings) {
     const relative = new THREE.Vector3(
       opening.position.x - member.start.x,
       opening.position.y - member.start.y,
       opening.position.z - member.start.z,
     );
-    const offset = relative.dot(axis);
+    const offset = relative.dot(memberAxis);
     const left = offset - opening.width / 2;
     const right = offset + opening.width / 2;
-    const bottom = opening.position.z - member.start.z;
+    const bottom = relative.dot(verticalAxis);
     const top = bottom + opening.height;
 
     if (right <= 0 || left >= length || top <= 0 || bottom >= member.height) continue;
@@ -205,26 +310,26 @@ function buildWallGeometry(
   });
   geometry.translate(0, 0, -thickness / 2);
 
-  const up = new THREE.Vector3(0, 0, 1);
-  const normal = new THREE.Vector3().crossVectors(axis, up);
-  if (normal.lengthSq() < 1e-6) {
-    normal.set(1, 0, 0);
-  } else {
-    normal.normalize();
-  }
+  const localX = new THREE.Vector3(axes.z.x, axes.z.y, axes.z.z);
+  const localY = new THREE.Vector3(axes.y.x, axes.y.y, axes.y.z);
+  const localZ = new THREE.Vector3(-axes.x.x, -axes.x.y, -axes.x.z);
 
   // Axis eccentricity resolved with the shared convention (dx = in-plan left
   // perpendicular of start→end, dy = vertical) so 2D, 3D and IFC agree on the
   // wall's placement — including its sign for +X-running walls. (The local
   // `normal` basis above is the thickness axis used to orient the solid, which
   // is direction-dependent; resolving the offset in world space avoids that.)
-  const ecc = linearAxisOffsetToWorld(getAxisOffset(member) ?? undefined, member.start, member.end);
+  const ecc = linearAxisOffsetToWorld(
+    effectiveLinearAxisOffset(member, thickness),
+    member.start,
+    member.end,
+  );
   const placement = start.clone();
   placement.x += ecc.x;
   placement.y += ecc.y;
   placement.z += ecc.z;
 
-  const matrix = new THREE.Matrix4().makeBasis(axis, up, normal);
+  const matrix = new THREE.Matrix4().makeBasis(localX, localY, localZ);
   matrix.setPosition(placement);
   geometry.applyMatrix4(matrix);
   return geometry;

@@ -36,6 +36,8 @@ export function getToolLabel(tool: EditorTool, t: Translations): string {
       return t.toolWall;
     case 'slab':
       return t.toolSlab;
+    case 'opening':
+      return t.layerOpening;
     case 'dimension':
       return t.toolDimension;
     case 'annotation':
@@ -44,6 +46,8 @@ export function getToolLabel(tool: EditorTool, t: Translations): string {
       return t.toolTrim;
     case 'extend':
       return t.toolExtend;
+    case 'fillet':
+      return t.toolFillet;
     case 'xline':
       return t.toolXline;
     case 'spline':

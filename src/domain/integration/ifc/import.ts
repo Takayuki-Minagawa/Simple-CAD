@@ -1,5 +1,5 @@
 import type { Point3D } from '@/domain/geometry/types';
-import type { Member, ProjectData, Section } from '@/domain/structural/types';
+import type { Material, Member, Opening, ProjectData, Section } from '@/domain/structural/types';
 import { validateProject } from '@/domain/validation';
 import type { ValidationError } from '@/domain/validation';
 import { add3, applyTransform2D, scale3 } from './geometry';
@@ -12,15 +12,33 @@ import {
   resolveElementStoryId,
   resolveStoryMembership,
 } from './stories';
-import { resolveLengthUnitScale } from './units';
+import { resolveLengthUnit } from './units';
 import type { ResolvedSolid, StepEntity } from './types';
+import { asRef, asRefList, asString } from './step';
+import { quantizePoint3D } from '@/domain/geometry/precision';
+import { normalizeProjectCoordinates } from '@/domain/geometry/projectCoordinates';
+import {
+  columnAxisOffsetToWorld,
+  effectiveLinearAxisOffset,
+  linearAxisOffsetToWorld,
+  slabAxisOffsetToWorld,
+} from '@/domain/structural/eccentricity';
+import { getBeamRectSize, getWallThickness } from '@/domain/structural/memberShape';
+import { recoverMemberRoll } from '@/domain/structural/localAxis';
+import {
+  decodeIfcMemberMetadata,
+  decodeIfcOpeningMetadata,
+  type IfcMemberMetadata,
+} from './simpleCadMetadata';
 
 const MATERIAL_ID = 'MAT-IFC';
 const SUPPORTED_ELEMENT_TYPES = ['IFCCOLUMN', 'IFCBEAM', 'IFCWALL', 'IFCSLAB'];
 
 export function importIfc(
   rawContent: string,
-): { ok: true; data: ProjectData } | { ok: false; errors: ValidationError[] } {
+):
+  | { ok: true; data: ProjectData; warnings?: string[] }
+  | { ok: false; errors: ValidationError[] } {
   let entities: Map<number, StepEntity>;
   try {
     entities = parseIfcEntities(rawContent);
@@ -42,7 +60,14 @@ export function importIfc(
   }
 
   // Resolve the IFC length unit; we work internally in mm (3-3).
-  const unitScale = resolveLengthUnitScale(entities);
+  const unitResolution = resolveLengthUnit(entities);
+  const unitScale = unitResolution.scale;
+  const warnings: string[] = [];
+  if (unitResolution.status === 'missing') {
+    warnings.push('IFCに長さ単位が定義されていないため mm と仮定しました');
+  } else if (unitResolution.status === 'unsupported') {
+    warnings.push('IFCの長さ単位を解決できないため mm と仮定しました');
+  }
 
   const storyMembership = resolveStoryMembership(entities);
   const rawStories = collectIfcStories(entities);
@@ -56,20 +81,49 @@ export function importIfc(
     entities,
     unitScale,
   );
+  const storyIdByEntityRef = new Map(
+    rawStories.flatMap((story) =>
+      story.sourceEntityId === undefined ? [] : [[story.sourceEntityId, story.id] as const],
+    ),
+  );
 
   const sections = new Map<string, Section>();
   const members: Member[] = [];
+  const memberByEntityId = new Map<number, Member>();
+  const materialResolution = resolveIfcMaterials(entities, warnings);
+  const usedMemberIds = new Set<string>();
 
   for (const entity of supportedElements) {
     const resolved = resolveIfcElement(entity, entities);
-    if (!resolved) continue;
+    if (!resolved) {
+      warnings.push(`${entity.type} #${entity.id} の押出形状を解決できないためスキップしました`);
+      continue;
+    }
 
     const scaled = unitScale === 1 ? resolved : scaleResolvedSolid(resolved, unitScale);
-    const storyId = resolveElementStoryId(entity.id, stories, storyMembership, scaled, entities);
-    if (!storyId) continue;
+    const storyId = resolveElementStoryId(
+      entity.id,
+      stories,
+      storyMembership,
+      scaled,
+      entities,
+      storyIdByEntityRef,
+    );
+    if (!storyId) {
+      warnings.push(`${entity.type} #${entity.id} の階を解決できないためスキップしました`);
+      continue;
+    }
 
-    const member = convertElement(entity, scaled, storyId, sections);
-    if (member) members.push(member);
+    const materialId =
+      materialResolution.memberMaterialIds.get(entity.id) ?? materialResolution.fallbackMaterialId;
+    const memberId = reserveUniqueId(resolveElementName(entity), usedMemberIds, `IFC-${entity.id}`);
+    const member = convertElement(entity, scaled, storyId, sections, materialId, memberId);
+    if (member) {
+      members.push(member);
+      memberByEntityId.set(entity.id, member);
+    } else {
+      warnings.push(`${entity.type} #${entity.id} の断面形状に対応できないためスキップしました`);
+    }
   }
 
   if (members.length === 0) {
@@ -81,6 +135,24 @@ export function importIfc(
 
   const views = createDefaultViews(stories, members);
   const sheets = createDefaultSheets('IFC Import', stories);
+  const openings = resolveIfcOpenings(
+    entities,
+    unitScale,
+    memberByEntityId,
+    sections,
+    usedMemberIds,
+    warnings,
+  );
+  const usedMaterialIds = new Set(members.map((member) => member.materialId));
+  const materials = materialResolution.materials.filter((material) => usedMaterialIds.has(material.id));
+  if (usedMaterialIds.has(materialResolution.fallbackMaterialId)) {
+    materials.push({
+      id: materialResolution.fallbackMaterialId,
+      name: 'IFC Default',
+      type: 'concrete',
+    });
+    warnings.push('材料関連付けの無いIFC部材には既定材料を割り当てました');
+  }
   const project: ProjectData = {
     schemaVersion: '1.0.0',
     project: {
@@ -90,34 +162,77 @@ export function importIfc(
     },
     stories,
     grids: [],
-    materials: [{ id: MATERIAL_ID, name: 'IFC Default', type: 'concrete' }],
+    materials,
     sections: [...sections.values()],
     members,
-    openings: [],
+    openings,
     annotations: [],
     dimensions: [],
     views,
     sheets,
-    issues: [],
+    issues: warnings.map((message) => ({ level: 'warning', message })),
   };
 
-  const validation = validateProject(project);
+  const normalizedProject = normalizeProjectCoordinates(project);
+  const validation = validateProject(normalizedProject);
   if (!validation.ok) {
     return { ok: false, errors: validation.errors };
   }
 
-  return { ok: true, data: project };
+  return {
+    ok: true,
+    data: normalizedProject,
+    ...(warnings.length > 0 ? { warnings } : {}),
+  };
 }
 
 /** Scale a resolved solid from source units into millimetres (3-3). */
 function scaleResolvedSolid(resolved: ResolvedSolid, scale: number): ResolvedSolid {
-  const profile =
-    resolved.profile.kind === 'rectangle'
-      ? { kind: 'rectangle' as const, xDim: resolved.profile.xDim * scale, yDim: resolved.profile.yDim * scale }
-      : {
+  const profile = (() => {
+    switch (resolved.profile.kind) {
+      case 'rectangle':
+        return {
+          kind: 'rectangle' as const,
+          xDim: resolved.profile.xDim * scale,
+          yDim: resolved.profile.yDim * scale,
+          ...(resolved.profile.sourceSectionId
+            ? { sourceSectionId: resolved.profile.sourceSectionId }
+            : {}),
+          ...scaleProfilePlacement(resolved.profile.placement, scale),
+        };
+      case 'polyline':
+        return {
           kind: 'polyline' as const,
           points: resolved.profile.points.map((p) => ({ x: p.x * scale, y: p.y * scale })),
+          ...(resolved.profile.sourceSectionId
+            ? { sourceSectionId: resolved.profile.sourceSectionId }
+            : {}),
+          ...scaleProfilePlacement(resolved.profile.placement, scale),
         };
+      case 'iShape':
+        return {
+          kind: 'iShape' as const,
+          overallWidth: resolved.profile.overallWidth * scale,
+          overallDepth: resolved.profile.overallDepth * scale,
+          webThickness: resolved.profile.webThickness * scale,
+          flangeThickness: resolved.profile.flangeThickness * scale,
+          ...(resolved.profile.sourceSectionId
+            ? { sourceSectionId: resolved.profile.sourceSectionId }
+            : {}),
+          ...scaleProfilePlacement(resolved.profile.placement, scale),
+        };
+      case 'hollowCircle':
+        return {
+          kind: 'hollowCircle' as const,
+          diameter: resolved.profile.diameter * scale,
+          wallThickness: resolved.profile.wallThickness * scale,
+          ...(resolved.profile.sourceSectionId
+            ? { sourceSectionId: resolved.profile.sourceSectionId }
+            : {}),
+          ...scaleProfilePlacement(resolved.profile.placement, scale),
+        };
+    }
+  })();
   return {
     profile,
     depth: resolved.depth * scale,
@@ -132,55 +247,103 @@ function scaleResolvedSolid(resolved: ResolvedSolid, scale: number): ResolvedSol
   };
 }
 
+function scaleProfilePlacement(
+  placement: import('./types').ProfilePlacement2D | undefined,
+  scale: number,
+): { placement?: import('./types').ProfilePlacement2D } {
+  if (!placement) return {};
+  return {
+    placement: {
+      ...placement,
+      origin: { x: placement.origin.x * scale, y: placement.origin.y * scale },
+    },
+  };
+}
+
 function convertElement(
   entity: StepEntity,
   resolved: ResolvedSolid,
   storyId: string,
   sections: Map<string, Section>,
+  materialId: string,
+  memberId: string,
 ): Member | null {
+  const metadata = decodeIfcMemberMetadata(asString(entity.args[3]));
   switch (entity.type) {
     case 'IFCCOLUMN':
-      return convertLinearElement(entity, resolved, storyId, sections, 'column', 'rc_column_rect');
+      return convertLinearElement(
+        resolved,
+        storyId,
+        sections,
+        materialId,
+        memberId,
+        'column',
+        metadata,
+      );
     case 'IFCBEAM':
-      return convertLinearElement(entity, resolved, storyId, sections, 'beam', 'rc_beam_rect');
+      return convertLinearElement(
+        resolved,
+        storyId,
+        sections,
+        materialId,
+        memberId,
+        'beam',
+        metadata,
+      );
     case 'IFCWALL': {
       if (resolved.profile.kind !== 'rectangle') return null;
       const sectionId = ensureSection(sections, {
-        id: '',
+        id: resolved.profile.sourceSectionId ?? '',
         kind: 'rc_wall',
         thickness: resolved.profile.xDim,
       });
-      const { start, end } = extrusionSpan(resolved);
+      const rawSpan = extrusionSpan(resolved);
+      const { start, end } = restoreLinearReferenceSpan(
+        'wall',
+        rawSpan,
+        { id: sectionId, kind: 'rc_wall', thickness: resolved.profile.xDim },
+        metadata,
+      );
+      const recoveredRoll = recoverMemberRoll(rawSpan.start, rawSpan.end, resolved.transform.xAxis);
+      const rotation =
+        metadata?.rotation ?? (Math.abs(recoveredRoll) > 1e-6 ? recoveredRoll : undefined);
       return {
-        id: resolveElementName(entity),
+        id: memberId,
         type: 'wall',
         story: storyId,
         sectionId,
-        materialId: MATERIAL_ID,
+        materialId,
         start,
         end,
         height: resolved.profile.yDim,
         thickness: resolved.profile.xDim,
+        ...(rotation !== undefined ? { rotation } : {}),
+        ...metadataProperties(metadata, false),
       };
     }
     case 'IFCSLAB': {
       if (resolved.profile.kind !== 'polyline') return null;
       const sectionId = ensureSection(sections, {
-        id: '',
+        id: resolved.profile.sourceSectionId ?? '',
         kind: 'rc_slab',
         thickness: resolved.depth,
       });
-      const polygon = resolved.profile.points.map((point) =>
+      let polygon = resolved.profile.points.map((point) =>
         applyTransform2D(resolved.transform, point),
       );
+      if (metadata?.axisOffset) {
+        const offset = slabAxisOffsetToWorld(metadata.axisOffset);
+        polygon = polygon.map((point) => ({ x: point.x - offset.x, y: point.y - offset.y }));
+      }
       return {
-        id: resolveElementName(entity),
+        id: memberId,
         type: 'slab',
         story: storyId,
         sectionId,
-        materialId: MATERIAL_ID,
+        materialId,
         polygon,
         level: resolved.transform.origin.z + resolved.depth,
+        ...metadataProperties(metadata),
       };
     }
     default:
@@ -189,38 +352,110 @@ function convertElement(
 }
 
 function convertLinearElement(
-  entity: StepEntity,
   resolved: ResolvedSolid,
   storyId: string,
   sections: Map<string, Section>,
+  materialId: string,
+  memberId: string,
   type: 'column' | 'beam',
-  kind: 'rc_column_rect' | 'rc_beam_rect',
+  metadata: ReturnType<typeof decodeIfcMemberMetadata>,
 ): Member | null {
-  if (resolved.profile.kind !== 'rectangle') return null;
-  const sectionId = ensureSection(sections, {
-    id: '',
-    kind,
-    width: resolved.profile.xDim,
-    depth: resolved.profile.yDim,
-  });
-  const { start, end } = extrusionSpan(resolved);
-  // Recover in-plane rotation for columns from the placement x-axis (B5 / 3-8).
-  // Beams encode their direction in start/end, so rotation stays implicit there.
-  let rotation: number | undefined;
-  if (type === 'column') {
-    const x = resolved.transform.xAxis;
-    const angle = Math.atan2(x.y, x.x);
-    if (Math.abs(angle) > 1e-6) rotation = angle;
+  let section: Section;
+  switch (resolved.profile.kind) {
+    case 'rectangle':
+      section = {
+        id: resolved.profile.sourceSectionId ?? '',
+        kind: type === 'column' ? 'rc_column_rect' : 'rc_beam_rect',
+        width: resolved.profile.xDim,
+        depth: resolved.profile.yDim,
+      };
+      break;
+    case 'iShape':
+      section = {
+        id: resolved.profile.sourceSectionId ?? '',
+        kind: type === 'column' ? 's_column_h' : 's_beam_h',
+        width: resolved.profile.overallWidth,
+        depth: resolved.profile.overallDepth,
+        tw: resolved.profile.webThickness,
+        tf: resolved.profile.flangeThickness,
+      };
+      break;
+    case 'hollowCircle':
+      section = {
+        id: resolved.profile.sourceSectionId ?? '',
+        kind: 's_pipe',
+        diameter: resolved.profile.diameter,
+        thickness: resolved.profile.wallThickness,
+      };
+      break;
+    default:
+      return null;
   }
+  const sectionId = ensureSection(sections, section);
+  const rawSpan = extrusionSpan(resolved);
+  const { start, end } = restoreLinearReferenceSpan(type, rawSpan, section, metadata);
+  const recoveredRoll = recoverMemberRoll(rawSpan.start, rawSpan.end, resolved.transform.xAxis);
+  const rotation = metadata?.rotation ?? (Math.abs(recoveredRoll) > 1e-6 ? recoveredRoll : undefined);
   return {
-    id: resolveElementName(entity),
+    id: memberId,
     type,
     story: storyId,
     sectionId,
-    materialId: MATERIAL_ID,
+    materialId,
     start,
     end,
     ...(rotation !== undefined ? { rotation } : {}),
+    ...metadataProperties(metadata, false),
+  };
+}
+
+function restoreLinearReferenceSpan(
+  type: 'column' | 'beam' | 'wall',
+  span: { start: Point3D; end: Point3D },
+  section: Section,
+  metadata: ReturnType<typeof decodeIfcMemberMetadata>,
+): { start: Point3D; end: Point3D } {
+  if (!metadata?.axisOffset && !metadata?.faceAlign) return span;
+  const offset =
+    type === 'column'
+      ? columnAxisOffsetToWorld(metadata.axisOffset)
+      : linearAxisOffsetToWorld(
+          effectiveLinearAxisOffset(
+            metadata,
+            type === 'beam'
+              ? getBeamRectSize(section).width
+              : section.kind === 'rc_wall'
+                ? section.thickness
+                : 0,
+          ),
+          span.start,
+          span.end,
+        );
+  return {
+    start: { x: span.start.x - offset.x, y: span.start.y - offset.y, z: span.start.z - offset.z },
+    end: { x: span.end.x - offset.x, y: span.end.y - offset.y, z: span.end.z - offset.z },
+  };
+}
+
+function metadataProperties(
+  metadata: IfcMemberMetadata | undefined,
+  includeRotation = true,
+): {
+  rotation?: number;
+  axisOffset?: NonNullable<Member['axisOffset']>;
+  faceAlign?: NonNullable<Member['faceAlign']>;
+  localAxis?: NonNullable<Member['localAxis']>;
+  releases?: NonNullable<Member['releases']>;
+  rigidZones?: NonNullable<Member['rigidZones']>;
+} {
+  if (!metadata) return {};
+  return {
+    ...(includeRotation && metadata.rotation !== undefined ? { rotation: metadata.rotation } : {}),
+    ...(metadata.axisOffset ? { axisOffset: metadata.axisOffset } : {}),
+    ...(metadata.faceAlign ? { faceAlign: metadata.faceAlign } : {}),
+    ...(metadata.localAxis ? { localAxis: metadata.localAxis } : {}),
+    ...(metadata.releases ? { releases: metadata.releases } : {}),
+    ...(metadata.rigidZones ? { rigidZones: metadata.rigidZones } : {}),
   };
 }
 
@@ -233,26 +468,202 @@ function extrusionSpan(resolved: ResolvedSolid): { start: Point3D; end: Point3D 
 }
 
 function ensureSection(sections: Map<string, Section>, section: Section): string {
-  const key = JSON.stringify(section);
-  const existing = [...sections.values()].find((item) => JSON.stringify(item) === key);
+  const key = sectionSignature(section);
+  const existing = [...sections.values()].find((item) => sectionSignature(item) === key);
   if (existing) return existing.id;
 
-  const id =
+  const generatedId =
     section.kind === 'rc_column_rect'
       ? `SEC-C${section.width}x${section.depth}`
       : section.kind === 'rc_beam_rect'
         ? `SEC-B${section.width}x${section.depth}`
         : section.kind === 's_column_h'
-          ? `SEC-HC${section.width}x${section.depth}`
+          ? `SEC-HC${section.width}x${section.depth}x${section.tw ?? 'NA'}x${section.tf ?? 'NA'}`
           : section.kind === 's_beam_h'
-            ? `SEC-HB${section.width}x${section.depth}`
+            ? `SEC-HB${section.width}x${section.depth}x${section.tw ?? 'NA'}x${section.tf ?? 'NA'}`
             : section.kind === 's_pipe'
-              ? `SEC-P${section.diameter}`
+              ? `SEC-P${section.diameter}x${section.thickness}`
               : section.kind === 'rc_wall'
                 ? `SEC-W${section.thickness}`
                 : `SEC-S${section.thickness}`;
 
-  const next = { ...section, id };
-  sections.set(id, next);
+  const nextId = reserveUniqueId(section.id || generatedId, new Set(sections.keys()), generatedId);
+  const next = { ...section, id: nextId };
+  sections.set(nextId, next);
+  return nextId;
+}
+
+function sectionSignature(section: Section): string {
+  return JSON.stringify(
+    Object.fromEntries(Object.entries(section).filter(([property]) => property !== 'id')),
+  );
+}
+
+function resolveIfcMaterials(
+  entities: Map<number, StepEntity>,
+  warnings: string[],
+): { materials: Material[]; memberMaterialIds: Map<number, string>; fallbackMaterialId: string } {
+  const materialsByEntityId = new Map<number, Material>();
+  const usedMaterialIds = new Set<string>();
+  for (const entity of entities.values()) {
+    if (entity.type !== 'IFCMATERIAL') continue;
+    const requestedId = asString(entity.args[0]) ?? `MAT-IFC-${entity.id}`;
+    const id = reserveUniqueId(requestedId, usedMaterialIds, `MAT-IFC-${entity.id}`);
+    const serialized = asString(entity.args[1]);
+    let material: Material | null = null;
+    if (serialized) {
+      try {
+        const parsed = JSON.parse(serialized) as Partial<Material>;
+        if (
+          typeof parsed.id === 'string' &&
+          typeof parsed.name === 'string' &&
+          ['concrete', 'steel', 'wood', 'other'].includes(parsed.type ?? '')
+        ) {
+          material = { ...(parsed as Material), id };
+        }
+      } catch {
+        // Third-party descriptions are commonly plain text; fall through.
+      }
+    }
+    if (!material) {
+      const category = asString(entity.args[2]);
+      const type: Material['type'] = ['concrete', 'steel', 'wood', 'other'].includes(category ?? '')
+        ? (category as Material['type'])
+        : 'other';
+      material = { id, name: serialized || id, type };
+    }
+    // Keep a final explicit guard for discriminated material parsing. Besides
+    // satisfying strict narrowing when the parser returns Material | null, it
+    // prevents a future unsupported material branch from leaking into maps.
+    if (material === null) {
+      warnings.push(`IFC材料 #${entity.id} を解釈できないためスキップしました`);
+      continue;
+    }
+    materialsByEntityId.set(entity.id, material);
+  }
+
+  const memberMaterialIds = new Map<number, string>();
+  for (const relation of entities.values()) {
+    if (relation.type !== 'IFCRELASSOCIATESMATERIAL') continue;
+    const materialRef = asRef(relation.args[5]);
+    const material = materialRef ? materialsByEntityId.get(materialRef) : undefined;
+    if (!material) {
+      warnings.push(`IFC材料関連 #${relation.id} の材料を解決できませんでした`);
+      continue;
+    }
+    for (const objectRef of asRefList(relation.args[4])) {
+      memberMaterialIds.set(objectRef, material.id);
+    }
+  }
+
+  return {
+    materials: [...materialsByEntityId.values()],
+    memberMaterialIds,
+    fallbackMaterialId: reserveUniqueId(MATERIAL_ID, usedMaterialIds, MATERIAL_ID),
+  };
+}
+
+function resolveIfcOpenings(
+  entities: Map<number, StepEntity>,
+  unitScale: number,
+  memberByEntityId: Map<number, Member>,
+  sections: Map<string, Section>,
+  usedSelectableIds: Set<string>,
+  warnings: string[],
+): Opening[] {
+  const openings: Opening[] = [];
+  for (const relation of entities.values()) {
+    if (relation.type !== 'IFCRELVOIDSELEMENT') continue;
+    const hostRef = asRef(relation.args[4]);
+    const openingRef = asRef(relation.args[5]);
+    const host = hostRef ? memberByEntityId.get(hostRef) : undefined;
+    const memberId = host?.id;
+    const openingEntity = openingRef ? entities.get(openingRef) : undefined;
+    if (!memberId || !openingEntity || openingEntity.type !== 'IFCOPENINGELEMENT') {
+      warnings.push(`IFC開口関連 #${relation.id} の参照先を解決できませんでした`);
+      continue;
+    }
+    const rawResolved = resolveIfcElement(openingEntity, entities);
+    if (!rawResolved) {
+      warnings.push(`IFC開口 #${openingEntity.id} の形状を解決できませんでした`);
+      continue;
+    }
+    const resolved = unitScale === 1 ? rawResolved : scaleResolvedSolid(rawResolved, unitScale);
+    if (resolved.profile.kind !== 'rectangle') {
+      warnings.push(`IFC開口 #${openingEntity.id} は矩形以外のためスキップしました`);
+      continue;
+    }
+    const encodedName = resolveElementName(openingEntity);
+    const nameMatch = encodedName.match(/^(door|window|void):(.*)$/);
+    const metadata = decodeIfcOpeningMetadata(asString(openingEntity.args[3]));
+    const hostType = hostRef ? entities.get(hostRef)?.type : undefined;
+    const physicalPosition = openingPositionFromGeometry(resolved, hostType === 'IFCWALL');
+    const derivedPosition = host
+      ? openingReferencePosition(physicalPosition, host, sections.get(host.sectionId))
+      : physicalPosition;
+    openings.push({
+      id: reserveUniqueId(
+        metadata?.id || nameMatch?.[2] || encodedName,
+        usedSelectableIds,
+        `OPENING-${openingEntity.id}`,
+      ),
+      memberId,
+      type: metadata?.type ?? (nameMatch?.[1] as Opening['type'] | undefined) ?? 'void',
+      position: quantizePoint3D(metadata?.position ?? derivedPosition),
+      width: metadata?.width ?? resolved.profile.xDim,
+      height: metadata?.height ?? resolved.profile.yDim,
+    });
+  }
+  return openings;
+}
+
+function openingReferencePosition(
+  physicalPosition: Point3D,
+  host: Member,
+  section: Section | undefined,
+): Point3D {
+  const offset =
+    host.type === 'wall'
+      ? linearAxisOffsetToWorld(
+          effectiveLinearAxisOffset(host, getWallThickness(host, section)),
+          host.start,
+          host.end,
+        )
+      : host.type === 'slab'
+        ? slabAxisOffsetToWorld(host.axisOffset)
+        : { x: 0, y: 0, z: 0 };
+  return {
+    x: physicalPosition.x - offset.x,
+    y: physicalPosition.y - offset.y,
+    // Slab openings are located in plan; their model Z follows the host level,
+    // whereas a wall opening uses the lower-edge elevation from the void.
+    z: host.type === 'slab' ? host.level : physicalPosition.z - offset.z,
+  };
+}
+
+function openingPositionFromGeometry(resolved: ResolvedSolid, lowerEdge: boolean): Point3D {
+  if (resolved.profile.kind !== 'rectangle') return resolved.transform.origin;
+  const placement = resolved.profile.placement;
+  const centerX = placement?.origin.x ?? 0;
+  const centerY = placement?.origin.y ?? 0;
+  const center = add3(
+    resolved.transform.origin,
+    add3(scale3(resolved.transform.xAxis, centerX), scale3(resolved.transform.yAxis, centerY)),
+  );
+  return lowerEdge
+    ? add3(center, scale3(resolved.transform.yAxis, -resolved.profile.yDim / 2))
+    : center;
+}
+
+function reserveUniqueId(preferred: string, used: Set<string>, fallback: string): string {
+  const base = preferred.trim() || fallback;
+  if (!used.has(base)) {
+    used.add(base);
+    return base;
+  }
+  let suffix = 2;
+  while (used.has(`${base}-${suffix}`)) suffix++;
+  const id = `${base}-${suffix}`;
+  used.add(id);
   return id;
 }

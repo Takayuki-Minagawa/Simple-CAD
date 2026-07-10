@@ -1,6 +1,7 @@
 import { Html } from '@react-three/drei';
 import type { ViewerLabels } from './viewerLabels';
 import { formatMm } from './measureUtils';
+import type { AnalysisMemberResult } from '@/domain/structural/types';
 
 export interface HoverInfo {
   /** Anchor position in CAD coordinates (mm). */
@@ -9,6 +10,7 @@ export interface HoverInfo {
   sectionName: string;
   storyName: string;
   memberType: string;
+  result?: AnalysisMemberResult;
 }
 
 interface Props {
@@ -22,7 +24,7 @@ interface Props {
  */
 export function HoverProbe({ hover, labels }: Props) {
   if (!hover) return null;
-  const { position, length, sectionName, storyName } = hover;
+  const { position, length, sectionName, storyName, result } = hover;
 
   return (
     <Html position={[position.x, position.y, position.z]} zIndexRange={[15, 0]} style={{ pointerEvents: 'none' }}>
@@ -52,6 +54,21 @@ export function HoverProbe({ hover, labels }: Props) {
         <div>
           {labels.story}: <strong>{storyName}</strong>
         </div>
+        {result?.utilization != null && (
+          <div>
+            {labels.utilization}: <strong>{result.utilization.toFixed(3)}</strong>
+          </div>
+        )}
+        {result?.axial != null && (
+          <div>
+            {labels.axial}: <strong>{result.axial.toFixed(2)} kN</strong>
+          </div>
+        )}
+        {(result?.momentY != null || result?.momentZ != null) && (
+          <div>
+            {labels.moment}: <strong>{(result.momentY ?? 0).toFixed(2)} / {(result.momentZ ?? 0).toFixed(2)} kN·m</strong>
+          </div>
+        )}
       </div>
     </Html>
   );

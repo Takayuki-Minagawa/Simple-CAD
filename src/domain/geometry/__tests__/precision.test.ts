@@ -11,6 +11,8 @@ import {
   segmentIntersection,
   isDegenerateSegment,
   GEOM_EPSILON,
+  SpatialPointIndex3D,
+  JOINT_MERGE_TOLERANCE,
 } from '../precision';
 
 describe('quantize', () => {
@@ -62,6 +64,23 @@ describe('pointKey', () => {
 
   it('separates points beyond tolerance', () => {
     expect(pointKey3D({ x: 100, y: 0, z: 0 })).not.toBe(pointKey3D({ x: 100.5, y: 0, z: 0 }));
+  });
+});
+
+describe('SpatialPointIndex3D', () => {
+  it('matches points across spatial-cell boundaries within the 1mm joint tolerance', () => {
+    const index = new SpatialPointIndex3D<string>();
+    index.insert({ x: 0.99, y: -0.01, z: 0 }, 'joint');
+
+    expect(JOINT_MERGE_TOLERANCE).toBe(1);
+    expect(index.find({ x: 1.01, y: 0.01, z: 0 })).toBe('joint');
+  });
+
+  it('does not merge points beyond the configured Euclidean tolerance', () => {
+    const index = new SpatialPointIndex3D<string>(1);
+    index.insert({ x: 0, y: 0, z: 0 }, 'joint');
+
+    expect(index.find({ x: 0.8, y: 0.8, z: 0 })).toBeUndefined();
   });
 });
 

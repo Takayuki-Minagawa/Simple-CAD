@@ -16,6 +16,15 @@ export const GEOM_EPSILON = 1e-6;
 /** Default quantization step for stored coordinates (mm). 0.001mm = 1µm. */
 export const COORD_PRECISION = 1e-3;
 
+/**
+ * Default tolerance for merging structural joints (mm).
+ *
+ * This is intentionally independent from storage precision: coordinates remain
+ * reproducible to 0.001mm, while analysis connectivity treats points within
+ * 1mm as the same physical joint.
+ */
+export const JOINT_MERGE_TOLERANCE = 1;
+
 /** Default angular epsilon (radians). */
 export const ANGLE_EPSILON = 1e-9;
 
@@ -69,6 +78,70 @@ export function pointKey2D(p: Point2D, step: number = COORD_PRECISION): string {
  */
 export function pointKey3D(p: Point3D, step: number = COORD_PRECISION): string {
   return `${quantize(p.x, step)}:${quantize(p.y, step)}:${quantize(p.z, step)}`;
+}
+
+/**
+ * Neighbour-aware spatial index for tolerance based 3D point matching.
+ *
+ * Rounding a coordinate directly to a tolerance-sized key is not safe at cell
+ * boundaries: 0.49mm and 0.51mm can land in different cells despite being only
+ * 0.02mm apart. This index checks the containing cell and all 26 neighbours,
+ * then verifies the Euclidean distance before returning a match.
+ */
+export class SpatialPointIndex3D<T> {
+  private readonly cells = new Map<string, Array<{ point: Point3D; value: T }>>();
+  readonly tolerance: number;
+
+  constructor(tolerance: number = JOINT_MERGE_TOLERANCE) {
+    if (!Number.isFinite(tolerance) || tolerance <= 0) {
+      throw new Error('SpatialPointIndex3D tolerance must be a positive finite number');
+    }
+    this.tolerance = tolerance;
+  }
+
+  find(point: Point3D): T | undefined {
+    const [cx, cy, cz] = this.cell(point);
+    let best: { value: T; distance: number } | undefined;
+
+    for (let dx = -1; dx <= 1; dx++) {
+      for (let dy = -1; dy <= 1; dy++) {
+        for (let dz = -1; dz <= 1; dz++) {
+          for (const candidate of this.cells.get(this.key(cx + dx, cy + dy, cz + dz)) ?? []) {
+            const distance = Math.hypot(
+              candidate.point.x - point.x,
+              candidate.point.y - point.y,
+              candidate.point.z - point.z,
+            );
+            if (distance <= this.tolerance && (!best || distance < best.distance)) {
+              best = { value: candidate.value, distance };
+            }
+          }
+        }
+      }
+    }
+
+    return best?.value;
+  }
+
+  insert(point: Point3D, value: T): void {
+    const [x, y, z] = this.cell(point);
+    const key = this.key(x, y, z);
+    const bucket = this.cells.get(key) ?? [];
+    bucket.push({ point: { ...point }, value });
+    this.cells.set(key, bucket);
+  }
+
+  private cell(point: Point3D): [number, number, number] {
+    return [
+      Math.floor(point.x / this.tolerance),
+      Math.floor(point.y / this.tolerance),
+      Math.floor(point.z / this.tolerance),
+    ];
+  }
+
+  private key(x: number, y: number, z: number): string {
+    return `${x}:${y}:${z}`;
+  }
 }
 
 export interface SegmentIntersection {

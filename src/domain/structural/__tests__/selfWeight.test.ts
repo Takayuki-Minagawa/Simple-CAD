@@ -47,6 +47,12 @@ describe('sectionAreaMm2', () => {
     expect(sectionAreaMm2(sec)).toBeCloseTo(expected, 6);
   });
 
+  it('does not invent nominal plate thicknesses for incomplete H-shapes', () => {
+    expect(
+      sectionAreaMm2({ id: 'H-INCOMPLETE', kind: 's_beam_h', width: 200, depth: 400 }),
+    ).toBeUndefined();
+  });
+
   it('returns undefined for slab/wall (area-type)', () => {
     expect(sectionAreaMm2({ id: 'SL', kind: 'rc_slab', thickness: 180 })).toBeUndefined();
     expect(sectionAreaMm2({ id: 'W', kind: 'rc_wall', thickness: 200 })).toBeUndefined();

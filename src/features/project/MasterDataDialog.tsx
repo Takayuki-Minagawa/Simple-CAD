@@ -10,6 +10,14 @@ import { MaterialsSection } from './MaterialsSection';
 import { SectionsSection } from './SectionsSection';
 import { GridsSection } from './GridsSection';
 import { LoadCasesSection } from './LoadCasesSection';
+import { AnalysisModelSection } from './AnalysisModelSection';
+import { Modal } from '@/components/common/Modal';
+import { showConfirm } from '@/app/browserDialogs';
+import {
+  instantiateHSection,
+  uniqueHSectionId,
+  type HSectionLibraryEntry,
+} from '@/domain/structural/sectionLibrary';
 
 interface Props {
   onClose: () => void;
@@ -20,7 +28,10 @@ export function MasterDataDialog({ onClose }: Props) {
   const {
     addStory,
     updateStory,
+    updateStories,
     duplicateStory,
+    deleteStory,
+    reorderStories,
     addPlanSheet,
     addMaterial,
     updateMaterial,
@@ -29,6 +40,8 @@ export function MasterDataDialog({ onClose }: Props) {
     updateSection,
     deleteSection,
     updateSheet,
+    deleteSheet,
+    reorderSheets,
     addViewport,
     removeViewport,
     updateViewport,
@@ -38,6 +51,8 @@ export function MasterDataDialog({ onClose }: Props) {
     addLoadCase,
     updateLoadCase,
     deleteLoadCase,
+    updateAnalysisData,
+    updateMember,
   } = useProjectStore();
   const { activeStory, setActiveStory } = useEditorStore();
   const { locale } = useI18n();
@@ -92,6 +107,34 @@ export function MasterDataDialog({ onClose }: Props) {
     addPlanSheet(targetStoryId);
   };
 
+  const handleMoveStory = (id: string, direction: -1 | 1) => {
+    const index = data.stories.findIndex((story) => story.id === id);
+    const nextIndex = index + direction;
+    if (index < 0 || nextIndex < 0 || nextIndex >= data.stories.length) return;
+    const ids = data.stories.map((story) => story.id);
+    [ids[index], ids[nextIndex]] = [ids[nextIndex], ids[index]];
+    reorderStories(ids);
+  };
+
+  const handleDeleteStory = (id: string) => {
+    if (!showConfirm(labels.confirmDeleteStory)) return;
+    deleteStory(id);
+  };
+
+  const handleMoveSheet = (id: string, direction: -1 | 1) => {
+    const index = data.sheets.findIndex((sheet) => sheet.id === id);
+    const nextIndex = index + direction;
+    if (index < 0 || nextIndex < 0 || nextIndex >= data.sheets.length) return;
+    const ids = data.sheets.map((sheet) => sheet.id);
+    [ids[index], ids[nextIndex]] = [ids[nextIndex], ids[index]];
+    reorderSheets(ids);
+  };
+
+  const handleDeleteSheet = (id: string) => {
+    if (!showConfirm(labels.confirmDeleteSheet)) return;
+    deleteSheet(id);
+  };
+
   const handleAddMaterial = () => {
     if (!newMaterial.id.trim() || data.materials.some((item) => item.id === newMaterial.id.trim())) return;
     addMaterial({ ...newMaterial, id: newMaterial.id.trim(), name: newMaterial.name.trim() || newMaterial.id.trim() });
@@ -131,6 +174,18 @@ export function MasterDataDialog({ onClose }: Props) {
     setNewSectionId(`${id}-2`);
   };
 
+  const handleAddHSectionPreset = (
+    entry: HSectionLibraryEntry,
+    kind: 's_column_h' | 's_beam_h',
+  ) => {
+    const id = uniqueHSectionId(
+      entry,
+      kind,
+      data.sections.map((section) => section.id),
+    );
+    addSection(instantiateHSection(entry, kind, id));
+  };
+
   const handleAddGrid = () => {
     const id = newGridId.trim();
     const name = newGridName.trim();
@@ -159,53 +214,18 @@ export function MasterDataDialog({ onClose }: Props) {
   };
 
   return (
-    <div
-      style={{
-        position: 'fixed',
-        inset: 0,
-        background: 'var(--bg-modal-overlay)',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        zIndex: 1000,
-      }}
-      onClick={onClose}
+    <Modal
+      title={labels.title}
+      onClose={onClose}
+      width={1120}
+      maxWidth="95vw"
+      bodyStyle={{ display: 'grid', gap: 20 }}
+      footer={(
+        <button className="toolbar-btn" onClick={onClose}>
+          {labels.close}
+        </button>
+      )}
     >
-      <div
-        style={{
-          width: 920,
-          maxWidth: '95vw',
-          maxHeight: '86vh',
-          background: 'var(--bg-modal)',
-          color: 'var(--text-primary)',
-          borderRadius: 10,
-          boxShadow: '0 12px 48px rgba(0,0,0,0.28)',
-          overflow: 'hidden',
-          display: 'flex',
-          flexDirection: 'column',
-        }}
-        onClick={(event) => event.stopPropagation()}
-      >
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            padding: '16px 20px',
-            borderBottom: '1px solid var(--border-color)',
-          }}
-        >
-          <h3 style={{ margin: 0, fontSize: 16 }}>{labels.title}</h3>
-          <button
-            className="toolbar-btn"
-            style={{ background: 'var(--border-color)', color: 'var(--text-primary)', minHeight: 28 }}
-            onClick={onClose}
-          >
-            {labels.close}
-          </button>
-        </div>
-
-        <div style={{ overflowY: 'auto', padding: 20, display: 'grid', gap: 20 }}>
           <StoriesSection
             stories={data.stories}
             activeStory={activeStory}
@@ -218,6 +238,9 @@ export function MasterDataDialog({ onClose }: Props) {
             onAddSheet={handleAddSheet}
             setActiveStory={setActiveStory}
             updateStory={updateStory}
+            updateStories={updateStories}
+            onDeleteStory={handleDeleteStory}
+            onMoveStory={handleMoveStory}
           />
 
           <GridsSection
@@ -246,6 +269,8 @@ export function MasterDataDialog({ onClose }: Props) {
             addViewport={addViewport}
             removeViewport={removeViewport}
             updateViewport={updateViewport}
+            onDeleteSheet={handleDeleteSheet}
+            onMoveSheet={handleMoveSheet}
           />
 
           <MaterialsSection
@@ -276,6 +301,7 @@ export function MasterDataDialog({ onClose }: Props) {
             newSectionDiameter={newSectionDiameter}
             setNewSectionDiameter={setNewSectionDiameter}
             onAddSection={handleAddSection}
+            onAddHSectionPreset={handleAddHSectionPreset}
             updateSection={updateSection}
             deleteSection={deleteSection}
           />
@@ -293,8 +319,12 @@ export function MasterDataDialog({ onClose }: Props) {
             updateLoadCase={updateLoadCase}
             deleteLoadCase={deleteLoadCase}
           />
-        </div>
-      </div>
-    </div>
+
+          <AnalysisModelSection
+            data={data}
+            onUpdate={updateAnalysisData}
+            onUpdateMember={updateMember}
+          />
+    </Modal>
   );
 }

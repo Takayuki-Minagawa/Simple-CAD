@@ -13,6 +13,8 @@ interface SheetsSectionProps {
   addViewport: (viewport: Viewport) => void;
   removeViewport: (id: string) => void;
   updateViewport: (id: string, updates: Partial<Viewport>) => void;
+  onDeleteSheet: (id: string) => void;
+  onMoveSheet: (id: string, direction: -1 | 1) => void;
 }
 
 export function SheetsSection({
@@ -25,6 +27,8 @@ export function SheetsSection({
   addViewport,
   removeViewport,
   updateViewport,
+  onDeleteSheet,
+  onMoveSheet,
 }: SheetsSectionProps) {
   return (
     <section>
@@ -33,7 +37,7 @@ export function SheetsSection({
         {sheets.length === 0 && (
           <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{labels.noSheets}</div>
         )}
-        {sheets.map((sheet) => (
+        {sheets.map((sheet, sheetIndex) => (
           <div
             key={sheet.id}
             style={{
@@ -44,7 +48,7 @@ export function SheetsSection({
               gap: 8,
             }}
           >
-            <div style={{ display: 'grid', gridTemplateColumns: '120px 1fr 90px 90px', gap: 8 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '120px 1fr 90px 90px auto', gap: 8 }}>
               <ReadonlyField label={labels.id} value={sheet.id} />
               <TextField label={labels.name} value={sheet.name} onChange={(value) => updateSheet(sheet.id, { name: value })} />
               <SelectField
@@ -54,6 +58,34 @@ export function SheetsSection({
                 onChange={(value) => updateSheet(sheet.id, { paperSize: value as Sheet['paperSize'] })}
               />
               <TextField label={labels.scale} value={sheet.scale} onChange={(value) => updateSheet(sheet.id, { scale: value })} />
+              <div style={{ display: 'flex', gap: 4, alignItems: 'end' }}>
+                <button
+                  className="toolbar-btn"
+                  onClick={() => onMoveSheet(sheet.id, -1)}
+                  disabled={sheetIndex === 0}
+                  aria-label={`${sheet.name}: ${labels.moveUp}`}
+                  title={labels.moveUp}
+                >
+                  ↑
+                </button>
+                <button
+                  className="toolbar-btn"
+                  onClick={() => onMoveSheet(sheet.id, 1)}
+                  disabled={sheetIndex === sheets.length - 1}
+                  aria-label={`${sheet.name}: ${labels.moveDown}`}
+                  title={labels.moveDown}
+                >
+                  ↓
+                </button>
+                <button
+                  className="toolbar-btn"
+                  onClick={() => onDeleteSheet(sheet.id)}
+                  aria-label={`${sheet.name}: ${labels.deleteSheet}`}
+                  title={labels.deleteSheet}
+                >
+                  ×
+                </button>
+              </div>
             </div>
 
             <div style={{ display: 'grid', gridTemplateColumns: '120px 1fr 1fr 1fr', gap: 8 }}>

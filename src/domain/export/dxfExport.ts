@@ -1,6 +1,7 @@
 import type { ProjectData, Member, Section } from '@/domain/structural/types';
 import { distance2D, sub2D, normalize2D, perpendicular2D } from '@/domain/geometry/point';
 import { getMemberPlanPolygon } from '@/domain/structural/memberShape';
+import { validateGeometry, validateReferences } from '@/domain/validation';
 
 /** Decimal places for DXF coordinate output. 4 dp at mm = 0.1µm — plenty. */
 const DXF_DECIMALS = 4;
@@ -20,8 +21,12 @@ function fmt(value: number): string {
  * Export DXF using manual string generation.
  * Using DXF ASCII format for maximum compatibility.
  */
-export function exportDxf(data: ProjectData, storyId: string): string {
+export function exportDxf(data: ProjectData, storyId: string, warnings: string[] = []): string {
   const lines: string[] = [];
+
+  for (const issue of [...validateReferences(data).errors, ...validateGeometry(data).errors]) {
+    warnings.push(`Export validation: ${issue.message}`);
+  }
 
   const bbox = computeBoundingBox(data, storyId);
 
@@ -50,6 +55,7 @@ export function exportDxf(data: ProjectData, storyId: string): string {
     { name: 'DIMENSION', color: 7 }, // white
     { name: 'ANNOTATION', color: 7 },
     { name: 'CONSTRUCTION', color: 8 }, // gray
+    { name: 'SIMPLECAD_META', color: -7 }, // hidden metadata carrier
   ];
 
   for (const layer of layerDefs) {
@@ -74,16 +80,34 @@ export function exportDxf(data: ProjectData, storyId: string): string {
   const maxY = yGrids.length ? Math.max(...yGrids.map((g) => g.position)) : 10000;
 
   for (const g of xGrids) {
-    addLine(lines, 'GRID', g.position, minY - 2000, g.position, maxY + 2000);
+    addLine(
+      lines,
+      'GRID',
+      g.position,
+      minY - 2000,
+      g.position,
+      maxY + 2000,
+      encodeMetadata('GRID', g),
+    );
   }
   for (const g of yGrids) {
-    addLine(lines, 'GRID', minX - 2000, g.position, maxX + 2000, g.position);
+    addLine(
+      lines,
+      'GRID',
+      minX - 2000,
+      g.position,
+      maxX + 2000,
+      g.position,
+      encodeMetadata('GRID', g),
+    );
   }
 
   // Members
   const members = data.members.filter((m) => m.story === storyId);
   for (const m of members) {
-    renderMemberDxf(lines, m, data.sections);
+    if (!renderMemberDxf(lines, m, data.sections)) {
+      warnings.push(`部材 ${m.id} は有効な平面形状を生成できないためDXF出力をスキップしました`);
+    }
   }
 
   // Dimensions (decomposed to lines + text)
@@ -102,6 +126,7 @@ export function exportDxf(data: ProjectData, storyId: string): string {
     const text = d.text ?? len.toFixed(0);
     const mid = { x: (s.x + e.x) / 2, y: (s.y + e.y) / 2 };
     addText(lines, 'DIMENSION', mid.x, mid.y, 250, text);
+    addDimensionMetadata(lines, d, mid.x, mid.y);
   }
 
   // Annotations
@@ -130,6 +155,7 @@ export function exportDxf(data: ProjectData, storyId: string): string {
         cl.origin.y - cl.direction.y * ext,
         cl.origin.x + cl.direction.x * ext,
         cl.origin.y + cl.direction.y * ext,
+        encodeMetadata('CONSTRUCTION', cl),
       );
     } else {
       addLine(
@@ -139,6 +165,7 @@ export function exportDxf(data: ProjectData, storyId: string): string {
         cl.origin.y,
         cl.origin.x + cl.direction.x * ext,
         cl.origin.y + cl.direction.y * ext,
+        encodeMetadata('CONSTRUCTION', cl),
       );
     }
   }
@@ -149,17 +176,35 @@ export function exportDxf(data: ProjectData, storyId: string): string {
   return lines.join('\n');
 }
 
-function renderMemberDxf(lines: string[], m: Member, sections: Section[]) {
+export function exportDxfWithWarnings(
+  data: ProjectData,
+  storyId: string,
+): { content: string; warnings: string[] } {
+  const warnings: string[] = [];
+  return { content: exportDxf(data, storyId, warnings), warnings };
+}
+
+function renderMemberDxf(lines: string[], m: Member, sections: Section[]): boolean {
   const sec = sections.find((s) => s.id === m.sectionId);
   const polygon = getMemberPlanPolygon(m, sec);
-  if (!polygon) return;
+  if (!polygon) return false;
   const layer = memberLayerName(m);
   addLwPolyline(
     lines,
     layer,
     polygon.map((point) => [point.x, point.y]),
     true,
+    encodeMetadata('MEMBER', {
+      id: m.id,
+      rotation: m.rotation,
+      axisOffset: m.axisOffset,
+      faceAlign: m.faceAlign,
+      localAxis: m.localAxis,
+      releases: m.releases,
+      rigidZones: m.rigidZones,
+    }),
   );
+  return true;
 }
 
 function memberLayerName(member: Member): string {
@@ -175,14 +220,56 @@ function memberLayerName(member: Member): string {
   }
 }
 
-function addLine(lines: string[], layer: string, x1: number, y1: number, x2: number, y2: number) {
+function addLine(
+  lines: string[],
+  layer: string,
+  x1: number,
+  y1: number,
+  x2: number,
+  y2: number,
+  metadata?: string,
+) {
   lines.push('0', 'LINE');
   lines.push('8', layer);
   lines.push('10', fmt(x1), '20', fmt(y1), '30', '0');
   lines.push('11', fmt(x2), '21', fmt(y2), '31', '0');
+  if (metadata) lines.push('999', metadata);
 }
 
-function addLwPolyline(lines: string[], layer: string, points: number[][], closed: boolean) {
+function addDimensionMetadata(
+  lines: string[],
+  dimension: ProjectData['dimensions'][number],
+  lineX: number,
+  lineY: number,
+) {
+  lines.push('0', 'DIMENSION');
+  lines.push('8', 'SIMPLECAD_META');
+  lines.push('10', fmt(lineX), '20', fmt(lineY), '30', '0');
+  lines.push('13', fmt(dimension.start.x), '23', fmt(dimension.start.y), '33', '0');
+  lines.push('14', fmt(dimension.end.x), '24', fmt(dimension.end.y), '34', '0');
+  if (dimension.text) lines.push('1', dimension.text.replace(/\r?\n/g, ' '));
+  lines.push(
+    '999',
+    encodeMetadata('DIMENSION', {
+      id: dimension.id,
+      color: dimension.color,
+      lineWeight: dimension.lineWeight,
+      lineType: dimension.lineType,
+    }),
+  );
+}
+
+function encodeMetadata(kind: string, value: unknown): string {
+  return `SIMPLECAD_${kind}:${encodeURIComponent(JSON.stringify(value))}`;
+}
+
+function addLwPolyline(
+  lines: string[],
+  layer: string,
+  points: number[][],
+  closed: boolean,
+  metadata?: string,
+) {
   lines.push('0', 'LWPOLYLINE');
   lines.push('8', layer);
   lines.push('90', String(points.length));
@@ -190,6 +277,7 @@ function addLwPolyline(lines: string[], layer: string, points: number[][], close
   for (const [x, y] of points) {
     lines.push('10', fmt(x), '20', fmt(y));
   }
+  if (metadata) lines.push('999', metadata);
 }
 
 function addText(
@@ -233,15 +321,30 @@ function addMText(
 }
 
 function addSpline(lines: string[], layer: string, points: { x: number; y: number }[]) {
-  // Export as SPLINE entity (degree 3 cubic)
+  // Valid open clamped B-spline. Degree must be lower than control-point count,
+  // and DXF requires an explicit knot count/vector.
+  const degree = Math.min(3, points.length - 1);
+  const knotCount = points.length + degree + 1;
+  const interiorCount = knotCount - (degree + 1) * 2;
+  const knots = [
+    ...Array<number>(degree + 1).fill(0),
+    ...Array.from({ length: Math.max(interiorCount, 0) }, (_, index) =>
+      (index + 1) / (interiorCount + 1),
+    ),
+    ...Array<number>(degree + 1).fill(1),
+  ];
   lines.push('0', 'SPLINE');
   lines.push('8', layer);
   lines.push('70', '8'); // Planar flag
-  lines.push('71', '3'); // Degree 3 (cubic)
+  lines.push('71', String(degree));
+  lines.push('72', String(knots.length));
   lines.push('73', String(points.length)); // Number of control points
+  lines.push('74', '0');
+  for (const knot of knots) lines.push('40', fmt(knot));
   for (const p of points) {
     lines.push('10', fmt(p.x), '20', fmt(p.y), '30', '0');
   }
+  lines.push('210', '0', '220', '0', '230', '1');
 }
 
 /** Compute the 2D bounding box of all renderable geometry for `storyId`. */

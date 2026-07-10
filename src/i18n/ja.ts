@@ -191,6 +191,7 @@ export const ja: Translations = {
   transformInvalidScale: '倍率に 0 は指定できません。',
   transformInvalidCount: '複写数は 1 以上の整数を指定してください。',
   transformInvalidStretch: '幅と高さは 0 以上の値を指定してください。',
+  transformInvalidSelection: '選択内容には変形可能な図形がありません。閉じて対象を選び直してください。',
   transformLockedWidth: '選択範囲の幅が 0 のため、幅方向のパラメトリック変形はできません。',
   transformLockedHeight: '選択範囲の高さが 0 のため、高さ方向のパラメトリック変形はできません。',
   transformOffset: 'オフセット',

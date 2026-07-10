@@ -3,6 +3,7 @@ import { useProjectStore, useEditorStore } from '@/app/store';
 import { useI18n } from '@/i18n';
 import { validateProject } from '@/domain/validation';
 import type { ValidationError } from '@/domain/validation';
+import { isEntityLayerInteractive } from '@/domain/rendering/layerLock';
 
 export function ValidationPanel() {
   const data = useProjectStore((s) => s.data);
@@ -30,7 +31,23 @@ export function ValidationPanel() {
         {!lastRun && <div style={{ color: 'var(--text-secondary)', fontSize: 11 }}>{t.validationPrompt}</div>}
         {lastRun && errors.length === 0 && <div style={{ color: 'var(--success)', fontSize: 11 }}>{t.validationPass}</div>}
         {errors.map((err, i) => (
-          <div key={i} className={`validation-item ${err.level}`} onClick={() => { if (err.path) { const m = err.path.match(/\/members\/(.+)/); if (m) setSelectedIds([m[1]]); } }}>
+          <div
+            key={i}
+            className={`validation-item ${err.level}`}
+            onClick={() => {
+              const memberId = err.path?.match(/\/members\/([^/]+)/)?.[1];
+              if (!memberId || !data) return;
+              const editor = useEditorStore.getState();
+              if (
+                isEntityLayerInteractive(
+                  data,
+                  memberId,
+                  editor.layerLocked,
+                  editor.layerVisibility,
+                )
+              ) setSelectedIds([memberId]);
+            }}
+          >
             [{err.level}] {err.message}
           </div>
         ))}

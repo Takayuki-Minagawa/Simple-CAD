@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import { type ReactNode, useState } from 'react';
 
 export function SectionHeader({ title, actions }: { title: string; actions?: ReactNode }) {
   return (
@@ -66,14 +66,126 @@ export function NumberField({
   value: number;
   onChange: (value: number) => void;
 }) {
+  return <NumberFieldInput key={String(value)} label={label} value={value} onChange={onChange} />;
+}
+
+export function OptionalNumberField({
+  label,
+  value,
+  onChange,
+}: {
+  label: string;
+  value: number | undefined;
+  onChange: (value: number | undefined) => void;
+}) {
+  return (
+    <OptionalNumberFieldInput
+      key={value === undefined ? 'undefined' : String(value)}
+      label={label}
+      value={value}
+      onChange={onChange}
+    />
+  );
+}
+
+function OptionalNumberFieldInput({
+  label,
+  value,
+  onChange,
+}: {
+  label: string;
+  value: number | undefined;
+  onChange: (value: number | undefined) => void;
+}) {
+  const committedDraft = value === undefined || !Number.isFinite(value) ? '' : String(value);
+  const [draft, setDraft] = useState(committedDraft);
+  const commit = () => {
+    const trimmed = draft.trim();
+    if (trimmed === '') {
+      if (value !== undefined) onChange(undefined);
+      window.setTimeout(() => setDraft(committedDraft), 0);
+      return;
+    }
+    const next = Number(trimmed);
+    if (!Number.isFinite(next)) {
+      setDraft(committedDraft);
+      return;
+    }
+    if (next !== value) onChange(next);
+    window.setTimeout(() => setDraft(committedDraft), 0);
+  };
+
   return (
     <FieldShell label={label}>
       <input
         className="prop-input"
         style={{ maxWidth: '100%' }}
         type="number"
-        value={Number.isFinite(value) ? value : 0}
-        onChange={(event) => onChange(Number(event.target.value))}
+        value={draft}
+        onChange={(event) => setDraft(event.target.value)}
+        onBlur={commit}
+        onKeyDown={(event) => {
+          if (event.key === 'Enter') {
+            event.preventDefault();
+            commit();
+          }
+          if (event.key === 'Escape') {
+            setDraft(committedDraft);
+            event.preventDefault();
+          }
+        }}
+      />
+    </FieldShell>
+  );
+}
+
+function NumberFieldInput({
+  label,
+  value,
+  onChange,
+}: {
+  label: string;
+  value: number;
+  onChange: (value: number) => void;
+}) {
+  const normalizedValue = Number.isFinite(value) ? value : 0;
+  const [draft, setDraft] = useState(String(normalizedValue));
+  const commit = () => {
+    if (draft.trim() === '') {
+      setDraft(String(normalizedValue));
+      return;
+    }
+    const next = Number(draft);
+    if (!Number.isFinite(next)) {
+      setDraft(String(normalizedValue));
+      return;
+    }
+    if (next !== normalizedValue) onChange(next);
+    // A store boundary may reject the value (for example a non-positive
+    // section dimension). Restore the actual prop value unless a successful
+    // update remounts this keyed input with the new value first.
+    window.setTimeout(() => setDraft(String(normalizedValue)), 0);
+  };
+
+  return (
+    <FieldShell label={label}>
+      <input
+        className="prop-input"
+        style={{ maxWidth: '100%' }}
+        type="number"
+        value={draft}
+        onChange={(event) => setDraft(event.target.value)}
+        onBlur={commit}
+        onKeyDown={(event) => {
+          if (event.key === 'Enter') {
+            event.preventDefault();
+            commit();
+          }
+          if (event.key === 'Escape') {
+            setDraft(String(normalizedValue));
+            event.preventDefault();
+          }
+        }}
       />
     </FieldShell>
   );

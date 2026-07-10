@@ -45,4 +45,77 @@ describe('validateSchema', () => {
     const result = validateSchema({});
     expect(result.ok).toBe(false);
   });
+
+  it('enforces nonnegative masses and member-load kind-specific fields', () => {
+    const invalidMass = {
+      ...sampleProject,
+      masses: [
+        { id: 'M1', storyId: '1F', position: { x: 0, y: 0, z: 0 }, mass: { x: -1, y: 1, z: 1 } },
+      ],
+    };
+    expect(validateSchema(invalidMass).ok).toBe(false);
+
+    const missingPointPosition = {
+      ...sampleProject,
+      memberLoads: [
+        {
+          id: 'P1', loadCaseId: 'LC', memberId: 'B1', kind: 'point',
+          direction: 'globalZ', magnitude: -1,
+        },
+      ],
+    };
+    expect(validateSchema(missingPointPosition).ok).toBe(false);
+  });
+
+  it('accepts complete wood properties and rejects mixed material-family keys', () => {
+    const wood = {
+      ...sampleProject,
+      materials: [
+        {
+          id: 'MAT-WOOD',
+          name: 'Wood E70',
+          type: 'wood',
+          elasticModulus: 7000,
+          shearModulus: 440,
+          poissonRatio: 0.3,
+          unitWeight: 3.8,
+          referenceStrength: 21.6,
+          moistureContent: 15,
+          allowableBendingStress: 7.2,
+          allowableCompressionStress: 6,
+          allowableShearStress: 0.6,
+        },
+      ],
+      members: [],
+      openings: [],
+      dimensions: [],
+      annotations: [],
+    };
+    expect(validateSchema(wood).ok).toBe(true);
+
+    const mixed = structuredClone(wood);
+    Object.assign(mixed.materials[0], { Fc: 24, Fy: 235 });
+    expect(validateSchema(mixed).ok).toBe(false);
+  });
+
+  it('enforces material property ranges', () => {
+    const invalid = {
+      ...sampleProject,
+      materials: [
+        {
+          id: 'MAT-WOOD',
+          name: 'Invalid wood',
+          type: 'wood',
+          elasticModulus: 0,
+          poissonRatio: 0.5,
+          moistureContent: 101,
+        },
+      ],
+      members: [],
+      openings: [],
+      dimensions: [],
+      annotations: [],
+    };
+    expect(validateSchema(invalid).ok).toBe(false);
+  });
 });

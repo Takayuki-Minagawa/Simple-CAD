@@ -18,6 +18,8 @@ export function getDrawingGuideText(
       return pointCount === 0 ? t.guideWallStart : t.guideWallEnd;
     case 'slab':
       return pointCount === 0 ? t.guideSlabStart : t.guideSlabNext;
+    case 'opening':
+      return t.layerOpening;
     case 'dimension':
       return pointCount === 0 ? t.guideDimensionStart : t.guideDimensionEnd;
     case 'annotation':
@@ -30,5 +32,7 @@ export function getDrawingGuideText(
       return t.guideTrimPrompt;
     case 'extend':
       return pointCount === 0 ? t.guideExtendSource : t.guideExtendTarget;
+    case 'fillet':
+      return t.filletPrompt;
   }
 }

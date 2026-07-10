@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { Billboard, Line, Text } from '@react-three/drei';
+import { Html, Line } from '@react-three/drei';
 import type { Grid, Story } from '@/domain/structural/types';
 
 interface Props {
@@ -106,27 +106,40 @@ export function GridHelper3D({ grids, stories, activeStoryId }: Props) {
             <planeGeometry args={[maxX - minX + 2 * margin, maxY - minY + 2 * margin]} />
             <meshBasicMaterial color={active ? '#60a5fa' : '#aaaaaa'} transparent opacity={active ? 0.14 : 0.055} side={2} />
           </mesh>
-          <Billboard position={[maxX + margin * 1.2, minY - margin, story.elevation]}>
-            <Text fontSize={280} color={active ? '#e0f2fe' : '#cbd5e1'} anchorX="left" anchorY="middle">
-              {story.name} EL {Math.round(story.elevation)}
-            </Text>
-          </Billboard>
+          <Html
+            position={[maxX + margin * 1.2, minY - margin, story.elevation]}
+            style={{
+              color: active ? '#e0f2fe' : '#cbd5e1',
+              fontSize: 11,
+              whiteSpace: 'nowrap',
+              pointerEvents: 'none',
+              transform: 'translateY(-50%)',
+            }}
+          >
+            {story.name} EL {Math.round(story.elevation)}
+          </Html>
         </group>
       ))}
 
       {xGrids.map((grid) => (
-        <Billboard key={`label-x-${grid.id}`} position={[grid.position, minY - margin * 1.6, minElevation]}>
-          <Text fontSize={240} color="#86efac" anchorX="center" anchorY="middle">
-            {grid.name}
-          </Text>
-        </Billboard>
+        <Html
+          key={`label-x-${grid.id}`}
+          position={[grid.position, minY - margin * 1.6, minElevation]}
+          center
+          style={{ color: '#86efac', fontSize: 11, whiteSpace: 'nowrap', pointerEvents: 'none' }}
+        >
+          {grid.name}
+        </Html>
       ))}
       {yGrids.map((grid) => (
-        <Billboard key={`label-y-${grid.id}`} position={[minX - margin * 1.6, grid.position, minElevation]}>
-          <Text fontSize={240} color="#93c5fd" anchorX="center" anchorY="middle">
-            {grid.name}
-          </Text>
-        </Billboard>
+        <Html
+          key={`label-y-${grid.id}`}
+          position={[minX - margin * 1.6, grid.position, minElevation]}
+          center
+          style={{ color: '#93c5fd', fontSize: 11, whiteSpace: 'nowrap', pointerEvents: 'none' }}
+        >
+          {grid.name}
+        </Html>
       ))}
 
       <Line
@@ -151,11 +164,18 @@ export function GridHelper3D({ grids, stories, activeStoryId }: Props) {
             opacity={0.78}
             transparent
           />
-          <Billboard position={[levelRailX + margin * 0.4, levelRailY, story.elevation]}>
-            <Text fontSize={220} color={story.id === activeStoryId ? '#e0f2fe' : '#f8fafc'} anchorX="left" anchorY="middle">
-              {Math.round(story.elevation)}
-            </Text>
-          </Billboard>
+          <Html
+            position={[levelRailX + margin * 0.4, levelRailY, story.elevation]}
+            style={{
+              color: story.id === activeStoryId ? '#e0f2fe' : '#f8fafc',
+              fontSize: 10,
+              whiteSpace: 'nowrap',
+              pointerEvents: 'none',
+              transform: 'translateY(-50%)',
+            }}
+          >
+            {Math.round(story.elevation)}
+          </Html>
         </group>
       ))}
     </group>

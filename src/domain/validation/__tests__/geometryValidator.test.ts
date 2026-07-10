@@ -73,10 +73,11 @@ describe('validateGeometry', () => {
       ],
     };
     const result = validateGeometry(data);
-    expect(result.errors.some((e) => e.message.includes('自己交差'))).toBe(true);
+    expect(result.ok).toBe(false);
+    expect(result.errors.some((e) => e.level === 'error' && e.message.includes('自己交差'))).toBe(true);
   });
 
-  it('warns on a duplicate-vertex slab polygon', () => {
+  it('rejects a duplicate-vertex slab polygon', () => {
     const data: ProjectData = {
       ...validData,
       members: [
@@ -98,10 +99,11 @@ describe('validateGeometry', () => {
       ],
     };
     const result = validateGeometry(data);
-    expect(result.errors.some((e) => e.message.includes('重複頂点'))).toBe(true);
+    expect(result.ok).toBe(false);
+    expect(result.errors.some((e) => e.level === 'error' && e.message.includes('重複頂点'))).toBe(true);
   });
 
-  it('warns on a collinear (degenerate) slab polygon', () => {
+  it('rejects a collinear (degenerate) slab polygon', () => {
     const data: ProjectData = {
       ...validData,
       members: [
@@ -121,7 +123,8 @@ describe('validateGeometry', () => {
       ],
     };
     const result = validateGeometry(data);
-    expect(result.errors.some((e) => e.message.includes('共線退化'))).toBe(true);
+    expect(result.ok).toBe(false);
+    expect(result.errors.some((e) => e.level === 'error' && e.message.includes('共線退化'))).toBe(true);
   });
 
   it('detects slab with less than 3 vertices', () => {
@@ -142,5 +145,65 @@ describe('validateGeometry', () => {
     const result = validateGeometry(data);
     expect(result.ok).toBe(false);
     expect(result.errors.some((e) => e.message.includes('頂点が3未満'))).toBe(true);
+  });
+
+  it('rejects rigid zones whose total reaches the member length', () => {
+    const beam = validData.members.find((member) => member.type === 'beam')!;
+    const length = Math.hypot(
+      beam.end.x - beam.start.x,
+      beam.end.y - beam.start.y,
+      beam.end.z - beam.start.z,
+    );
+    const data: ProjectData = {
+      ...validData,
+      members: [{ ...beam, rigidZones: { start: length / 2, end: length / 2 } }],
+    };
+
+    const result = validateGeometry(data);
+    expect(result.ok).toBe(false);
+    expect(result.errors.some((error) => error.message.includes('rigidZones'))).toBe(true);
+  });
+
+  it('rejects negative mass components and missing kind-specific member-load values', () => {
+    const data: ProjectData = {
+      ...validData,
+      loadCases: [{ id: 'LC', name: 'Load', type: 'other' }],
+      masses: [
+        { id: 'M1', storyId: '1F', position: { x: 0, y: 0, z: 0 }, mass: { x: -1, y: 1, z: 1 } },
+      ],
+      memberLoads: [
+        {
+          id: 'P1', loadCaseId: 'LC', memberId: validData.members[0].id,
+          kind: 'point', direction: 'globalZ', magnitude: -1,
+        },
+        {
+          id: 'T1', loadCaseId: 'LC', memberId: validData.members[0].id,
+          kind: 'trapezoidal', direction: 'globalZ', magnitude: -1,
+        },
+      ],
+    };
+
+    const result = validateGeometry(data);
+    expect(result.ok).toBe(false);
+    expect(result.errors.some((error) => error.message.includes('0以上'))).toBe(true);
+    expect(result.errors.some((error) => error.message.includes('position'))).toBe(true);
+    expect(result.errors.some((error) => error.message.includes('endMagnitude'))).toBe(true);
+  });
+
+  it('rejects a local-axis reference vector parallel to the member axis', () => {
+    const beam = validData.members.find((member) => member.type === 'beam');
+    expect(beam?.type).toBe('beam');
+    if (!beam || beam.type !== 'beam') return;
+    const axis = {
+      x: beam.end.x - beam.start.x,
+      y: beam.end.y - beam.start.y,
+      z: beam.end.z - beam.start.z,
+    };
+    const result = validateGeometry({
+      ...validData,
+      members: [{ ...beam, localAxis: { rotation: 0, referenceVector: axis } }],
+    });
+    expect(result.ok).toBe(false);
+    expect(result.errors.some((error) => error.message.includes('referenceVector'))).toBe(true);
   });
 });
