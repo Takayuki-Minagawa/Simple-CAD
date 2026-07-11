@@ -13,6 +13,7 @@ interface Props {
   wireframe: boolean;
   engine: GeometryEngine;
   clippingPlanes?: THREE.Plane[];
+  colorOverride?: string;
   onClick: () => void;
   /** Measurement mode is active: clicks pick measure points instead of selecting. */
   measureMode?: boolean;
@@ -40,6 +41,7 @@ export function MemberMesh({
   wireframe,
   engine,
   clippingPlanes,
+  colorOverride,
   onClick,
   measureMode,
   onMeasurePick,
@@ -57,7 +59,7 @@ export function MemberMesh({
 
   if (!geometry) return null;
 
-  const color = selected ? COLORS.selected : (member.color ?? COLORS[member.type]);
+  const color = selected ? COLORS.selected : (colorOverride ?? member.color ?? COLORS[member.type]);
   const materialProps = getMaterialProps(member.type, color, wireframe, clippingPlanes);
 
   return (

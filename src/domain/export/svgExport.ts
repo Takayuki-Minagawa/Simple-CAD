@@ -100,7 +100,7 @@ export function exportSvg(data: ProjectData, sheetId: string): string {
 
   // Render additional viewports if defined
   if (sheet.viewports && sheet.viewports.length > 0) {
-    for (const vp of sheet.viewports) {
+    for (const [viewportIndex, vp] of sheet.viewports.entries()) {
       const vpView = data.views.find((v) => v.id === vp.viewId && v.type === 'plan');
       if (!vpView || !('story' in vpView)) continue;
       const vpStoryId = vpView.story;
@@ -114,7 +114,7 @@ export function exportSvg(data: ProjectData, sheetId: string): string {
       const vpOffX = vp.x + vp.width / 2 - vpCenter.x * vpScale;
       const vpOffY = vp.y + vp.height / 2 + vpCenter.y * vpScale;
 
-      const clipId = `vp-clip-${vp.id}`;
+      const clipId = `vp-clip-${viewportIndex}-${sanitizeSvgId(vp.id)}`;
       svgLines.push(
         `<defs><clipPath id="${clipId}"><rect x="${vp.x}" y="${vp.y}" width="${vp.width}" height="${vp.height}"/></clipPath></defs>`,
       );
@@ -148,23 +148,23 @@ function renderMemberSvg(m: Member, sections: Section[]): string {
 
   switch (m.type) {
     case 'column': {
-      const strokeColor = m.color ?? '#e74c3c';
-      return `  <polygon class="layer-member-column" points="${formatPointList(points)}" fill="rgba(231,76,60,0.3)" stroke="${escapeXml(strokeColor)}" stroke-width="${lw}"${dashAttr}/>`;
+      const strokeColor = safePaint(m.color, '#e74c3c');
+      return `  <polygon class="layer-member-column" points="${formatPointList(points)}" fill="rgba(231,76,60,0.3)" stroke="${strokeColor}" stroke-width="${safeNumber(lw, 20)}"${dashAttr}/>`;
     }
     case 'beam': {
-      const strokeColor = m.color ?? '#f39c12';
-      return `  <polygon class="layer-member-beam" points="${formatPointList(points)}" fill="rgba(243,156,18,0.2)" stroke="${escapeXml(strokeColor)}" stroke-width="${lw}"${dashAttr}/>`;
+      const strokeColor = safePaint(m.color, '#f39c12');
+      return `  <polygon class="layer-member-beam" points="${formatPointList(points)}" fill="rgba(243,156,18,0.2)" stroke="${strokeColor}" stroke-width="${safeNumber(lw, 20)}"${dashAttr}/>`;
     }
     case 'wall': {
-      const strokeColor = m.color ?? '#00bcd4';
-      return `  <polygon class="layer-member-wall" points="${formatPointList(points)}" fill="rgba(0,188,212,0.2)" stroke="${escapeXml(strokeColor)}" stroke-width="${lw}"${dashAttr}/>`;
+      const strokeColor = safePaint(m.color, '#00bcd4');
+      return `  <polygon class="layer-member-wall" points="${formatPointList(points)}" fill="rgba(0,188,212,0.2)" stroke="${strokeColor}" stroke-width="${safeNumber(lw, 20)}"${dashAttr}/>`;
     }
     case 'slab': {
-      const strokeColor = m.color ?? '#9b59b6';
+      const strokeColor = safePaint(m.color, '#9b59b6');
       const slabDash = dash ?? '200 100';
-      const fillColor = m.fillColor ?? 'rgba(155,89,182,0.1)';
-      const opacityAttr = m.fillOpacity !== undefined ? ` fill-opacity="${m.fillOpacity}"` : '';
-      return `  <polygon class="layer-member-slab" points="${formatPointList(points)}" fill="${escapeXml(fillColor)}"${opacityAttr} stroke="${escapeXml(strokeColor)}" stroke-width="${lw}" stroke-dasharray="${slabDash}"/>`;
+      const fillColor = safePaint(m.fillColor, 'rgba(155,89,182,0.1)');
+      const opacityAttr = m.fillOpacity !== undefined ? ` fill-opacity="${safeNumber(m.fillOpacity, 1)}"` : '';
+      return `  <polygon class="layer-member-slab" points="${formatPointList(points)}" fill="${fillColor}"${opacityAttr} stroke="${strokeColor}" stroke-width="${safeNumber(lw, 20)}" stroke-dasharray="${slabDash}"/>`;
     }
   }
 }
@@ -172,12 +172,12 @@ function renderMemberSvg(m: Member, sections: Section[]): string {
 function renderAnnotationSvg(a: ProjectData['annotations'][number]): string {
   if (a.type === 'spline' && a.points && a.points.length >= 2) {
     const pathD = catmullRomToSvgPath(a.points);
-    const strokeColor = a.color ?? '#34495e';
-    return `  <path class="layer-annotation" d="${pathD}" fill="none" stroke="${escapeXml(strokeColor)}" stroke-width="20"/>`;
+    const strokeColor = safePaint(a.color, '#34495e');
+    return `  <path class="layer-annotation" d="${escapeXml(pathD)}" fill="none" stroke="${strokeColor}" stroke-width="20"/>`;
   }
 
   const fs = a.fontSize ?? 300;
-  const fillColor = a.color ?? '#34495e';
+  const fillColor = safePaint(a.color, '#34495e');
   const anchor = textAlignToAnchor(a.textAlign);
   const rotation = a.rotation ?? 0;
   const rotateAttr = rotation !== 0 ? ` rotate(${-rotation}, ${a.x}, ${-a.y})` : '';
@@ -187,15 +187,15 @@ function renderAnnotationSvg(a: ProjectData['annotations'][number]): string {
   const fwAttr = a.fontWeight === 'bold' ? ' font-weight="bold"' : '';
   const fsAttr = a.fontStyle === 'italic' ? ' font-style="italic"' : '';
   const tdAttr = a.textDecoration === 'underline' ? ' text-decoration="underline"' : '';
-  const ffAttr = a.fontFamily ? ` font-family="${escapeXml(a.fontFamily)}"` : '';
+  const ffAttr = a.fontFamily ? ` font-family="${escapeXml(safeFontFamily(a.fontFamily))}"` : '';
   const styleAttrs = `${fwAttr}${fsAttr}${tdAttr}${ffAttr}`;
 
   if (lines.length <= 1) {
-    return `  <text class="layer-annotation" x="${a.x}" y="${a.y}" font-size="${fs}" fill="${escapeXml(fillColor)}" text-anchor="${anchor}" transform="${transform}"${styleAttrs}>${escapeXml(a.text)}</text>`;
+    return `  <text class="layer-annotation" x="${a.x}" y="${a.y}" font-size="${fs}" fill="${fillColor}" text-anchor="${anchor}" transform="${escapeXml(transform)}"${styleAttrs}>${escapeXml(a.text)}</text>`;
   }
 
   return [
-    `  <text class="layer-annotation" x="${a.x}" y="${a.y}" font-size="${fs}" fill="${escapeXml(fillColor)}" text-anchor="${anchor}" transform="${transform}"${styleAttrs}>`,
+    `  <text class="layer-annotation" x="${a.x}" y="${a.y}" font-size="${fs}" fill="${fillColor}" text-anchor="${anchor}" transform="${escapeXml(transform)}"${styleAttrs}>`,
     ...lines.map((line, index) => {
       const dy = index === 0 ? 0 : fs * 1.2;
       return `    <tspan x="${a.x}" dy="${dy}">${escapeXml(line)}</tspan>`;
@@ -220,7 +220,7 @@ function renderDimensionSvg(d: {
   const length = distance2D(d.start, d.end);
   const text = d.text ?? length.toFixed(0);
   const mid = { x: (s.x + e.x) / 2, y: (s.y + e.y) / 2 };
-  const color = d.color ?? '#7f8c8d';
+  const color = safePaint(d.color, '#7f8c8d');
   const lw = d.lineWeight ?? 15;
   const dash = lineTypeToDashArray(d.lineType);
   const dashAttr = dash ? ` stroke-dasharray="${dash}"` : '';
@@ -234,10 +234,10 @@ function renderDimensionSvg(d: {
 
   return [
     `  <g class="layer-dimension">`,
-    `    <line x1="${s.x}" y1="${s.y}" x2="${e.x}" y2="${e.y}" stroke="${color}" stroke-width="${lw}"${dashAttr}/>`,
+    `    <line x1="${s.x}" y1="${s.y}" x2="${e.x}" y2="${e.y}" stroke="${color}" stroke-width="${safeNumber(lw, 15)}"${dashAttr}/>`,
     `    <polygon points="${startArrow}" fill="${color}"/>`,
     `    <polygon points="${endArrow}" fill="${color}"/>`,
-    `    <text x="${mid.x}" y="${mid.y}" text-anchor="middle" dominant-baseline="central" font-size="${textSize}" fill="${color}" transform="translate(0,0) scale(1,-1) translate(0,${-2 * mid.y})">${text}</text>`,
+    `    <text x="${mid.x}" y="${mid.y}" text-anchor="middle" dominant-baseline="central" font-size="${textSize}" fill="${color}" transform="translate(0,0) scale(1,-1) translate(0,${-2 * mid.y})">${escapeXml(text)}</text>`,
     `  </g>`,
   ].join('\n');
 }
@@ -332,5 +332,40 @@ function catmullRomToSvgPath(pts: { x: number; y: number }[]): string {
 }
 
 function escapeXml(s: string): string {
-  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  return s
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&apos;');
+}
+
+/** Restrict paint values to local CSS colors; URLs/variables are never emitted. */
+function safePaint(value: string | undefined, fallback: string): string {
+  if (!value) return fallback;
+  const candidate = value.trim();
+  const simple = /^(?:#[0-9a-f]{3,8}|[a-z]+)$/i;
+  const functional = /^(?:rgb|rgba|hsl|hsla)\([0-9.,%+\-\s]+\)$/i;
+  return simple.test(candidate) || functional.test(candidate) ? candidate : fallback;
+}
+
+function safeFontFamily(value: string): string {
+  const normalized = [...value]
+    .filter((character) => {
+      const codePoint = character.codePointAt(0) ?? 0;
+      return codePoint >= 32 && codePoint !== 127;
+    })
+    .join('')
+    .trim()
+    .slice(0, 128);
+  return normalized && !/[<>"'();{}\\]/.test(normalized) ? normalized : 'sans-serif';
+}
+
+function sanitizeSvgId(value: string): string {
+  const sanitized = value.replace(/[^A-Za-z0-9_.:-]/g, '_').slice(0, 96);
+  return sanitized || 'viewport';
+}
+
+function safeNumber(value: number, fallback: number): number {
+  return Number.isFinite(value) ? value : fallback;
 }

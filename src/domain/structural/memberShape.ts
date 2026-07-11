@@ -2,6 +2,7 @@ import type { Point2D } from '@/domain/geometry/types';
 import type { Member, Section } from './types';
 import {
   columnAxisOffsetToWorld,
+  effectiveLinearAxisOffset,
   linearAxisOffsetToWorld,
   slabAxisOffsetToWorld,
 } from './eccentricity';
@@ -18,6 +19,9 @@ export interface RectSize {
 }
 
 export function getColumnRectSize(section: Section | undefined): RectSize {
+  if (section?.kind === 's_pipe') {
+    return { width: section.diameter, depth: section.diameter };
+  }
   return {
     width: section && 'width' in section ? section.width : DEFAULT_COLUMN_WIDTH,
     depth: section && 'depth' in section ? section.depth : DEFAULT_COLUMN_DEPTH,
@@ -25,6 +29,9 @@ export function getColumnRectSize(section: Section | undefined): RectSize {
 }
 
 export function getBeamRectSize(section: Section | undefined): RectSize {
+  if (section?.kind === 's_pipe') {
+    return { width: section.diameter, depth: section.diameter };
+  }
   return {
     width: section && 'width' in section ? section.width : DEFAULT_BEAM_WIDTH,
     depth: section && 'depth' in section ? section.depth : DEFAULT_BEAM_DEPTH,
@@ -63,7 +70,7 @@ export function getMemberPlanPolygon(
         { x: member.start.x, y: member.start.y },
         { x: member.end.x, y: member.end.y },
         width,
-        member.axisOffset,
+        effectiveLinearAxisOffset(member, width),
       );
     }
     case 'wall':
@@ -71,7 +78,7 @@ export function getMemberPlanPolygon(
         { x: member.start.x, y: member.start.y },
         { x: member.end.x, y: member.end.y },
         getWallThickness(member, section),
-        member.axisOffset,
+        effectiveLinearAxisOffset(member, getWallThickness(member, section)),
       );
     case 'slab': {
       const offset = slabAxisOffsetToWorld(member.axisOffset);

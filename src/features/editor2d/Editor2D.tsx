@@ -1,5 +1,6 @@
 import { useEffect, useCallback, useRef, useState } from 'react';
 import { isCreationTool, useProjectStore, useEditorStore } from '@/app/store';
+import type { LayerName } from '@/app/store';
 import type { Point2D } from '@/domain/geometry/types';
 import { SvgCanvas } from './SvgCanvas';
 import { GridLayer } from './layers/GridLayer';
@@ -19,6 +20,8 @@ import { SelectionHandles } from './SelectionHandles';
 import { getAllEntityBounds, getSelectionBounds } from '@/domain/structural/editTransform';
 import { ConstructionLineLayer } from './layers/ConstructionLineLayer';
 import { ExternalRefLayer } from './layers/ExternalRefLayer';
+import { OpeningLayer } from './layers/OpeningLayer';
+import { isEntityLayerInteractive } from '@/domain/rendering/layerLock';
 
 export function Editor2D() {
   const data = useProjectStore((s) => s.data);
@@ -76,6 +79,13 @@ export function Editor2D() {
   // ESC to cancel drawing or deselect
   const handleKeyDown = useCallback(
     (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement;
+      if (
+        document.documentElement.dataset.modalOpen === 'true' ||
+        target.isContentEditable
+      ) {
+        return;
+      }
       if (e.key === 'Escape') {
         if (hasActiveDrawing) {
           resetDrawing();
@@ -85,7 +95,6 @@ export function Editor2D() {
         }
       }
       if (e.key === 'Enter') {
-        const target = e.target as HTMLElement;
         if (
           target.tagName === 'INPUT' ||
           target.tagName === 'TEXTAREA' ||
@@ -99,18 +108,29 @@ export function Editor2D() {
         }
       }
       if (e.key === 'Delete' || e.key === 'Backspace') {
-        const target = e.target as HTMLElement;
-        if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA') return;
-        const ids = useEditorStore.getState().selectedIds;
-        for (const id of ids) {
-          useProjectStore.getState().deleteById(id);
-        }
-        useEditorStore.getState().setSelectedIds([]);
+        if (
+          target.tagName === 'INPUT' ||
+          target.tagName === 'TEXTAREA' ||
+          target.tagName === 'SELECT'
+        ) return;
+        const project = useProjectStore.getState().data;
+        const editor = useEditorStore.getState();
+        const ids = project
+          ? editor.selectedIds.filter((id) =>
+              isEntityLayerInteractive(
+                project,
+                id,
+                editor.layerLocked,
+                editor.layerVisibility,
+              ),
+            )
+          : [];
+        useProjectStore.getState().deleteEntities(ids);
+        editor.setSelectedIds([]);
       }
 
       // Z = Zoom extents, Shift+Z = Zoom to selection
       if ((e.key === 'z' || e.key === 'Z') && !e.ctrlKey && !e.metaKey && !e.altKey) {
-        const target = e.target as HTMLElement;
         if (
           target.tagName === 'INPUT' ||
           target.tagName === 'TEXTAREA' ||
@@ -158,17 +178,22 @@ export function Editor2D() {
   const filteredConstructionLines = (data.constructionLines ?? []).filter(
     (cl) => !activeStory || cl.story === activeStory,
   );
+  const visibleMemberIds = new Set(filteredMembers.map((member) => member.id));
+  const filteredOpenings = data.openings.filter((opening) => visibleMemberIds.has(opening.memberId));
 
-  const isVisible = (layer: string) => layerVisibility[layer] !== false;
+  const isVisible = (layer: LayerName) => layerVisibility[layer] !== false;
 
   // Determine if a drawing tool is active (for coord input bar)
-  const isDrawingTool = isCreationTool(activeTool);
+  const isDrawingTool = isCreationTool(activeTool) && activeTool !== 'opening';
 
   // Last point for coordinate input (relative coordinates)
   const lastPoint =
     drawState.points.length > 0 ? drawState.points[drawState.points.length - 1] : null;
   const guidePointCount =
-    activeTool === 'extend' && drawState.extendMemberId ? 1 : drawState.points.length;
+    (activeTool === 'extend' && drawState.extendMemberId) ||
+    (activeTool === 'fillet' && drawState.filletWallId)
+      ? 1
+      : drawState.points.length;
 
   // Selection rectangle overlay (in screen coordinates)
   let selectionRectOverlay: React.ReactNode = null;
@@ -221,12 +246,22 @@ export function Editor2D() {
           isVisible('member-beam') ||
           isVisible('member-column') ? (
             <MemberLayer
-              members={filteredMembers.filter((m) => isVisible(`member-${m.type}`))}
+              members={filteredMembers.filter((m) =>
+                isVisible(`member-${m.type}` as LayerName),
+              )}
               sections={data.sections}
               selectedIds={selectedIds}
               muted={isDrawingTool && drawInputAssist}
             />
           ) : null}
+          {isVisible('opening') && (
+            <OpeningLayer
+              openings={filteredOpenings}
+              members={filteredMembers}
+              selectedIds={selectedIds}
+              interactive={activeTool !== 'opening'}
+            />
+          )}
           {isVisible('dimension') && (
             <DimensionLayer dimensions={filteredDimensions} selectedIds={selectedIds} />
           )}

@@ -12,16 +12,28 @@ import type { StepEntity, StepValue } from './types';
  * found, preserving prior behaviour.
  */
 export function resolveLengthUnitScale(entities: Map<number, StepEntity>): number {
+  return resolveLengthUnit(entities).scale;
+}
+
+export interface IfcLengthUnitResolution {
+  scale: number;
+  status: 'resolved' | 'missing' | 'unsupported';
+}
+
+/** Resolve both scale and provenance so callers can surface unsafe assumptions. */
+export function resolveLengthUnit(
+  entities: Map<number, StepEntity>,
+): IfcLengthUnitResolution {
   const assignment = [...entities.values()].find((e) => e.type === 'IFCUNITASSIGNMENT');
-  if (!assignment) return 1;
+  if (!assignment) return { scale: 1, status: 'missing' };
 
   for (const unitRef of asRefList(assignment.args[0])) {
     const unit = entities.get(unitRef);
     if (!unit) continue;
     const scale = unitToMm(unit, entities);
-    if (scale !== null) return scale;
+    if (scale !== null) return { scale, status: 'resolved' };
   }
-  return 1;
+  return { scale: 1, status: 'unsupported' };
 }
 
 /** Returns the mm-scale for a single length unit, or null if it isn't a length unit. */
@@ -33,7 +45,8 @@ function unitToMm(unit: StepEntity, entities: Map<number, StepEntity>): number |
     const name = enumValue(unit.args[3]);
     if (name !== 'METRE') return null; // only METRE is a length SI unit
     const prefix = enumValue(unit.args[2]);
-    return SI_PREFIX_TO_METRE_FACTOR(prefix) * 1000; // metre → mm
+    const prefixFactor = SI_PREFIX_TO_METRE_FACTOR(prefix);
+    return prefixFactor === null ? null : prefixFactor * 1000; // metre → mm
   }
 
   if (unit.type === 'IFCCONVERSIONBASEDUNIT') {
@@ -56,7 +69,7 @@ function unitToMm(unit: StepEntity, entities: Map<number, StepEntity>): number |
 }
 
 /** Map an SI prefix enum (.MILLI., .CENTI., …) to a factor relative to metre. */
-function SI_PREFIX_TO_METRE_FACTOR(prefix: string | null): number {
+function SI_PREFIX_TO_METRE_FACTOR(prefix: string | null): number | null {
   switch (prefix) {
     case 'MILLI': return 1e-3;
     case 'CENTI': return 1e-2;
@@ -70,7 +83,7 @@ function SI_PREFIX_TO_METRE_FACTOR(prefix: string | null): number {
     case undefined:
       return 1;
     default:
-      return 1;
+      return null;
   }
 }
 

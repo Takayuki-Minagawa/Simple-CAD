@@ -5,6 +5,8 @@ import { getSelectionBounds, type TransformAnchor } from '@/domain/structural/ed
 import { CheckboxField, NumberField, SectionTitle, SelectField } from './TransformDialogFields';
 import { formatValue, parseCount, parseNumber, type TransformMode } from './transformDialogModel';
 import { showAlert } from '@/app/browserDialogs';
+import { isEntityLayerInteractive } from '@/domain/rendering/layerLock';
+import { Modal } from '@/components/common/Modal';
 
 interface Props {
   onClose: () => void;
@@ -19,9 +21,17 @@ export function TransformDialog({ onClose }: Props) {
   const offsetEntities = useProjectStore((state) => state.offsetEntities);
   const mirrorEntities = useProjectStore((state) => state.mirrorEntities);
   const arrayEntities = useProjectStore((state) => state.arrayEntities);
-  const { selectedIds, setSelectedIds } = useEditorStore();
+  const selectedIds = useEditorStore((state) => state.selectedIds);
+  const setSelectedIds = useEditorStore((state) => state.setSelectedIds);
+  const layerLocked = useEditorStore((state) => state.layerLocked);
+  const layerVisibility = useEditorStore((state) => state.layerVisibility);
   const { t } = useI18n();
-  const bounds = data && selectedIds.length > 0 ? getSelectionBounds(data, selectedIds) : null;
+  const editableIds = data
+    ? selectedIds.filter((id) =>
+        isEntityLayerInteractive(data, id, layerLocked, layerVisibility),
+      )
+    : [];
+  const bounds = data && editableIds.length > 0 ? getSelectionBounds(data, editableIds) : null;
   const defaultOriginX = bounds ? formatValue(bounds.center.x) : '0';
   const defaultOriginY = bounds ? formatValue(bounds.center.y) : '0';
   const defaultTargetWidth = bounds ? formatValue(bounds.width) : '0';
@@ -50,11 +60,28 @@ export function TransformDialog({ onClose }: Props) {
   const [arrayRowSpacing, setArrayRowSpacing] = useState('3000');
   const [arrayColSpacing, setArrayColSpacing] = useState('3000');
 
-  if (!data || selectedIds.length === 0 || !bounds) return null;
+  if (!data || editableIds.length === 0 || !bounds) {
+    return (
+      <Modal
+        title={t.transformTitle}
+        onClose={onClose}
+        width={420}
+        footer={(
+          <button className="toolbar-btn" onClick={onClose}>
+            {t.exportCancel}
+          </button>
+        )}
+      >
+        <p style={{ margin: 0, color: 'var(--text-secondary)' }}>
+          {t.transformInvalidSelection}
+        </p>
+      </Modal>
+    );
+  }
 
   const labels = {
     title: t.transformTitle,
-    subtitle: t.transformSelected.replace('{count}', String(selectedIds.length)),
+    subtitle: t.transformSelected.replace('{count}', String(editableIds.length)),
     currentBounds: t.transformCurrentBounds
       .replace('{width}', formatValue(bounds.width))
       .replace('{height}', formatValue(bounds.height)),
@@ -115,7 +142,7 @@ export function TransformDialog({ onClose }: Props) {
         showAlert(labels.invalidNumber);
         return;
       }
-      translateEntities(selectedIds, nextDx, nextDy);
+      translateEntities(editableIds, nextDx, nextDy);
       onClose();
       return;
     }
@@ -132,7 +159,7 @@ export function TransformDialog({ onClose }: Props) {
         showAlert(labels.invalidCount);
         return;
       }
-      const createdIds = duplicateEntities(selectedIds, nextDx, nextDy, nextCount);
+      const createdIds = duplicateEntities(editableIds, nextDx, nextDy, nextCount);
       if (createdIds.length > 0) {
         setSelectedIds(createdIds);
       }
@@ -158,7 +185,7 @@ export function TransformDialog({ onClose }: Props) {
         showAlert(labels.invalidScale);
         return;
       }
-      scaleEntities(selectedIds, { x: nextOriginX, y: nextOriginY }, nextScaleX, nextScaleY);
+      scaleEntities(editableIds, { x: nextOriginX, y: nextOriginY }, nextScaleX, nextScaleY);
       onClose();
       return;
     }
@@ -182,7 +209,7 @@ export function TransformDialog({ onClose }: Props) {
         showAlert(labels.lockedHeight);
         return;
       }
-      stretchEntities(selectedIds, {
+      stretchEntities(editableIds, {
         targetWidth: nextTargetWidth,
         targetHeight: nextTargetHeight,
         anchorX,
@@ -198,7 +225,7 @@ export function TransformDialog({ onClose }: Props) {
         showAlert(labels.invalidNumber);
         return;
       }
-      const createdIds = offsetEntities(selectedIds, dist);
+      const createdIds = offsetEntities(editableIds, dist);
       if (createdIds.length > 0) {
         setSelectedIds(createdIds);
       }
@@ -229,7 +256,7 @@ export function TransformDialog({ onClose }: Props) {
           y: bounds.center.y + Math.sin(rad),
         };
       }
-      const createdIds = mirrorEntities(selectedIds, axisStart, axisEnd, mirrorCopy);
+      const createdIds = mirrorEntities(editableIds, axisStart, axisEnd, mirrorCopy);
       if (createdIds.length > 0) {
         setSelectedIds(createdIds);
       }
@@ -250,7 +277,7 @@ export function TransformDialog({ onClose }: Props) {
         showAlert(labels.invalidNumber);
         return;
       }
-      const createdIds = arrayEntities(selectedIds, {
+      const createdIds = arrayEntities(editableIds, {
         rows,
         columns: cols,
         rowSpacing,
@@ -275,46 +302,35 @@ export function TransformDialog({ onClose }: Props) {
   ];
 
   return (
-    <div
-      style={{
-        position: 'fixed',
-        inset: 0,
-        background: 'var(--bg-modal-overlay)',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        zIndex: 1000,
-      }}
-      onClick={onClose}
+    <Modal
+      title={labels.title}
+      onClose={onClose}
+      width={520}
+      footer={(
+        <>
+          <button
+            className="toolbar-btn"
+            style={{ background: 'var(--border-color)', color: 'var(--text-primary)' }}
+            onClick={onClose}
+          >
+            {labels.cancel}
+          </button>
+          <button
+            className="toolbar-btn"
+            style={{ background: 'var(--accent-hover)', color: '#fff' }}
+            onClick={handleApply}
+          >
+            {labels.apply}
+          </button>
+        </>
+      )}
     >
-      <div
-        style={{
-          background: 'var(--bg-modal)',
-          borderRadius: 8,
-          padding: 24,
-          width: 520,
-          maxWidth: 'min(520px, calc(100vw - 32px))',
-          boxShadow: '0 8px 32px rgba(0,0,0,0.2)',
-          color: 'var(--text-primary)',
-        }}
-        onClick={(event) => event.stopPropagation()}
-      >
-        <div
-          style={{
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'baseline',
-            gap: 12,
-            marginBottom: 8,
-          }}
-        >
-          <h3 style={{ margin: 0, fontSize: 16 }}>{labels.title}</h3>
-          <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{labels.subtitle}</div>
-        </div>
-
-        <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 16 }}>
-          {labels.currentBounds}
-        </div>
+      <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 8 }}>
+        {labels.subtitle}
+      </div>
+      <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 16 }}>
+        {labels.currentBounds}
+      </div>
 
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 16 }}>
           {allModes.map(([value, label]) => (
@@ -322,7 +338,7 @@ export function TransformDialog({ onClose }: Props) {
               key={value}
               className={`toolbar-btn ${mode === value ? 'active' : ''}`}
               style={{
-                background: mode === value ? 'var(--accent)' : 'var(--border-color)',
+                background: mode === value ? 'var(--accent-hover)' : 'var(--border-color)',
                 color: mode === value ? '#fff' : 'var(--text-primary)',
               }}
               onClick={() => setMode(value)}
@@ -458,23 +474,6 @@ export function TransformDialog({ onClose }: Props) {
           </div>
         )}
 
-        <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 20 }}>
-          <button
-            className="toolbar-btn"
-            style={{ background: 'var(--border-color)', color: 'var(--text-primary)' }}
-            onClick={onClose}
-          >
-            {labels.cancel}
-          </button>
-          <button
-            className="toolbar-btn"
-            style={{ background: 'var(--accent)', color: '#fff' }}
-            onClick={handleApply}
-          >
-            {labels.apply}
-          </button>
-        </div>
-      </div>
-    </div>
+    </Modal>
   );
 }

@@ -2,11 +2,19 @@ import { useEffect } from 'react';
 import { useProjectStore, useEditorStore } from '@/app/store';
 import { getToolForShortcutKey } from '@/app/toolMetadata';
 import { showPrompt } from './browserDialogs';
+import { isEntityLayerInteractive } from '@/domain/rendering/layerLock';
 
-export function useKeyboardShortcuts() {
+export function useKeyboardShortcuts(disabled = false) {
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement;
+      if (
+        disabled ||
+        document.documentElement.dataset.modalOpen === 'true' ||
+        target.isContentEditable
+      ) {
+        return;
+      }
       if (
         target.tagName === 'INPUT' ||
         target.tagName === 'TEXTAREA' ||
@@ -46,7 +54,18 @@ export function useKeyboardShortcuts() {
           case 'd':
             e.preventDefault();
             {
-              const ids = useEditorStore.getState().selectedIds;
+              const editor = useEditorStore.getState();
+              const data = useProjectStore.getState().data;
+              const ids = data
+                ? editor.selectedIds.filter((id) =>
+                    isEntityLayerInteractive(
+                      data,
+                      id,
+                      editor.layerLocked,
+                      editor.layerVisibility,
+                    ),
+                  )
+                : [];
               if (ids.length > 0) {
                 const createdIds = useProjectStore.getState().duplicateEntities(ids, 1000, 1000, 1);
                 useEditorStore.getState().setSelectedIds(createdIds);
@@ -56,11 +75,21 @@ export function useKeyboardShortcuts() {
           case 'g':
             e.preventDefault();
             {
-              const ids = useEditorStore.getState().selectedIds;
+              const editor = useEditorStore.getState();
+              const data = useProjectStore.getState().data;
+              const ids = data
+                ? editor.selectedIds.filter((id) =>
+                    isEntityLayerInteractive(
+                      data,
+                      id,
+                      editor.layerLocked,
+                      editor.layerVisibility,
+                    ),
+                  )
+                : [];
               if (ids.length === 0) return;
               if (e.shiftKey) {
                 // Ungroup: find group containing first selected id
-                const data = useProjectStore.getState().data;
                 if (data?.groups) {
                   const group = data.groups.find((g) => g.memberIds.includes(ids[0]));
                   if (group) useProjectStore.getState().ungroupSelection(group.id);
@@ -87,5 +116,5 @@ export function useKeyboardShortcuts() {
 
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, []);
+  }, [disabled]);
 }

@@ -50,6 +50,20 @@ describe('recomputeAssociativeDimensions', () => {
     expect(out.dimensions[0].start).toEqual({ x: 0, y: 0 });
   });
 
+  it('chooses distinct endpoints when both old points are nearest to one moved endpoint', () => {
+    const data = makeData();
+    data.members[0] = {
+      ...data.members[0],
+      start: { x: 10_000, y: 0, z: 0 },
+      end: { x: 15_000, y: 0, z: 0 },
+    } as never;
+
+    const out = recomputeAssociativeDimensions(data);
+
+    expect(out.dimensions[0].start).toEqual({ x: 10_000, y: 0 });
+    expect(out.dimensions[0].end).toEqual({ x: 15_000, y: 0 });
+  });
+
   it('leaves non-associative dimensions untouched (same reference)', () => {
     const data = makeData({
       dimensions: [

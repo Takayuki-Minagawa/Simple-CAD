@@ -14,6 +14,9 @@ describe('gridIntersection', () => {
     expect(gridIntersection(grids, 'X2', 'Y2')).toEqual({ x: 6000, y: 4000 });
     expect(gridIntersection(grids, 'Y2', 'X2')).toEqual({ x: 6000, y: 4000 });
   });
+  it('resolves stable grid IDs as well as names', () => {
+    expect(gridIntersection(grids, 'gx2', 'gy2')).toEqual({ x: 6000, y: 4000 });
+  });
   it('returns null for unknown or same-axis names', () => {
     expect(gridIntersection(grids, 'X1', 'X2')).toBeNull();
     expect(gridIntersection(grids, 'X1', 'ZZ')).toBeNull();
@@ -59,6 +62,21 @@ describe('applyGridGeometry', () => {
     const out = applyGridGeometry(moved);
     const b = out.members[0];
     expect(b.type === 'beam' && b.end?.x).toBe(8000);
+  });
+
+  it('re-resolves member endpoints referenced by grid IDs', () => {
+    const byId = {
+      ...base,
+      members: [
+        {
+          ...base.members[0],
+          gridRef: { startGrid: ['gx1', 'gy1'], endGrid: ['gx2', 'gy2'] },
+        },
+      ],
+    } as ProjectData;
+    const out = applyGridGeometry(byId);
+    const beam = out.members[0];
+    expect(beam.type === 'beam' && beam.end).toMatchObject({ x: 6000, y: 4000, z: 0 });
   });
 
   it('returns the same reference when no member has a gridRef', () => {

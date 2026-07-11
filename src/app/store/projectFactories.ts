@@ -1,5 +1,6 @@
 import type { ProjectData, PlanView, Sheet } from '@/domain/structural/types';
 import { todayIsoDate } from '@/domain/time';
+import { generateProjectId } from '@/domain/projectIdentity';
 
 export function createDefaultPlanView(storyId: string): PlanView {
   return {
@@ -39,7 +40,7 @@ export function createEmptyProject(): ProjectData {
   const defaultView = createDefaultPlanView(defaultStoryId);
   return {
     schemaVersion: '1.0.0',
-    project: { id: 'proj-001', name: 'New Project', unit: 'mm' },
+    project: { id: generateProjectId(), name: 'New Project', unit: 'mm' },
     stories: [{ id: defaultStoryId, name: defaultStoryId, elevation: 0, height: 3000 }],
     grids: [],
     materials: [{ id: 'MAT-RC-24', name: 'RC Fc24', type: 'concrete' }],

@@ -81,6 +81,8 @@ export interface Translations {
   propFillColor: string;
   propFillOpacity: string;
   propRotation: string;
+  propMixed: string;
+  propApply: string;
 
   // Status bar
   statusZoom: string;
@@ -187,6 +189,7 @@ export interface Translations {
   transformInvalidScale: string;
   transformInvalidCount: string;
   transformInvalidStretch: string;
+  transformInvalidSelection: string;
   transformLockedWidth: string;
   transformLockedHeight: string;
   transformOffset: string;

@@ -1,4 +1,4 @@
-# Structural Web CAD v1.0.0
+# Structural Web CAD
 
 [![Deploy to GitHub Pages](https://github.com/Takayuki-Minagawa/Simple-CAD/actions/workflows/deploy.yml/badge.svg)](https://github.com/Takayuki-Minagawa/Simple-CAD/actions/workflows/deploy.yml)
 
@@ -15,12 +15,16 @@
 |------|------|
 | **2D 作図** | SVG ベースの平面図。柱・梁・壁・スラブ・寸法線・注記を作図・編集。線種（実線/破線/点線/一点鎖線/二点鎖線）・線太さ・色をエンティティ単位で設定可 |
 | **3D ビュー** | Three.js による確認用 3D 表示。Orbit 操作 / 投影切替 / ワイヤーフレーム / 断面表示（clip / slice / section box） |
+| **解析モデル / 結果** | 支持条件、節点・部材・面荷重、荷重組合せ、質量、剛床、材端リリースを編集。解析結果の変形図・検定比マップを 3D 表示 |
+| **構造マスタ** | concrete / steel / wood の種別別物性、材料プリセット、JIS H形鋼ライブラリ、RC配筋・かぶり、荷重ケースを編集 |
 | **JSON 正本** | すべてのデータを JSON で管理。JSON Schema 2020-12 による自動バリデーション |
 | **エクスポート** | SVG / PDF（複数シート一括） / DXF / IFC / 構造計算 JSON へ出力 |
 | **インポート** | JSON / IFC / 構造計算 JSON 読み込み / DXF 取込（注記 + 形状→部材変換） |
+| **安全な取込** | Web Worker で解析し、件数・警告・推定単位を確認してから反映。取込全体を1回の Undo で取消可能 |
 | **変形ツール** | 移動・複写・縮尺・オフセット・ミラー・配列複写・パラメトリック変形 |
 | **編集ツール** | トリム・延長・フィレット・頂点編集・グループ化 |
 | **Undo / Redo** | 全編集操作の履歴管理 |
+| **自動保存 / 復元** | IndexedDB に未保存作業、最近のプロジェクト、表示設定を保存。異常終了後の復元に対応 |
 | **スナップ** | グリッド・端点・中点・垂直・最近点スナップ |
 | **選択** | クリック / Shift 複数選択 / 矩形選択（窓/交差） |
 | **座標入力** | 絶対 (`x,y`) / 相対 (`@dx,dy`) / 極座標 (`@dist<angle`) |
@@ -38,7 +42,7 @@
 | **外部参照** | 他の JSON プロジェクトを読取専用グレー表示で参照配置（Xref） |
 | **ビューポート** | シート内に複数ビューを独立配置。各ビューポートに独自の縮尺・表示範囲 |
 | **図面テンプレート** | A1構造 / A3詳細 / 空白A1 プリセットから新規プロジェクト作成 |
-| **完全オフライン** | サーバー・データベース不要。ブラウザだけで動作 |
+| **PWA / オフライン** | インストール可能な PWA。初回起動時に遅延読込ビュー・Workerを含む生成アセットをキャッシュ |
 
 ---
 
@@ -46,7 +50,7 @@
 
 ### 必要環境
 
-- Node.js 20 以上
+- Node.js 20.19 以上、または 22.12 以上
 - npm 9 以上
 
 ### ローカル起動
@@ -73,6 +77,9 @@ npm run build
 ```bash
 npm run test          # 一回実行
 npm run test:watch    # ウォッチモード
+npm run test:coverage # カバレッジ付きユニットテスト
+npm run test:e2e      # Playwright スモーク + axe アクセシビリティ検査
+npm run check         # lint / typecheck / coverage / build / bundle budget
 ```
 
 ---
@@ -86,7 +93,7 @@ npm run test:watch    # ウォッチモード
 3. **描画** メニューから描画ツール（柱 / 梁 / 壁 / スラブ / 寸法 / 注記）を選んで部材を追加
 4. **選択** ツールでオブジェクトを選択 → 右パネルでプロパティ（色・線種・線太さ・テキスト配置・回転等）を編集
 5. **編集 → 変形** で選択要素に移動 / 複写 / 縮尺 / パラメトリック変形を数値指定で適用
-6. **ツール → マスタ** で materials / sections / sheets / タイトルブロックを編集
+6. **ツール → マスタ** で階・シートの追加/削除/並替、materials / sections / タイトルブロック、構造解析条件を編集
 7. **ファイル → IFC取込 / DXF取込** で外部ファイルを取り込み（JSON Open は構造計算 JSON も自動判別）
 8. **表示 → 2D / 3D** で表示モードを切り替え（3D では clip / slice / section box で断面表示）
 9. **ファイル → 出力** で SVG / PDF / DXF / IFC / 構造計算 JSON に出力
@@ -134,9 +141,9 @@ npm run test:watch    # ウォッチモード
 | DXF 出力 | DXF ASCII 直接生成 |
 | DXF 取込 | 自作パーサー (LINE / LWPOLYLINE / POLYLINE / CIRCLE / ARC / TEXT / MTEXT / SPLINE / HATCH / ELLIPSE / DIMENSION)。形状→構造部材変換対応 |
 | IFC 連携 | 自作 IFC4 基本サブセットパーサー / ライター（STEP Part 21 形式） |
-| 構造計算 JSON | 独自スキーマ (`simple-cad.structural-analysis/v1`) による節点モデル入出力 |
-| テスト | [Vitest](https://vitest.dev/) |
-| CI/CD | GitHub Actions → GitHub Pages |
+| 構造計算 JSON | 独自スキーマ (`simple-cad.structural-analysis/v1`) による節点・境界条件・荷重・結果の双方向入出力 |
+| テスト | [Vitest](https://vitest.dev/) + [Playwright](https://playwright.dev/) + axe-core |
+| CI/CD | GitHub Actions（lint / typecheck / coverage / audit / E2E / bundle budget）→ GitHub Pages |
 
 ---
 
@@ -188,7 +195,15 @@ npm run build
   "dimensions": [],
   "sheets": [],
   "views": [],
-  "issues": []
+  "issues": [],
+  "loadCases": [],
+  "supports": [],
+  "nodalLoads": [],
+  "memberLoads": [],
+  "areaLoads": [],
+  "loadCombinations": [],
+  "masses": [],
+  "diaphragms": []
 }
 ```
 
@@ -209,8 +224,23 @@ npm run build
 | `rc_beam_rect` | RC 矩形梁 | `width`, `depth` |
 | `rc_slab` | RC スラブ | `thickness` |
 | `rc_wall` | RC 壁 | `thickness` |
+| `s_column_h` | 鉄骨 H 形柱 | `width`, `depth`, `tw`, `tf` |
+| `s_beam_h` | 鉄骨 H 形梁 | `width`, `depth`, `tw`, `tf` |
+| `s_pipe` | 鉄骨鋼管 | `diameter`, `thickness` |
+
+H形鋼はマスタ画面の JIS H形鋼ライブラリから代表寸法を選択して、梁用または柱用の断面として追加できます。ライブラリは形状寸法を提供し、強度・許容値は選択した材料または外部解析システムで管理します。
+
+### 材料タイプ（materials）
+
+材料は `type` による判別形式で、異なる材料種別の強度値は混在できません。共通物性は `elasticModulus`, `shearModulus`, `poissonRatio`, `unitWeight`、種別固有値は concrete の `Fc`、steel の `F` / `Fy`、wood の基準強度・含水率・曲げ/圧縮/せん断許容応力度です。
 
 サンプルデータ: [`src/samples/sample-project.json`](src/samples/sample-project.json)
+
+### 構造解析データ
+
+マスタ画面で支持条件、節点/部材/面荷重、荷重組合せ、集中質量、剛床を編集できます。部材には材端リリース、剛域長、ローカル軸定義を設定でき、すべて構造計算 JSON へ出力されます。
+
+`analysisResults` を含む構造計算 JSON を読み込むと、3D ビューで変形倍率を調整した変形図、検定比カラー、部材応力プローブを確認できます。本アプリ自体は解析ソルバーを内蔵していません。
 
 ---
 

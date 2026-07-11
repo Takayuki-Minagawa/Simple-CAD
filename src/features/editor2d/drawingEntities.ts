@@ -5,6 +5,8 @@ import type {
   ColumnMember,
   ConstructionLine,
   Dimension,
+  Member,
+  Opening,
   ProjectData,
   SlabMember,
   Story,
@@ -108,6 +110,41 @@ export function createDimensionFromPoints(
     start: { x: points[0].x, y: points[0].y },
     end: { x: points[1].x, y: points[1].y },
     offset: -1000,
+  };
+}
+
+export function createOpeningAt(
+  member: Member,
+  pos: Point2D,
+  usedIds: Set<string>,
+): Opening | null {
+  if (member.type !== 'wall' && member.type !== 'slab') return null;
+  let position = pos;
+  if (member.type === 'wall') {
+    const dx = member.end.x - member.start.x;
+    const dy = member.end.y - member.start.y;
+    const lengthSquared = dx * dx + dy * dy;
+    if (lengthSquared === 0) return null;
+    const t = Math.max(
+      0,
+      Math.min(
+        1,
+        ((pos.x - member.start.x) * dx + (pos.y - member.start.y) * dy) / lengthSquared,
+      ),
+    );
+    position = { x: member.start.x + dx * t, y: member.start.y + dy * t };
+  }
+  return {
+    id: generateId('opening', usedIds),
+    memberId: member.id,
+    type: member.type === 'wall' ? 'window' : 'void',
+    position: {
+      x: position.x,
+      y: position.y,
+      z: member.type === 'wall' ? member.start.z + 900 : member.level,
+    },
+    width: 1000,
+    height: member.type === 'wall' ? 1200 : 1000,
   };
 }
 

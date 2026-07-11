@@ -1,18 +1,35 @@
 import type { Point3D } from '@/domain/geometry/types';
 import type {
+  AnalysisResultsMetadata,
+  AreaLoad,
+  Diaphragm,
   Grid,
   LoadCase,
+  LoadCombination,
+  LumpedMass,
   Material,
   Member,
+  MemberLoad,
+  NodalLoad,
   ProjectData,
   Section,
   Story,
+  StructuralSupport,
 } from '@/domain/structural/types';
 import { validateProject } from '@/domain/validation';
 import type { ValidationError } from '@/domain/validation';
-import { pointKey3D } from '@/domain/geometry/precision';
+import {
+  JOINT_MERGE_TOLERANCE,
+  SpatialPointIndex3D,
+  quantizePoint3D,
+} from '@/domain/geometry/precision';
+import { validateGeometry, validateReferences } from '@/domain/validation';
+import { normalizeProjectCoordinates } from '@/domain/geometry/projectCoordinates';
 import { createDefaultSheets, createDefaultViews } from '@/domain/structural/projectDefaults';
 import { nowIsoString } from '@/domain/time';
+import { migrateLegacyMaterials } from '@/domain/migration';
+import { effectiveLinearAxisOffset } from '@/domain/structural/eccentricity';
+import { getBeamRectSize, getWallThickness } from '@/domain/structural/memberShape';
 import {
   computeStructuralAnalysisLoads,
   type StructuralAnalysisLoads,
@@ -54,12 +71,15 @@ export interface StructuralAnalysisLinearMember {
   rotation?: number;
   tags?: string[];
   /**
-   * Axis-line eccentricity in member-local coordinates (mm), passed through so
-   * the analysis model can offset the member axis from the drawn centreline
-   * (2-6). Only emitted when the source member declares an offset, so members
-   * without eccentricity stay byte-identical to before.
+   * Effective axis-line eccentricity in member-local coordinates (mm). For
+   * beams and walls this includes Simple-CAD's face-alignment shift. Baking it
+   * into the existing v1 field preserves compatibility with v1 consumers and
+   * preserves physical placement when imported again.
    */
   axisOffset?: { dx: number; dy: number };
+  releases?: Member['releases'];
+  rigidZones?: Member['rigidZones'];
+  localAxis?: Member['localAxis'];
 }
 
 export interface StructuralAnalysisAreaMember {
@@ -83,6 +103,22 @@ export interface StructuralAnalysisOpening {
   height: number;
 }
 
+export interface StructuralAnalysisSupport extends Omit<StructuralSupport, 'position'> {
+  nodeId: string;
+}
+
+export interface StructuralAnalysisNodalLoad extends Omit<NodalLoad, 'position'> {
+  nodeId: string;
+}
+
+export interface StructuralAnalysisLumpedMass extends Omit<LumpedMass, 'position'> {
+  nodeId: string;
+}
+
+export interface StructuralAnalysisDiaphragm extends Omit<Diaphragm, 'masterPosition'> {
+  masterNodeId?: string;
+}
+
 export interface StructuralAnalysisModel {
   schema: typeof STRUCTURAL_ANALYSIS_SCHEMA;
   meta: StructuralAnalysisMeta;
@@ -104,6 +140,14 @@ export interface StructuralAnalysisModel {
    * additive: omitted entirely when nothing could be derived.
    */
   loads?: StructuralAnalysisLoads;
+  supports?: StructuralAnalysisSupport[];
+  nodalLoads?: StructuralAnalysisNodalLoad[];
+  memberLoads?: MemberLoad[];
+  areaLoads?: AreaLoad[];
+  loadCombinations?: LoadCombination[];
+  masses?: StructuralAnalysisLumpedMass[];
+  diaphragms?: StructuralAnalysisDiaphragm[];
+  analysisResults?: AnalysisResultsMetadata;
   /**
    * Non-fatal warnings raised while exporting (e.g. a missing section that was
    * substituted with a fallback dimension). Surfaced so callers don't silently
@@ -114,29 +158,34 @@ export interface StructuralAnalysisModel {
 
 export function exportStructuralAnalysisModel(data: ProjectData): StructuralAnalysisModel {
   const nodes: StructuralAnalysisNode[] = [];
-  const nodeIds = new Map<string, string>();
+  const nodeIndex = new SpatialPointIndex3D<string>(JOINT_MERGE_TOLERANCE);
   const warnings: string[] = [];
   const sectionMap = new Map(data.sections.map((s) => [s.id, s] as const));
   const materialMap = new Map(data.materials.map((m) => [m.id, m] as const));
+  const storyIds = new Set(data.stories.map((story) => story.id));
 
   // Tolerance-quantized node key so near-coincident nodes merge into one
   // analysis node instead of splitting the model (B3 / 2-4).
   const ensureNode = (point: Point3D, storyId?: string) => {
-    const key = pointKey3D(point);
-    const existing = nodeIds.get(key);
+    const normalized = quantizePoint3D(point);
+    const existing = nodeIndex.find(normalized);
     if (existing) return existing;
 
     const id = `N-${String(nodes.length + 1).padStart(4, '0')}`;
     nodes.push({
       id,
-      x: point.x,
-      y: point.y,
-      z: point.z,
+      x: normalized.x,
+      y: normalized.y,
+      z: normalized.z,
       storyId,
     });
-    nodeIds.set(key, id);
+    nodeIndex.insert(normalized, id);
     return id;
   };
+
+  for (const issue of [...validateReferences(data).errors, ...validateGeometry(data).errors]) {
+    warnings.push(`Export validation: ${issue.message}`);
+  }
 
   const linearMembers: StructuralAnalysisLinearMember[] = [];
   const areaMembers: StructuralAnalysisAreaMember[] = [];
@@ -149,17 +198,37 @@ export function exportStructuralAnalysisModel(data: ProjectData): StructuralAnal
       warnings.push(
         `部材 ${member.id} (${member.type}) が参照する断面 ${member.sectionId} が見つかりません`,
       );
+      continue;
+    }
+    const section = sectionMap.get(member.sectionId)!;
+    if (!isCompatibleSection(member, section)) {
+      warnings.push(`部材 ${member.id} (${member.type}) と断面種別 ${section.kind} が互換でないためスキップしました`);
+      continue;
+    }
+    if (!materialMap.has(member.materialId)) {
+      warnings.push(`部材 ${member.id} が参照する材料 ${member.materialId} が見つからないためスキップしました`);
+      continue;
+    }
+    if (!storyIds.has(member.story)) {
+      warnings.push(`部材 ${member.id} が参照する階 ${member.story} が見つからないためスキップしました`);
+      continue;
     }
     if (member.type === 'slab') {
+      const nodeIds = member.polygon.map((point) =>
+        ensureNode({ x: point.x, y: point.y, z: member.level }, member.story),
+      );
+      const uniqueNodeIds = [...new Set(nodeIds)];
+      if (uniqueNodeIds.length < 3) {
+        warnings.push(`スラブ ${member.id} は統合後の有効節点が3未満のためスキップしました`);
+        continue;
+      }
       areaMembers.push({
         id: member.id,
         type: 'slab',
         storyId: member.story,
         sectionId: member.sectionId,
         materialId: member.materialId,
-        nodeIds: member.polygon.map((point) =>
-          ensureNode({ x: point.x, y: point.y, z: member.level }, member.story),
-        ),
+        nodeIds: uniqueNodeIds,
         level: member.level,
         rotation: member.rotation,
         tags: member.tags,
@@ -167,25 +236,87 @@ export function exportStructuralAnalysisModel(data: ProjectData): StructuralAnal
       continue;
     }
 
+    const startNodeId = ensureNode(member.start, member.story);
+    const endNodeId = ensureNode(member.end, member.story);
+    if (startNodeId === endNodeId) {
+      warnings.push(`部材 ${member.id} は節点統合許容差 ${JOINT_MERGE_TOLERANCE}mm 内で長さ0となるためスキップしました`);
+      continue;
+    }
+    const effectiveAxisOffset =
+      member.type === 'column'
+        ? member.axisOffset
+        : effectiveLinearAxisOffset(
+            member,
+            member.type === 'beam'
+              ? getBeamRectSize(section).width
+              : getWallThickness(member, section),
+          );
     linearMembers.push({
       id: member.id,
       type: member.type,
       storyId: member.story,
       sectionId: member.sectionId,
       materialId: member.materialId,
-      startNodeId: ensureNode(member.start, member.story),
-      endNodeId: ensureNode(member.end, member.story),
+      startNodeId,
+      endNodeId,
       height: member.type === 'wall' ? member.height : undefined,
       thickness: member.type === 'wall' ? member.thickness : undefined,
       rotation: member.rotation,
       tags: member.tags,
-      // Pass member-local eccentricity through only when present so members
-      // without an offset stay byte-identical to the previous output (2-6).
-      ...(member.axisOffset ? { axisOffset: member.axisOffset } : {}),
+      // Structural-analysis v1 already defines axisOffset. Bake face alignment
+      // into that field rather than adding v1-incompatible properties.
+      ...(effectiveAxisOffset ? { axisOffset: effectiveAxisOffset } : {}),
+      ...(member.releases ? { releases: member.releases } : {}),
+      ...(member.rigidZones ? { rigidZones: member.rigidZones } : {}),
+      ...(member.localAxis ? { localAxis: member.localAxis } : {}),
     });
   }
 
-  const loads = computeStructuralAnalysisLoads(data, materialMap);
+  const exportedLinearIds = new Set(linearMembers.map((member) => member.id));
+  const exportedAreaIds = new Set(areaMembers.map((member) => member.id));
+  const exportedMemberIds = new Set([...exportedLinearIds, ...exportedAreaIds]);
+  const loadCaseIds = new Set((data.loadCases ?? []).map((loadCase) => loadCase.id));
+  const loadsRaw = computeStructuralAnalysisLoads(data, materialMap);
+  const loads = loadsRaw
+    ? {
+        selfWeight: loadsRaw.selfWeight.filter((load) => exportedMemberIds.has(load.memberId)),
+        areaLoads: loadsRaw.areaLoads.filter((load) => exportedAreaIds.has(load.memberId)),
+      }
+    : undefined;
+  const supports = data.supports
+    ?.filter((support) => storyIds.has(support.storyId))
+    .map(({ position, ...support }) => ({
+      ...support,
+      nodeId: ensureNode(position, support.storyId),
+    }));
+  const nodalLoads = data.nodalLoads
+    ?.filter((load) => storyIds.has(load.storyId) && loadCaseIds.has(load.loadCaseId))
+    .map(({ position, ...load }) => ({
+      ...load,
+      nodeId: ensureNode(position, load.storyId),
+    }));
+  const masses = data.masses
+    ?.filter((mass) => storyIds.has(mass.storyId))
+    .map(({ position, ...mass }) => ({
+      ...mass,
+      nodeId: ensureNode(position, mass.storyId),
+    }));
+  const diaphragms = data.diaphragms
+    ?.filter((diaphragm) => storyIds.has(diaphragm.storyId))
+    .map(({ masterPosition, ...diaphragm }) => ({
+      ...diaphragm,
+      memberIds: diaphragm.memberIds?.filter((memberId) => exportedMemberIds.has(memberId)),
+      ...(masterPosition
+        ? { masterNodeId: ensureNode(masterPosition, diaphragm.storyId) }
+        : {}),
+    }));
+  const openings = data.openings.filter((opening) => exportedMemberIds.has(opening.memberId));
+  const memberLoads = data.memberLoads?.filter(
+    (load) => exportedLinearIds.has(load.memberId) && loadCaseIds.has(load.loadCaseId),
+  );
+  const areaLoads = data.areaLoads?.filter(
+    (load) => exportedAreaIds.has(load.memberId) && loadCaseIds.has(load.loadCaseId),
+  );
 
   return {
     schema: STRUCTURAL_ANALYSIS_SCHEMA,
@@ -203,15 +334,38 @@ export function exportStructuralAnalysisModel(data: ProjectData): StructuralAnal
     nodes,
     linearMembers,
     areaMembers,
-    openings: data.openings,
+    openings,
     ...(data.loadCases && data.loadCases.length > 0 ? { loadCases: data.loadCases } : {}),
-    ...(loads ? { loads } : {}),
+    ...(loads && (loads.selfWeight.length > 0 || loads.areaLoads.length > 0) ? { loads } : {}),
+    ...(supports && supports.length > 0 ? { supports } : {}),
+    ...(nodalLoads && nodalLoads.length > 0 ? { nodalLoads } : {}),
+    ...(memberLoads && memberLoads.length > 0 ? { memberLoads } : {}),
+    ...(areaLoads && areaLoads.length > 0 ? { areaLoads } : {}),
+    ...(data.loadCombinations && data.loadCombinations.length > 0
+      ? { loadCombinations: data.loadCombinations }
+      : {}),
+    ...(masses && masses.length > 0 ? { masses } : {}),
+    ...(diaphragms && diaphragms.length > 0 ? { diaphragms } : {}),
+    ...(data.analysisResults ? { analysisResults: data.analysisResults } : {}),
     ...(warnings.length > 0 ? { warnings } : {}),
   };
 }
 
 export function exportStructuralAnalysisJson(data: ProjectData): string {
   return JSON.stringify(exportStructuralAnalysisModel(data), null, 2);
+}
+
+function isCompatibleSection(member: Member, section: Section): boolean {
+  switch (member.type) {
+    case 'column':
+      return ['rc_column_rect', 's_column_h', 's_pipe'].includes(section.kind);
+    case 'beam':
+      return ['rc_beam_rect', 's_beam_h', 's_pipe'].includes(section.kind);
+    case 'wall':
+      return section.kind === 'rc_wall';
+    case 'slab':
+      return section.kind === 'rc_slab';
+  }
 }
 
 export function importStructuralAnalysisJson(
@@ -227,6 +381,9 @@ export function importStructuralAnalysisJson(
     };
   }
 
+  // Structural-analysis v1 predates the discriminated material schema. Apply
+  // the same pure compatibility pass as project JSON before strict validation.
+  parsed = migrateLegacyMaterials(parsed);
   const validationErrors = validateStructuralAnalysisModel(parsed, STRUCTURAL_ANALYSIS_SCHEMA);
   if (validationErrors.length > 0) {
     return { ok: false, errors: validationErrors };
@@ -252,7 +409,7 @@ function structuralAnalysisModelToProject(model: StructuralAnalysisModel): {
   const nodeMap = new Map(model.nodes.map((node) => [node.id, node]));
   const storyMap = new Map(model.stories.map((story) => [story.id, story]));
   const sectionMap = new Map(model.sections.map((section) => [section.id, section]));
-  const warnings: string[] = [];
+  const warnings: string[] = [...(model.warnings ?? [])];
 
   const members: Member[] = [];
 
@@ -297,6 +454,9 @@ function structuralAnalysisModelToProject(model: StructuralAnalysisModel): {
         rotation: member.rotation,
         tags: member.tags,
         ...(member.axisOffset ? { axisOffset: member.axisOffset } : {}),
+        ...(member.releases ? { releases: member.releases } : {}),
+        ...(member.rigidZones ? { rigidZones: member.rigidZones } : {}),
+        ...(member.localAxis ? { localAxis: member.localAxis } : {}),
       });
       continue;
     }
@@ -312,6 +472,9 @@ function structuralAnalysisModelToProject(model: StructuralAnalysisModel): {
       rotation: member.rotation,
       tags: member.tags,
       ...(member.axisOffset ? { axisOffset: member.axisOffset } : {}),
+      ...(member.releases ? { releases: member.releases } : {}),
+      ...(member.rigidZones ? { rigidZones: member.rigidZones } : {}),
+      ...(member.localAxis ? { localAxis: member.localAxis } : {}),
     });
   }
 
@@ -366,7 +529,53 @@ function structuralAnalysisModelToProject(model: StructuralAnalysisModel): {
     sheets,
     issues: warnings.map((message) => ({ level: 'warning' as const, message })),
     ...(model.loadCases && model.loadCases.length > 0 ? { loadCases: model.loadCases } : {}),
+    ...(model.supports && model.supports.length > 0
+      ? {
+          supports: model.supports.flatMap(({ nodeId, ...support }) => {
+            const node = nodeMap.get(nodeId);
+            if (!node) return [];
+            return [{ ...support, position: { x: node.x, y: node.y, z: node.z } }];
+          }),
+        }
+      : {}),
+    ...(model.nodalLoads && model.nodalLoads.length > 0
+      ? {
+          nodalLoads: model.nodalLoads.flatMap(({ nodeId, ...load }) => {
+            const node = nodeMap.get(nodeId);
+            if (!node) return [];
+            return [{ ...load, position: { x: node.x, y: node.y, z: node.z } }];
+          }),
+        }
+      : {}),
+    ...(model.memberLoads && model.memberLoads.length > 0
+      ? { memberLoads: model.memberLoads }
+      : {}),
+    ...(model.areaLoads && model.areaLoads.length > 0 ? { areaLoads: model.areaLoads } : {}),
+    ...(model.loadCombinations && model.loadCombinations.length > 0
+      ? { loadCombinations: model.loadCombinations }
+      : {}),
+    ...(model.masses && model.masses.length > 0
+      ? {
+          masses: model.masses.flatMap(({ nodeId, ...mass }) => {
+            const node = nodeMap.get(nodeId);
+            if (!node) return [];
+            return [{ ...mass, position: { x: node.x, y: node.y, z: node.z } }];
+          }),
+        }
+      : {}),
+    ...(model.diaphragms && model.diaphragms.length > 0
+      ? {
+          diaphragms: model.diaphragms.map(({ masterNodeId, ...diaphragm }) => {
+            const node = masterNodeId ? nodeMap.get(masterNodeId) : undefined;
+            return {
+              ...diaphragm,
+              ...(node ? { masterPosition: { x: node.x, y: node.y, z: node.z } } : {}),
+            };
+          }),
+        }
+      : {}),
+    ...(model.analysisResults ? { analysisResults: model.analysisResults } : {}),
   };
 
-  return { project, warnings };
+  return { project: normalizeProjectCoordinates(project), warnings };
 }

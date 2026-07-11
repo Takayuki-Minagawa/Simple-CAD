@@ -30,6 +30,79 @@ export interface MigrationStep {
  */
 export const MIGRATIONS: MigrationStep[] = [];
 
+const MATERIAL_FAMILY_FIELDS = [
+  'Fc',
+  'F',
+  'Fy',
+  'referenceStrength',
+  'moistureContent',
+  'allowableBendingStress',
+  'allowableCompressionStress',
+  'allowableShearStress',
+] as const;
+
+const MATERIAL_FIELDS_BY_TYPE: Record<string, ReadonlySet<string>> = {
+  concrete: new Set(['Fc']),
+  steel: new Set(['F', 'Fy']),
+  wood: new Set([
+    'referenceStrength',
+    'moistureContent',
+    'allowableBendingStress',
+    'allowableCompressionStress',
+    'allowableShearStress',
+  ]),
+  other: new Set(),
+};
+
+const LEGACY_MAX_POISSON_RATIO = 0.499999;
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
+function sanitizeMaterial(material: unknown): void {
+  if (!isRecord(material) || typeof material.type !== 'string') return;
+  const allowedFamilyFields = MATERIAL_FIELDS_BY_TYPE[material.type];
+  if (!allowedFamilyFields) return;
+
+  // Version 1.0 allowed all legacy strength keys on every material. A type
+  // change therefore commonly left fields from the previous family behind.
+  for (const field of MATERIAL_FAMILY_FIELDS) {
+    if (!allowedFamilyFields.has(field)) delete material[field];
+  }
+
+  // Version 1.0 also allowed the incompressible limit itself. Keep legacy
+  // documents loadable while moving the value just inside the current domain.
+  if (material.poissonRatio === 0.5) {
+    material.poissonRatio = LEGACY_MAX_POISSON_RATIO;
+  }
+}
+
+function sanitizeProjectMaterialContainers(container: Record<string, unknown>): void {
+  if (Array.isArray(container.materials)) {
+    container.materials.forEach(sanitizeMaterial);
+  }
+
+  if (!Array.isArray(container.externalRefs)) return;
+  for (const reference of container.externalRefs) {
+    if (!isRecord(reference) || !isRecord(reference.data)) continue;
+    sanitizeProjectMaterialContainers(reference.data);
+  }
+}
+
+/**
+ * Remove fields that were legal in version 1.0 documents but conflict with
+ * the current discriminated material schema. This compatibility pass is
+ * intentionally independent of schemaVersion because the legacy and current
+ * document shapes share the same public version number.
+ */
+export function migrateLegacyMaterials<T>(data: T): T {
+  if (!isRecord(data)) return data;
+  const migrated = structuredClone(data) as T;
+  sanitizeProjectMaterialContainers(migrated as Record<string, unknown>);
+  return migrated;
+}
+
 function getVersion(data: unknown): string {
   if (data && typeof data === 'object' && 'schemaVersion' in data) {
     const v = (data as { schemaVersion?: unknown }).schemaVersion;
@@ -50,7 +123,7 @@ function getVersion(data: unknown): string {
 export function migrate(data: unknown): ProjectData {
   if (!data || typeof data !== 'object') return data as ProjectData;
 
-  let current = data as Record<string, unknown>;
+  let current = migrateLegacyMaterials(data) as Record<string, unknown>;
   let version = getVersion(current);
 
   // Apply steps until we reach the current version or no step applies.

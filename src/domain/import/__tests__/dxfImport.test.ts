@@ -73,11 +73,13 @@ ENDSEC
 EOF`;
 
 describe('importDxf', () => {
-  it('supports mtext, spline, hatch, and ellipse entities', () => {
+  it('imports mtext and explicitly warns when curve/fill entities are skipped', () => {
     const result = importDxf(SAMPLE_DXF, '1F');
 
     expect(result.primitiveCount).toBe(4);
-    expect(result.warnings).toHaveLength(0);
+    for (const type of ['SPLINE', 'HATCH', 'ELLIPSE']) {
+      expect(result.warnings.some((warning) => warning.includes(type))).toBe(true);
+    }
     expect(result.annotations).toHaveLength(1);
     expect(result.annotations[0]).toMatchObject({
       story: '1F',
@@ -118,6 +120,209 @@ describe('importDxf', () => {
     const sections = getAutoSections(result);
     expect(sections.length).toBeGreaterThanOrEqual(1);
     expect(sections.some((s) => s.kind === 'rc_wall')).toBe(true);
+  });
+
+  it('scales source coordinates but keeps mm-based defaults unchanged for metre drawings', () => {
+    const dxf = [
+      '0', 'SECTION', '2', 'HEADER',
+      '9', '$INSUNITS', '70', '6',
+      '0', 'ENDSEC',
+      '0', 'SECTION', '2', 'ENTITIES',
+      '0', 'LINE', '8', 'WALL',
+      '10', '0', '20', '0', '11', '5', '21', '0',
+      '0', 'ENDSEC', '0', 'EOF',
+    ].join('\n');
+
+    const result = importDxf(dxf, '1F', { convertGeometry: true });
+    const wall = result.members[0];
+    expect(wall.type).toBe('wall');
+    if (wall.type !== 'wall') return;
+
+    expect(wall.end.x).toBe(5000);
+    expect(wall.thickness).toBe(200);
+    expect(wall.height).toBe(3000);
+    expect(result.autoSections).toContainEqual({
+      id: 'SEC-DXF-WALL-200',
+      kind: 'rc_wall',
+      thickness: 200,
+    });
+  });
+
+  it('warns for every unsupported ARC/SPLINE/HATCH/ELLIPSE entity', () => {
+    const entity = (type: string) => [
+      '0', type, '8', 'CURVE', '10', '0', '20', '0', '11', '10', '21', '10',
+    ];
+    const dxf = [
+      '0', 'SECTION', '2', 'ENTITIES',
+      ...entity('ARC'),
+      ...entity('SPLINE'),
+      ...entity('HATCH'),
+      ...entity('ELLIPSE'),
+      '0', 'ENDSEC', '0', 'EOF',
+    ].join('\n');
+    const result = importDxf(dxf, '1F');
+
+    expect(result.primitiveCount).toBe(4);
+    for (const type of ['ARC', 'SPLINE', 'HATCH', 'ELLIPSE']) {
+      expect(result.warnings.filter((warning) => warning.includes(type))).toHaveLength(1);
+    }
+  });
+
+  it('infers units from coordinate ranges rather than absolute world offsets', () => {
+    const dxf = [
+      '0', 'SECTION', '2', 'ENTITIES',
+      '0', 'LINE', '8', 'WALL',
+      '10', '1000000000', '20', '-1000000000',
+      '11', '1000000005', '21', '-1000000000',
+      '0', 'ENDSEC', '0', 'EOF',
+    ].join('\n');
+    const result = importDxf(dxf, '1F', { convertGeometry: true });
+    const wall = result.members[0];
+    expect(wall.type).toBe('wall');
+    if (wall.type !== 'wall') return;
+    expect(wall.end.x - wall.start.x).toBeCloseTo(5000, 6);
+    expect(result.warnings.some((warning) => warning.includes('メートル'))).toBe(true);
+  });
+
+  it('uses $MEASUREMENT=0 as an imperial hint when INSUNITS is absent', () => {
+    const dxf = [
+      '0', 'SECTION', '2', 'HEADER',
+      '9', '$MEASUREMENT', '70', '0',
+      '0', 'ENDSEC',
+      '0', 'SECTION', '2', 'ENTITIES',
+      '0', 'LINE', '8', 'WALL', '10', '0', '20', '0', '11', '10', '21', '0',
+      '0', 'ENDSEC', '0', 'EOF',
+    ].join('\n');
+    const result = importDxf(dxf, '1F', { convertGeometry: true });
+    const wall = result.members[0];
+    expect(wall.type).toBe('wall');
+    if (wall.type !== 'wall') return;
+    expect(wall.end.x).toBeCloseTo(254, 8);
+    expect(result.warnings.some((warning) => warning.includes('インチ'))).toBe(true);
+  });
+
+  it('skips non-finite text positions and falls back for invalid text height', () => {
+    const dxf = [
+      '0', 'SECTION', '2', 'ENTITIES',
+      '0', 'TEXT', '8', 'NOTES', '10', 'NaN', '20', '100', '40', '250', '1', 'skip',
+      '0', 'TEXT', '8', 'NOTES', '10', '10', '20', '20', '40', 'NaN', '1', 'keep',
+      '0', 'ENDSEC', '0', 'EOF',
+    ].join('\n');
+    const result = importDxf(dxf, '1F');
+
+    expect(result.annotations).toHaveLength(1);
+    expect(result.annotations[0]).toMatchObject({ text: 'keep', fontSize: 250 });
+    expect(result.warnings.some((warning) => warning.includes('有限座標'))).toBe(true);
+    expect(result.warnings.some((warning) => warning.includes('文字高さ'))).toBe(true);
+  });
+
+  it('accepts an explicit 250mm text height without a fallback warning', () => {
+    const dxf = [
+      '0', 'SECTION', '2', 'ENTITIES',
+      '0', 'TEXT', '8', 'NOTES', '10', '10', '20', '20', '40', '250', '1', 'note',
+      '0', 'ENDSEC', '0', 'EOF',
+    ].join('\n');
+    const result = importDxf(dxf, '1F');
+
+    expect(result.annotations[0]).toMatchObject({ text: 'note', fontSize: 250 });
+    expect(result.warnings.some((warning) => warning.includes('文字高さ'))).toBe(false);
+  });
+
+  it('warns when LINE geometry is placed on COLUMN or SLAB layers', () => {
+    const dxf = [
+      '0', 'SECTION', '2', 'ENTITIES',
+      '0', 'LINE', '8', 'COLUMN', '10', '0', '20', '0', '11', '1000', '21', '0',
+      '0', 'LINE', '8', 'SLAB', '10', '0', '20', '1000', '11', '1000', '21', '1000',
+      '0', 'ENDSEC', '0', 'EOF',
+    ].join('\n');
+    const result = importDxf(dxf, '1F', { convertGeometry: true });
+
+    expect(result.members).toEqual([]);
+    expect(result.warnings.some((warning) => warning.includes('COLUMN'))).toBe(true);
+    expect(result.warnings.some((warning) => warning.includes('SLAB'))).toBe(true);
+  });
+
+  it('rounds noisy wall outline thicknesses to stable section dimensions', () => {
+    const dxf = [
+      '0', 'SECTION', '2', 'ENTITIES',
+      '0', 'LWPOLYLINE', '8', 'WALL', '70', '1',
+      '10', '0', '20', '0',
+      '10', '5000', '20', '0',
+      '10', '5000', '20', '200.00000036',
+      '10', '0', '20', '200.00000036',
+      '0', 'ENDSEC', '0', 'EOF',
+    ].join('\n');
+    const result = importDxf(dxf, '1F', { convertGeometry: true, unitScale: 1 });
+
+    expect(result.members[0]).toMatchObject({ type: 'wall', thickness: 200 });
+    expect(result.autoSections).toContainEqual({
+      id: 'SEC-DXF-WALL-200',
+      kind: 'rc_wall',
+      thickness: 200,
+    });
+  });
+
+  it('rejects malformed releases and rigid-zone values from member metadata', () => {
+    const maliciousPayload =
+      '{"id":"B-MALFORMED","releases":{"start":{"rz":true,"custom":false}},"rigidZones":{"start":1e309}}';
+    const metadata = `SIMPLECAD_MEMBER:${encodeURIComponent(maliciousPayload)}`;
+    const dxf = [
+      '0', 'SECTION', '2', 'ENTITIES',
+      '0', 'LWPOLYLINE', '8', 'BEAM', '70', '1',
+      '10', '0', '20', '0',
+      '10', '5000', '20', '0',
+      '10', '5000', '20', '300',
+      '10', '0', '20', '300',
+      '999', metadata,
+      '0', 'ENDSEC', '0', 'EOF',
+    ].join('\n');
+    const result = importDxf(dxf, '1F', { convertGeometry: true, unitScale: 1 });
+
+    expect(result.members[0]).toMatchObject({ id: 'B-MALFORMED', type: 'beam' });
+    expect(result.members[0].releases).toBeUndefined();
+    expect(result.members[0].rigidZones).toBeUndefined();
+  });
+
+  it('does not turn GRID, DIMENSION, or CONSTRUCTION lines into walls', () => {
+    const dxf = [
+      '0', 'SECTION', '2', 'HEADER',
+      '9', '$INSUNITS', '70', '4',
+      '0', 'ENDSEC',
+      '0', 'SECTION', '2', 'ENTITIES',
+      '0', 'LINE', '8', 'GRID', '10', '1000', '20', '-1000', '11', '1000', '21', '5000',
+      '0', 'LINE', '8', 'DIMENSION', '10', '0', '20', '0', '11', '5000', '21', '0',
+      '0', 'LINE', '8', 'CONSTRUCTION', '10', '0', '20', '0', '11', '1000', '21', '0',
+      '0', 'ENDSEC', '0', 'EOF',
+    ].join('\n');
+
+    const result = importDxf(dxf, '1F', { convertGeometry: true });
+    expect(result.members).toEqual([]);
+    expect(result.grids).toHaveLength(1);
+    expect(result.grids[0]).toMatchObject({ axis: 'X', position: 1000 });
+    expect(result.constructionLines).toHaveLength(1);
+  });
+
+  it('uses member layers to reconstruct wall, beam and slab polylines', () => {
+    const rectangle = (layer: string, x: number, y: number, width: number, depth: number) => [
+      '0', 'LWPOLYLINE', '8', layer, '70', '1',
+      '10', String(x), '20', String(y),
+      '10', String(x + width), '20', String(y),
+      '10', String(x + width), '20', String(y + depth),
+      '10', String(x), '20', String(y + depth),
+    ];
+    const dxf = [
+      '0', 'SECTION', '2', 'HEADER', '9', '$INSUNITS', '70', '4', '0', 'ENDSEC',
+      '0', 'SECTION', '2', 'ENTITIES',
+      ...rectangle('WALL', 0, 0, 5000, 200),
+      ...rectangle('BEAM', 0, 1000, 5000, 300),
+      ...rectangle('SLAB', 0, 2000, 5000, 4000),
+      '0', 'ENDSEC', '0', 'EOF',
+    ].join('\n');
+
+    const result = importDxf(dxf, '1F', { convertGeometry: true });
+    expect(result.members.map((member) => member.type)).toEqual(['wall', 'beam', 'slab']);
+    const wall = result.members[0];
+    expect(wall.type === 'wall' && wall.thickness).toBe(200);
   });
 
   it('converts a closed rectangular LWPOLYLINE (squarish) to a column member', () => {

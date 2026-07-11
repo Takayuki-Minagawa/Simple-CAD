@@ -46,6 +46,15 @@ export function duplicateStoryInProject(data: ProjectData, sourceId: string, sto
   const dimensionIds = new Set(data.dimensions.map((item) => item.id));
   const viewIds = new Set(data.views.map((item) => item.id));
   const sheetIds = new Set(data.sheets.map((item) => item.id));
+  const viewportIds = new Set(
+    data.sheets.flatMap((item) => item.viewports?.map((viewport) => viewport.id) ?? []),
+  );
+  const supportIds = new Set(data.supports?.map((item) => item.id) ?? []);
+  const nodalLoadIds = new Set(data.nodalLoads?.map((item) => item.id) ?? []);
+  const memberLoadIds = new Set(data.memberLoads?.map((item) => item.id) ?? []);
+  const areaLoadIds = new Set(data.areaLoads?.map((item) => item.id) ?? []);
+  const massIds = new Set(data.masses?.map((item) => item.id) ?? []);
+  const diaphragmIds = new Set(data.diaphragms?.map((item) => item.id) ?? []);
 
   const memberIdMap = new Map<string, string>();
   for (const member of data.members.filter((item) => item.story === sourceId)) {
@@ -74,6 +83,89 @@ export function duplicateStoryInProject(data: ProjectData, sourceId: string, sto
     data.openings.push(clone);
   }
 
+  if (data.supports) {
+    for (const support of data.supports.filter((item) => item.storyId === sourceId)) {
+      const clone = deepClone(support);
+      clone.id = ensureUniqueId(
+        supportIds,
+        replaceStoryScopedText(support.id, sourceId, nextStoryId),
+      );
+      supportIds.add(clone.id);
+      clone.storyId = nextStoryId;
+      clone.position.z += elevationDelta;
+      data.supports.push(clone);
+    }
+  }
+
+  if (data.nodalLoads) {
+    for (const load of data.nodalLoads.filter((item) => item.storyId === sourceId)) {
+      const clone = deepClone(load);
+      clone.id = ensureUniqueId(
+        nodalLoadIds,
+        replaceStoryScopedText(load.id, sourceId, nextStoryId),
+      );
+      nodalLoadIds.add(clone.id);
+      clone.storyId = nextStoryId;
+      clone.position.z += elevationDelta;
+      data.nodalLoads.push(clone);
+    }
+  }
+
+  if (data.memberLoads) {
+    for (const load of data.memberLoads.filter((item) => memberIdMap.has(item.memberId))) {
+      const clone = deepClone(load);
+      clone.id = ensureUniqueId(
+        memberLoadIds,
+        replaceStoryScopedText(load.id, sourceId, nextStoryId),
+      );
+      memberLoadIds.add(clone.id);
+      clone.memberId = memberIdMap.get(load.memberId) ?? load.memberId;
+      data.memberLoads.push(clone);
+    }
+  }
+
+  if (data.areaLoads) {
+    for (const load of data.areaLoads.filter((item) => memberIdMap.has(item.memberId))) {
+      const clone = deepClone(load);
+      clone.id = ensureUniqueId(
+        areaLoadIds,
+        replaceStoryScopedText(load.id, sourceId, nextStoryId),
+      );
+      areaLoadIds.add(clone.id);
+      clone.memberId = memberIdMap.get(load.memberId) ?? load.memberId;
+      data.areaLoads.push(clone);
+    }
+  }
+
+  if (data.masses) {
+    for (const mass of data.masses.filter((item) => item.storyId === sourceId)) {
+      const clone = deepClone(mass);
+      clone.id = ensureUniqueId(
+        massIds,
+        replaceStoryScopedText(mass.id, sourceId, nextStoryId),
+      );
+      massIds.add(clone.id);
+      clone.storyId = nextStoryId;
+      clone.position.z += elevationDelta;
+      data.masses.push(clone);
+    }
+  }
+
+  if (data.diaphragms) {
+    for (const diaphragm of data.diaphragms.filter((item) => item.storyId === sourceId)) {
+      const clone = deepClone(diaphragm);
+      clone.id = ensureUniqueId(
+        diaphragmIds,
+        replaceStoryScopedText(diaphragm.id, sourceId, nextStoryId),
+      );
+      diaphragmIds.add(clone.id);
+      clone.storyId = nextStoryId;
+      clone.memberIds = clone.memberIds?.map((memberId) => memberIdMap.get(memberId) ?? memberId);
+      if (clone.masterPosition) clone.masterPosition.z += elevationDelta;
+      data.diaphragms.push(clone);
+    }
+  }
+
   for (const annotation of data.annotations.filter((item) => item.story === sourceId)) {
     const clone = deepClone(annotation);
     const preferredId = replaceStoryScopedText(annotation.id, sourceId, nextStoryId);
@@ -89,6 +181,11 @@ export function duplicateStoryInProject(data: ProjectData, sourceId: string, sto
     clone.id = ensureUniqueId(dimensionIds, preferredId);
     dimensionIds.add(clone.id);
     clone.story = nextStoryId;
+    if (clone.refMemberIds) {
+      clone.refMemberIds = clone.refMemberIds.map(
+        (memberId) => memberIdMap.get(memberId) ?? memberId,
+      );
+    }
     data.dimensions.push(clone);
   }
 
@@ -103,13 +200,34 @@ export function duplicateStoryInProject(data: ProjectData, sourceId: string, sto
     data.views.push(clone);
   }
 
-  for (const sheet of data.sheets.filter((item) => item.viewIds.some((viewId) => viewIdMap.has(viewId)))) {
+  for (const sheet of data.sheets.filter(
+    (item) =>
+      item.viewIds.some((viewId) => viewIdMap.has(viewId)) ||
+      item.viewports?.some((viewport) => viewIdMap.has(viewport.viewId)),
+  )) {
     const clone = deepClone(sheet);
     const preferredId = replaceStoryScopedText(sheet.id, sourceId, nextStoryId);
     clone.id = ensureUniqueId(sheetIds, preferredId);
     sheetIds.add(clone.id);
     clone.name = replaceStoryLabel(sheet.name, sourceStory.name, nextStory.name);
     clone.viewIds = sheet.viewIds.map((viewId) => viewIdMap.get(viewId) ?? viewId);
+    if (clone.viewports) {
+      clone.viewports = clone.viewports.map((viewport) => {
+        const preferredViewportId = replaceStoryScopedText(
+          viewport.id,
+          sourceId,
+          nextStoryId,
+        );
+        const viewportId = ensureUniqueId(viewportIds, preferredViewportId);
+        viewportIds.add(viewportId);
+        return {
+          ...viewport,
+          id: viewportId,
+          sheetId: clone.id,
+          viewId: viewIdMap.get(viewport.viewId) ?? viewport.viewId,
+        };
+      });
+    }
     if (clone.titleBlock) {
       clone.titleBlock.drawingTitle = replaceStoryLabel(
         clone.titleBlock.drawingTitle ?? clone.name,

@@ -32,6 +32,15 @@ export interface RoundtripDiff {
     expectedMembers: number;
     actualMembers: number;
     matchedMembers: number;
+    expectedOpenings: number;
+    actualOpenings: number;
+    matchedOpenings: number;
+    expectedGrids: number;
+    actualGrids: number;
+    matchedGrids: number;
+    expectedMaterials: number;
+    actualMaterials: number;
+    matchedMaterials: number;
   };
 }
 
@@ -142,6 +151,15 @@ export function diffProjects(
     }
   }
 
+  const matchedOpenings = compareOpenings(expected, actual, tol, differences);
+  // IFC does not require grids. Compare them when both sides expose grid data;
+  // this still exercises analysis JSON and layer-aware DXF round-trips.
+  const compareGridData = expected.grids.length > 0 && actual.grids.length > 0;
+  const matchedGrids = compareGridData
+    ? compareGrids(expected, actual, tol, differences)
+    : 0;
+  const matchedMaterials = compareMaterials(expected, actual, tol, differences);
+
   return {
     ok: differences.length === 0,
     differences,
@@ -149,8 +167,132 @@ export function diffProjects(
       expectedMembers: expMetrics.length,
       actualMembers: actMetrics.length,
       matchedMembers: matched,
+      expectedOpenings: expected.openings.length,
+      actualOpenings: actual.openings.length,
+      matchedOpenings,
+      expectedGrids: expected.grids.length,
+      actualGrids: actual.grids.length,
+      matchedGrids,
+      expectedMaterials: expected.materials.length,
+      actualMaterials: actual.materials.length,
+      matchedMaterials,
     },
   };
+}
+
+function compareOpenings(
+  expected: ProjectData,
+  actual: ProjectData,
+  tolerance: RoundtripTolerance,
+  differences: string[],
+): number {
+  if (expected.openings.length !== actual.openings.length) {
+    differences.push(
+      `opening count: expected ${expected.openings.length}, got ${actual.openings.length}`,
+    );
+  }
+  let matched = 0;
+  for (const opening of expected.openings) {
+    const candidate = actual.openings.find((item) => item.id === opening.id);
+    if (!candidate) {
+      differences.push(`opening ${opening.id} is missing`);
+      continue;
+    }
+    matched++;
+    const positionDelta = Math.hypot(
+      candidate.position.x - opening.position.x,
+      candidate.position.y - opening.position.y,
+      candidate.position.z - opening.position.z,
+    );
+    if (positionDelta > tolerance.coord) {
+      differences.push(`opening ${opening.id} position differs by ${positionDelta.toFixed(3)}mm`);
+    }
+    if (
+      Math.abs(candidate.width - opening.width) > tolerance.coord ||
+      Math.abs(candidate.height - opening.height) > tolerance.coord
+    ) {
+      differences.push(`opening ${opening.id} dimensions differ`);
+    }
+    if (candidate.memberId !== opening.memberId || candidate.type !== opening.type) {
+      differences.push(`opening ${opening.id} host/type differs`);
+    }
+  }
+  return matched;
+}
+
+function compareGrids(
+  expected: ProjectData,
+  actual: ProjectData,
+  tolerance: RoundtripTolerance,
+  differences: string[],
+): number {
+  if (expected.grids.length !== actual.grids.length) {
+    differences.push(`grid count: expected ${expected.grids.length}, got ${actual.grids.length}`);
+  }
+  const used = new Set<number>();
+  let matched = 0;
+  for (const grid of expected.grids) {
+    const index = actual.grids.findIndex(
+      (candidate, candidateIndex) =>
+        !used.has(candidateIndex) &&
+        candidate.axis === grid.axis &&
+        Math.abs(candidate.position - grid.position) <= tolerance.coord,
+    );
+    if (index < 0) {
+      differences.push(`grid ${grid.name} (${grid.axis}@${grid.position}) is missing`);
+      continue;
+    }
+    used.add(index);
+    matched++;
+  }
+  return matched;
+}
+
+function compareMaterials(
+  expected: ProjectData,
+  actual: ProjectData,
+  tolerance: RoundtripTolerance,
+  differences: string[],
+): number {
+  if (expected.materials.length !== actual.materials.length) {
+    differences.push(
+      `material count: expected ${expected.materials.length}, got ${actual.materials.length}`,
+    );
+  }
+  let matched = 0;
+  for (const material of expected.materials) {
+    const candidate = actual.materials.find((item) => item.id === material.id);
+    if (!candidate) {
+      differences.push(`material ${material.id} is missing`);
+      continue;
+    }
+    matched++;
+    if (candidate.name !== material.name || candidate.type !== material.type) {
+      differences.push(`material ${material.id} identity differs`);
+    }
+    for (const property of [
+      'elasticModulus',
+      'shearModulus',
+      'poissonRatio',
+      'unitWeight',
+      'Fc',
+      'F',
+      'Fy',
+      'referenceStrength',
+      'moistureContent',
+      'allowableBendingStress',
+      'allowableCompressionStress',
+      'allowableShearStress',
+    ] as const) {
+      const left = material[property];
+      const right = candidate[property];
+      if (left === undefined && right === undefined) continue;
+      if (left === undefined || right === undefined || Math.abs(left - right) > tolerance.coord) {
+        differences.push(`material ${material.id} ${property} differs`);
+      }
+    }
+  }
+  return matched;
 }
 
 /** Average nearest-point distance between two equal-size sorted point sets. */

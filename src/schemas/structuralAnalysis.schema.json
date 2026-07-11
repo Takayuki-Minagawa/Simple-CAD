@@ -27,8 +27,16 @@
     "linearMembers": { "type": "array", "items": { "$ref": "#/$defs/LinearMember" } },
     "areaMembers": { "type": "array", "items": { "$ref": "#/$defs/AreaMember" } },
     "openings": { "type": "array", "items": { "$ref": "#/$defs/Opening" } },
-    "loadCases": { "type": "array", "items": { "type": "object" } },
+    "loadCases": { "type": "array", "items": { "$ref": "#/$defs/LoadCase" } },
     "loads": { "type": "object" },
+    "supports": { "type": "array", "items": { "$ref": "#/$defs/Support" } },
+    "nodalLoads": { "type": "array", "items": { "$ref": "#/$defs/NodalLoad" } },
+    "memberLoads": { "type": "array", "items": { "$ref": "#/$defs/MemberLoad" } },
+    "areaLoads": { "type": "array", "items": { "$ref": "#/$defs/AreaLoad" } },
+    "loadCombinations": { "type": "array", "items": { "$ref": "#/$defs/LoadCombination" } },
+    "masses": { "type": "array", "items": { "$ref": "#/$defs/LumpedMass" } },
+    "diaphragms": { "type": "array", "items": { "$ref": "#/$defs/Diaphragm" } },
+    "analysisResults": { "$ref": "#/$defs/AnalysisResultsMetadata" },
     "warnings": { "type": "array", "items": { "type": "string" } }
   },
   "$defs": {
@@ -69,14 +77,72 @@
       }
     },
     "Material": {
-      "type": "object",
-      "required": ["id", "name", "type"],
-      "additionalProperties": true,
-      "properties": {
-        "id": { "type": "string", "minLength": 1 },
-        "name": { "type": "string" },
-        "type": { "type": "string", "enum": ["concrete", "steel", "wood", "other"] }
-      }
+      "oneOf": [
+        {
+          "type": "object",
+          "required": ["id", "name", "type"],
+          "additionalProperties": false,
+          "properties": {
+            "id": { "type": "string", "minLength": 1 },
+            "name": { "type": "string" },
+            "type": { "const": "concrete" },
+            "elasticModulus": { "type": "number", "exclusiveMinimum": 0 },
+            "shearModulus": { "type": "number", "exclusiveMinimum": 0 },
+            "poissonRatio": { "type": "number", "minimum": 0, "exclusiveMaximum": 0.5 },
+            "unitWeight": { "type": "number", "minimum": 0 },
+            "Fc": { "type": "number", "exclusiveMinimum": 0 }
+          }
+        },
+        {
+          "type": "object",
+          "required": ["id", "name", "type"],
+          "additionalProperties": false,
+          "properties": {
+            "id": { "type": "string", "minLength": 1 },
+            "name": { "type": "string" },
+            "type": { "const": "steel" },
+            "elasticModulus": { "type": "number", "exclusiveMinimum": 0 },
+            "shearModulus": { "type": "number", "exclusiveMinimum": 0 },
+            "poissonRatio": { "type": "number", "minimum": 0, "exclusiveMaximum": 0.5 },
+            "unitWeight": { "type": "number", "minimum": 0 },
+            "F": { "type": "number", "exclusiveMinimum": 0 },
+            "Fy": { "type": "number", "exclusiveMinimum": 0 }
+          }
+        },
+        {
+          "type": "object",
+          "required": ["id", "name", "type"],
+          "additionalProperties": false,
+          "properties": {
+            "id": { "type": "string", "minLength": 1 },
+            "name": { "type": "string" },
+            "type": { "const": "wood" },
+            "elasticModulus": { "type": "number", "exclusiveMinimum": 0 },
+            "shearModulus": { "type": "number", "exclusiveMinimum": 0 },
+            "poissonRatio": { "type": "number", "minimum": 0, "exclusiveMaximum": 0.5 },
+            "unitWeight": { "type": "number", "minimum": 0 },
+            "referenceStrength": { "type": "number", "exclusiveMinimum": 0 },
+            "moistureContent": { "type": "number", "minimum": 0, "maximum": 100 },
+            "allowableBendingStress": { "type": "number", "exclusiveMinimum": 0 },
+            "allowableCompressionStress": { "type": "number", "exclusiveMinimum": 0 },
+            "allowableShearStress": { "type": "number", "exclusiveMinimum": 0 }
+          }
+        },
+        {
+          "type": "object",
+          "required": ["id", "name", "type"],
+          "additionalProperties": false,
+          "properties": {
+            "id": { "type": "string", "minLength": 1 },
+            "name": { "type": "string" },
+            "type": { "const": "other" },
+            "elasticModulus": { "type": "number", "exclusiveMinimum": 0 },
+            "shearModulus": { "type": "number", "exclusiveMinimum": 0 },
+            "poissonRatio": { "type": "number", "minimum": 0, "exclusiveMaximum": 0.5 },
+            "unitWeight": { "type": "number", "minimum": 0 }
+          }
+        }
+      ]
     },
     "Section": {
       "type": "object",
@@ -134,7 +200,10 @@
             "dx": { "type": "number" },
             "dy": { "type": "number" }
           }
-        }
+        },
+        "releases": { "$ref": "#/$defs/MemberReleases" },
+        "rigidZones": { "$ref": "#/$defs/RigidZones" },
+        "localAxis": { "$ref": "#/$defs/LocalAxisDefinition" }
       }
     },
     "AreaMember": {
@@ -147,7 +216,7 @@
         "storyId": { "type": "string", "minLength": 1 },
         "sectionId": { "type": "string", "minLength": 1 },
         "materialId": { "type": "string", "minLength": 1 },
-        "nodeIds": { "type": "array", "items": { "type": "string" } },
+        "nodeIds": { "type": "array", "minItems": 3, "items": { "type": "string" } },
         "level": { "type": "number" },
         "rotation": { "type": "number" },
         "tags": { "type": "array", "items": { "type": "string" } }
@@ -172,8 +241,195 @@
         "memberId": { "type": "string", "minLength": 1 },
         "type": { "type": "string", "enum": ["door", "window", "void"] },
         "position": { "$ref": "#/$defs/Point3D" },
-        "width": { "type": "number" },
-        "height": { "type": "number" }
+        "width": { "type": "number", "exclusiveMinimum": 0 },
+        "height": { "type": "number", "exclusiveMinimum": 0 }
+      }
+    },
+    "LoadCase": {
+      "type": "object",
+      "required": ["id", "name", "type"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "name": { "type": "string" },
+        "type": { "type": "string", "enum": ["dead", "live", "snow", "wind", "seismic", "other"] },
+        "factor": { "type": "number" }
+      }
+    },
+    "DofRestraint": {
+      "type": "object",
+      "required": ["ux", "uy", "uz", "rx", "ry", "rz"],
+      "additionalProperties": false,
+      "properties": {
+        "ux": { "type": "boolean" }, "uy": { "type": "boolean" }, "uz": { "type": "boolean" },
+        "rx": { "type": "boolean" }, "ry": { "type": "boolean" }, "rz": { "type": "boolean" }
+      }
+    },
+    "DofRelease": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "ux": { "type": "boolean" }, "uy": { "type": "boolean" }, "uz": { "type": "boolean" },
+        "rx": { "type": "boolean" }, "ry": { "type": "boolean" }, "rz": { "type": "boolean" }
+      }
+    },
+    "MemberReleases": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": { "start": { "$ref": "#/$defs/DofRelease" }, "end": { "$ref": "#/$defs/DofRelease" } }
+    },
+    "RigidZones": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": { "start": { "type": "number", "minimum": 0 }, "end": { "type": "number", "minimum": 0 } }
+    },
+    "LocalAxisDefinition": {
+      "type": "object",
+      "required": ["rotation"],
+      "additionalProperties": false,
+      "properties": { "rotation": { "type": "number" }, "referenceVector": { "$ref": "#/$defs/Point3D" } }
+    },
+    "Support": {
+      "type": "object",
+      "required": ["id", "storyId", "nodeId", "restraints"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "storyId": { "type": "string", "minLength": 1 },
+        "nodeId": { "type": "string", "minLength": 1 },
+        "restraints": { "$ref": "#/$defs/DofRestraint" }
+      }
+    },
+    "LoadVector3D": {
+      "type": "object",
+      "required": ["x", "y", "z"],
+      "additionalProperties": false,
+      "properties": { "x": { "type": "number" }, "y": { "type": "number" }, "z": { "type": "number" } }
+    },
+    "MassVector3D": {
+      "type": "object",
+      "required": ["x", "y", "z"],
+      "additionalProperties": false,
+      "properties": {
+        "x": { "type": "number", "minimum": 0 },
+        "y": { "type": "number", "minimum": 0 },
+        "z": { "type": "number", "minimum": 0 }
+      }
+    },
+    "LoadDirection": {
+      "type": "string",
+      "enum": ["globalX", "globalY", "globalZ", "localX", "localY", "localZ"]
+    },
+    "NodalLoad": {
+      "type": "object",
+      "required": ["id", "loadCaseId", "storyId", "nodeId", "force"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string", "minLength": 1 }, "loadCaseId": { "type": "string", "minLength": 1 },
+        "storyId": { "type": "string", "minLength": 1 }, "nodeId": { "type": "string", "minLength": 1 },
+        "force": { "$ref": "#/$defs/LoadVector3D" }, "moment": { "$ref": "#/$defs/LoadVector3D" }
+      }
+    },
+    "MemberLoad": {
+      "type": "object",
+      "required": ["id", "loadCaseId", "memberId", "kind", "direction", "magnitude"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string", "minLength": 1 }, "loadCaseId": { "type": "string", "minLength": 1 },
+        "memberId": { "type": "string", "minLength": 1 },
+        "kind": { "type": "string", "enum": ["point", "uniform", "trapezoidal"] },
+        "direction": { "$ref": "#/$defs/LoadDirection" }, "magnitude": { "type": "number" },
+        "endMagnitude": { "type": "number" }, "position": { "type": "number", "minimum": 0, "maximum": 1 }
+      },
+      "allOf": [
+        { "if": { "properties": { "kind": { "const": "point" } } }, "then": { "required": ["position"] } },
+        { "if": { "properties": { "kind": { "const": "trapezoidal" } } }, "then": { "required": ["endMagnitude"] } },
+        {
+          "if": { "properties": { "kind": { "const": "uniform" } } },
+          "then": { "not": { "anyOf": [{ "required": ["position"] }, { "required": ["endMagnitude"] }] } }
+        }
+      ]
+    },
+    "AreaLoad": {
+      "type": "object",
+      "required": ["id", "loadCaseId", "memberId", "direction", "magnitude"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string", "minLength": 1 }, "loadCaseId": { "type": "string", "minLength": 1 },
+        "memberId": { "type": "string", "minLength": 1 }, "direction": { "$ref": "#/$defs/LoadDirection" },
+        "magnitude": { "type": "number" }
+      }
+    },
+    "LoadCombination": {
+      "type": "object",
+      "required": ["id", "name", "type", "factors"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string", "minLength": 1 }, "name": { "type": "string" },
+        "type": { "type": "string", "enum": ["linear", "envelope"] },
+        "factors": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/LoadCombinationFactor" } }
+      }
+    },
+    "LoadCombinationFactor": {
+      "type": "object",
+      "required": ["loadCaseId", "factor"],
+      "additionalProperties": false,
+      "properties": { "loadCaseId": { "type": "string", "minLength": 1 }, "factor": { "type": "number" } }
+    },
+    "LumpedMass": {
+      "type": "object",
+      "required": ["id", "storyId", "nodeId", "mass"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string", "minLength": 1 }, "storyId": { "type": "string", "minLength": 1 },
+        "nodeId": { "type": "string", "minLength": 1 }, "mass": { "$ref": "#/$defs/MassVector3D" },
+        "rotationalMass": { "$ref": "#/$defs/MassVector3D" }
+      }
+    },
+    "Diaphragm": {
+      "type": "object",
+      "required": ["id", "storyId", "type"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string", "minLength": 1 }, "storyId": { "type": "string", "minLength": 1 },
+        "type": { "type": "string", "enum": ["rigid", "semiRigid"] },
+        "memberIds": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+        "masterNodeId": { "type": "string", "minLength": 1 }
+      }
+    },
+    "AnalysisNodeDisplacement": {
+      "type": "object",
+      "required": ["position", "dx", "dy", "dz"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string" }, "position": { "$ref": "#/$defs/Point3D" },
+        "dx": { "type": "number" }, "dy": { "type": "number" }, "dz": { "type": "number" },
+        "rx": { "type": "number" }, "ry": { "type": "number" }, "rz": { "type": "number" }
+      }
+    },
+    "AnalysisMemberResult": {
+      "type": "object",
+      "required": ["memberId"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string" }, "memberId": { "type": "string", "minLength": 1 },
+        "axial": { "type": "number" }, "shearY": { "type": "number" }, "shearZ": { "type": "number" },
+        "momentY": { "type": "number" }, "momentZ": { "type": "number" },
+        "utilization": { "type": "number", "minimum": 0 }
+      }
+    },
+    "AnalysisResultsMetadata": {
+      "type": "object",
+      "required": ["source", "analysisType", "generatedAt"],
+      "additionalProperties": false,
+      "properties": {
+        "source": { "type": "string", "minLength": 1 }, "solver": { "type": "string" },
+        "analysisType": { "type": "string", "enum": ["static", "modal", "buckling", "timeHistory", "other"] },
+        "generatedAt": { "type": "string" }, "caseId": { "type": "string" }, "combinationId": { "type": "string" },
+        "deformationScale": { "type": "number", "exclusiveMinimum": 0 },
+        "nodeDisplacements": { "type": "array", "items": { "$ref": "#/$defs/AnalysisNodeDisplacement" } },
+        "memberResults": { "type": "array", "items": { "$ref": "#/$defs/AnalysisMemberResult" } },
+        "warnings": { "type": "array", "items": { "type": "string" } }
       }
     }
   }

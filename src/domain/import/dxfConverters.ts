@@ -2,6 +2,13 @@ import type { Point2D } from '@/domain/geometry/types';
 import type { Dimension, Member, Material, Section } from '@/domain/structural/types';
 import { generateId } from '@/domain/idGenerator';
 import type { DxfEntity } from './dxfParser';
+import {
+  columnAxisOffsetToWorld,
+  effectiveLinearAxisOffset,
+  linearAxisOffsetToWorld,
+  slabAxisOffsetToWorld,
+} from '@/domain/structural/eccentricity';
+import { getBeamRectSize, getWallThickness } from '@/domain/structural/memberShape';
 
 /** Auto-generated material for DXF imports */
 export const DXF_MATERIAL_ID = 'MAT-DXF-IMPORT';
@@ -14,6 +21,47 @@ export const DXF_MATERIAL: Material = {
 const DEFAULT_WALL_THICKNESS = 200;
 const DEFAULT_SLAB_THICKNESS = 200;
 const DEFAULT_STORY_HEIGHT = 3000;
+const DEFAULT_BEAM_DEPTH = 600;
+
+export type DxfLayerRole =
+  | 'column'
+  | 'beam'
+  | 'wall'
+  | 'slab'
+  | 'grid'
+  | 'dimension'
+  | 'annotation'
+  | 'construction'
+  | 'unknown';
+
+/** Classify the canonical layers emitted by Simple-CAD (case-insensitive). */
+export function classifyDxfLayer(layer: string | undefined): DxfLayerRole {
+  const normalized = layer?.trim().toUpperCase() ?? '';
+  switch (normalized) {
+    case 'COLUMN':
+    case 'COL':
+      return 'column';
+    case 'BEAM':
+      return 'beam';
+    case 'WALL':
+    case 'WALLS':
+      return 'wall';
+    case 'SLAB':
+      return 'slab';
+    case 'GRID':
+      return 'grid';
+    case 'DIMENSION':
+    case 'DIM':
+      return 'dimension';
+    case 'ANNOTATION':
+    case 'NOTES':
+      return 'annotation';
+    case 'CONSTRUCTION':
+      return 'construction';
+    default:
+      return 'unknown';
+  }
+}
 
 // ── Detection helpers ────────────────────────────────────────
 
@@ -78,12 +126,16 @@ export class SectionRegistry {
   private sections = new Map<string, Section>();
 
   getWallSection(thickness: number): Section {
-    const key = `rc_wall:${thickness}`;
+    // DXF coordinates often carry tiny floating-point noise after rotation or
+    // unit scaling. Match beam/column behaviour so visually identical walls do
+    // not create duplicate master sections such as 200 and 200.00000036 mm.
+    const roundedThickness = Math.round(thickness);
+    const key = `rc_wall:${roundedThickness}`;
     if (!this.sections.has(key)) {
       this.sections.set(key, {
-        id: `SEC-DXF-WALL-${thickness}`,
+        id: `SEC-DXF-WALL-${roundedThickness}`,
         kind: 'rc_wall',
-        thickness,
+        thickness: roundedThickness,
       });
     }
     return this.sections.get(key)!;
@@ -119,8 +171,8 @@ export class SectionRegistry {
   }
 
   getBeamSection(width: number, depth: number): Section {
-    const w = Math.round(Math.min(width, depth));
-    const d = Math.round(Math.max(width, depth));
+    const w = Math.round(width);
+    const d = Math.round(depth);
     const key = `rc_beam_rect:${w}x${d}`;
     if (!this.sections.has(key)) {
       this.sections.set(key, {
@@ -135,6 +187,10 @@ export class SectionRegistry {
 
   getAllSections(): Section[] {
     return Array.from(this.sections.values());
+  }
+
+  findSection(id: string): Section | undefined {
+    return [...this.sections.values()].find((section) => section.id === id);
   }
 }
 
@@ -168,8 +224,9 @@ function createWallMember(
   story: string,
   sections: SectionRegistry,
   usedIds: Set<string>,
+  thickness = DEFAULT_WALL_THICKNESS,
 ): Member {
-  const wallSection = sections.getWallSection(DEFAULT_WALL_THICKNESS);
+  const wallSection = sections.getWallSection(thickness);
   return {
     id: generateId('wall', usedIds),
     type: 'wall',
@@ -179,7 +236,27 @@ function createWallMember(
     start: { x: start.x, y: start.y, z: start.z ?? 0 },
     end: { x: end.x, y: end.y, z: end.z ?? 0 },
     height: DEFAULT_STORY_HEIGHT,
-    thickness: DEFAULT_WALL_THICKNESS,
+    thickness: Math.round(thickness),
+  };
+}
+
+function createBeamMember(
+  start: Point2D,
+  end: Point2D,
+  width: number,
+  story: string,
+  sections: SectionRegistry,
+  usedIds: Set<string>,
+): Member {
+  const beamSection = sections.getBeamSection(width, DEFAULT_BEAM_DEPTH);
+  return {
+    id: generateId('beam', usedIds),
+    type: 'beam',
+    story,
+    sectionId: beamSection.id,
+    materialId: DXF_MATERIAL_ID,
+    start: { x: start.x, y: start.y, z: 0 },
+    end: { x: end.x, y: end.y, z: 0 },
   };
 }
 
@@ -188,9 +265,14 @@ export function convertLineToMember(
   story: string,
   sections: SectionRegistry,
   usedIds: Set<string>,
+  role: DxfLayerRole = classifyDxfLayer(entity.layer),
 ): Member | null {
   if (!entity.startPoint || !entity.endPoint) return null;
 
+  if (role === 'beam') {
+    return createBeamMember(entity.startPoint, entity.endPoint, 300, story, sections, usedIds);
+  }
+  if (role !== 'wall' && role !== 'unknown') return null;
   return createWallMember(entity.startPoint, entity.endPoint, story, sections, usedIds);
 }
 
@@ -211,6 +293,7 @@ export function convertPolylineToMembers(
   story: string,
   sections: SectionRegistry,
   usedIds: Set<string>,
+  role: DxfLayerRole = classifyDxfLayer(entity.layer),
 ): Member[] {
   const verts = entity.vertices;
   if (!verts || verts.length < 2) return [];
@@ -218,72 +301,283 @@ export function convertPolylineToMembers(
   const isClosed = entity.closed ?? false;
   const points2D: Point2D[] = verts.map((v) => ({ x: v.x, y: v.y }));
 
+  if (isClosed && role === 'slab' && points2D.length >= 3) {
+    const slabSection = sections.getSlabSection(DEFAULT_SLAB_THICKNESS);
+    return applyDxfMemberMetadata(
+      entity,
+      [
+        {
+          id: generateId('slab', usedIds),
+          type: 'slab',
+          story,
+          sectionId: slabSection.id,
+          materialId: DXF_MATERIAL_ID,
+          polygon: points2D,
+          level: 0,
+        },
+      ],
+      usedIds,
+      sections,
+    );
+  }
+
   if (isClosed && points2D.length === 4) {
     const rectInfo = isRectangle(points2D);
     if (rectInfo.isRect) {
       const { width, height, center, angle } = rectInfo;
-      if (isSquarish(width, height)) {
+      if (role === 'column' || (role === 'unknown' && isSquarish(width, height))) {
         // Column at centroid. Recover rotation from the box orientation so it
         // round-trips with the DXF exporter (B5 / 3-8). Normalize to (-π/2, π/2]
         // since a rectangle has 180°/box symmetry.
         let rot = angle;
         while (rot > Math.PI / 2) rot -= Math.PI;
         while (rot <= -Math.PI / 2) rot += Math.PI;
-        return [createColumnMember(center, width, height, story, sections, usedIds, rot)];
-      } else {
+        return applyDxfMemberMetadata(
+          entity,
+          [createColumnMember(center, width, height, story, sections, usedIds, rot)],
+          usedIds,
+          sections,
+        );
+      } else if (role === 'beam' || role === 'wall' || role === 'unknown') {
         // Elongated rectangle → beam along long axis
-        const beamSection = sections.getBeamSection(width, height);
-
-        // Find the midpoints of the short edges for beam start/end
-        let startPt: Point2D;
-        let endPt: Point2D;
-        if (width >= height) {
-          // edge 0 is the long edge
-          startPt = midpoint(points2D[0], points2D[3]);
-          endPt = midpoint(points2D[1], points2D[2]);
-        } else {
-          // edge 1 is the long edge
-          startPt = midpoint(points2D[0], points2D[1]);
-          endPt = midpoint(points2D[2], points2D[3]);
+        const { start, end, transverseWidth } = rectangleAxis(points2D, width, height);
+        if (role === 'wall') {
+          return applyDxfMemberMetadata(
+            entity,
+            [createWallMember(start, end, story, sections, usedIds, transverseWidth)],
+            usedIds,
+            sections,
+          );
         }
-
-        return [
-          {
-            id: generateId('beam', usedIds),
-            type: 'beam',
-            story,
-            sectionId: beamSection.id,
-            materialId: DXF_MATERIAL_ID,
-            start: { x: startPt.x, y: startPt.y, z: 0 },
-            end: { x: endPt.x, y: endPt.y, z: 0 },
-          },
-        ];
+        return applyDxfMemberMetadata(
+          entity,
+          [createBeamMember(start, end, transverseWidth, story, sections, usedIds)],
+          usedIds,
+          sections,
+        );
       }
     }
   }
 
-  if (isClosed && points2D.length >= 4) {
+  if (isClosed && points2D.length >= 4 && role === 'unknown') {
     // Non-rectangular closed polygon → slab
     const slabSection = sections.getSlabSection(DEFAULT_SLAB_THICKNESS);
-    return [
-      {
-        id: generateId('slab', usedIds),
-        type: 'slab',
-        story,
-        sectionId: slabSection.id,
-        materialId: DXF_MATERIAL_ID,
-        polygon: points2D,
-        level: 0,
-      },
-    ];
+    return applyDxfMemberMetadata(
+      entity,
+      [
+        {
+          id: generateId('slab', usedIds),
+          type: 'slab',
+          story,
+          sectionId: slabSection.id,
+          materialId: DXF_MATERIAL_ID,
+          polygon: points2D,
+          level: 0,
+        },
+      ],
+      usedIds,
+      sections,
+    );
   }
 
-  // Open polyline → series of wall segments
+  if (role === 'column' || role === 'slab') return [];
+
+  // Open polyline → series of layer-aware linear members.
   const members: Member[] = [];
-  for (let i = 0; i < points2D.length - 1; i++) {
-    members.push(createWallMember(points2D[i], points2D[i + 1], story, sections, usedIds));
+  const segmentCount = isClosed ? points2D.length : points2D.length - 1;
+  for (let i = 0; i < segmentCount; i++) {
+    const next = points2D[(i + 1) % points2D.length];
+    members.push(
+      role === 'beam'
+        ? createBeamMember(points2D[i], next, 300, story, sections, usedIds)
+        : createWallMember(points2D[i], next, story, sections, usedIds),
+    );
   }
-  return members;
+  return applyDxfMemberMetadata(entity, members, usedIds, sections);
+}
+
+function applyDxfMemberMetadata(
+  entity: DxfEntity,
+  members: Member[],
+  usedIds: Set<string>,
+  sections: SectionRegistry,
+): Member[] {
+  const metadata = readSimpleCadMetadata<Record<string, unknown>>(entity, 'MEMBER');
+  if (!metadata) return members;
+  return members.map((member, index) => {
+    let id = member.id;
+    if (typeof metadata.id === 'string' && index === 0 && metadata.id !== member.id) {
+      id = reserveMetadataId(metadata.id, member.type, usedIds);
+    }
+    const rotation =
+      typeof metadata.rotation === 'number' && Number.isFinite(metadata.rotation)
+        ? metadata.rotation
+        : member.rotation;
+    const axisOffset = isAxisOffset(metadata.axisOffset) ? metadata.axisOffset : member.axisOffset;
+    const faceAlign =
+      metadata.faceAlign === 'center' ||
+      metadata.faceAlign === 'left' ||
+      metadata.faceAlign === 'right'
+        ? metadata.faceAlign
+        : member.faceAlign;
+    const referenceMember = restoreDxfReferenceGeometry(
+      member,
+      axisOffset,
+      faceAlign,
+      sections.findSection(member.sectionId),
+    );
+    return {
+      ...referenceMember,
+      id,
+      ...(rotation !== undefined ? { rotation } : {}),
+      ...(axisOffset ? { axisOffset } : {}),
+      ...(faceAlign ? { faceAlign } : {}),
+      ...(isLocalAxis(metadata.localAxis) ? { localAxis: metadata.localAxis } : {}),
+      ...(isMemberReleases(metadata.releases)
+        ? { releases: metadata.releases }
+        : {}),
+      ...(isRigidZones(metadata.rigidZones)
+        ? { rigidZones: metadata.rigidZones }
+        : {}),
+    };
+  });
+}
+
+/**
+ * Simple-CAD exports the physical plan outline, while its model stores an
+ * independently editable reference axis plus eccentricity/face alignment.
+ * Reconstruct the reference geometry before restoring that metadata; otherwise
+ * a DXF round-trip would apply the offset twice when the member is drawn again.
+ */
+function restoreDxfReferenceGeometry(
+  member: Member,
+  axisOffset: Member['axisOffset'],
+  faceAlign: Member['faceAlign'],
+  section: Section | undefined,
+): Member {
+  if (!axisOffset && !faceAlign) return member;
+
+  if (member.type === 'column') {
+    const offset = columnAxisOffsetToWorld(axisOffset);
+    return {
+      ...member,
+      start: { ...member.start, x: member.start.x - offset.x, y: member.start.y - offset.y },
+      end: { ...member.end, x: member.end.x - offset.x, y: member.end.y - offset.y },
+    };
+  }
+
+  if (member.type === 'beam' || member.type === 'wall') {
+    const width =
+      member.type === 'beam'
+        ? getBeamRectSize(section).width
+        : getWallThickness(member, section);
+    const offset = linearAxisOffsetToWorld(
+      effectiveLinearAxisOffset({ axisOffset, faceAlign }, width),
+      member.start,
+      member.end,
+    );
+    return {
+      ...member,
+      start: {
+        x: member.start.x - offset.x,
+        y: member.start.y - offset.y,
+        // A plan DXF does not encode the vertical (`dy`) eccentricity in its
+        // outline, so preserve the reconstructed source elevation here.
+        z: member.start.z,
+      },
+      end: {
+        x: member.end.x - offset.x,
+        y: member.end.y - offset.y,
+        z: member.end.z,
+      },
+    };
+  }
+
+  const offset = slabAxisOffsetToWorld(axisOffset);
+  return {
+    ...member,
+    polygon: member.polygon.map((point) => ({
+      x: point.x - offset.x,
+      y: point.y - offset.y,
+    })),
+  };
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function isAxisOffset(value: unknown): value is { dx: number; dy: number } {
+  return (
+    isRecord(value) &&
+    typeof value.dx === 'number' &&
+    Number.isFinite(value.dx) &&
+    typeof value.dy === 'number' &&
+    Number.isFinite(value.dy)
+  );
+}
+
+function isLocalAxis(value: unknown): value is NonNullable<Member['localAxis']> {
+  return (
+    isRecord(value) &&
+    typeof value.rotation === 'number' &&
+    Number.isFinite(value.rotation) &&
+    (value.referenceVector === undefined ||
+      (isRecord(value.referenceVector) &&
+        ['x', 'y', 'z'].every(
+          (axis) =>
+            typeof (value.referenceVector as Record<string, unknown>)[axis] === 'number' &&
+            Number.isFinite((value.referenceVector as Record<string, unknown>)[axis]),
+        )))
+  );
+}
+
+const DOF_KEYS = ['ux', 'uy', 'uz', 'rx', 'ry', 'rz'] as const;
+
+function hasOnlyKeys(value: Record<string, unknown>, allowed: readonly string[]): boolean {
+  return Object.keys(value).every((key) => allowed.includes(key));
+}
+
+function isDofRelease(value: unknown): value is NonNullable<Member['releases']>['start'] {
+  return (
+    isRecord(value) &&
+    hasOnlyKeys(value, DOF_KEYS) &&
+    Object.values(value).every((release) => typeof release === 'boolean')
+  );
+}
+
+function isMemberReleases(value: unknown): value is NonNullable<Member['releases']> {
+  if (!isRecord(value) || !hasOnlyKeys(value, ['start', 'end'])) return false;
+  return ['start', 'end'].every(
+    (end) => value[end] === undefined || isDofRelease(value[end]),
+  );
+}
+
+function isRigidZones(value: unknown): value is NonNullable<Member['rigidZones']> {
+  if (!isRecord(value) || !hasOnlyKeys(value, ['start', 'end'])) return false;
+  return ['start', 'end'].every((end) => {
+    const length = value[end];
+    return length === undefined || (typeof length === 'number' && Number.isFinite(length) && length >= 0);
+  });
+}
+
+function rectangleAxis(
+  points: Point2D[],
+  edge0Length: number,
+  edge1Length: number,
+): { start: Point2D; end: Point2D; transverseWidth: number } {
+  if (edge0Length >= edge1Length) {
+    return {
+      start: midpoint(points[0], points[3]),
+      end: midpoint(points[1], points[2]),
+      transverseWidth: edge1Length,
+    };
+  }
+  return {
+    start: midpoint(points[0], points[1]),
+    end: midpoint(points[2], points[3]),
+    transverseWidth: edge0Length,
+  };
 }
 
 function midpoint(a: Point2D, b: Point2D): Point2D {
@@ -312,12 +606,48 @@ export function convertDimensionEntity(entity: DxfEntity, story: string, usedIds
     }
   }
 
+  const metadata = readSimpleCadMetadata<Partial<Dimension>>(entity, 'DIMENSION');
+  const id = reserveMetadataId(metadata?.id, 'dim', usedIds);
+  const lineType = metadata?.lineType;
   return {
-    id: generateId('dim', usedIds),
+    id,
     story,
     start: { x: entity.dimExt1.x, y: entity.dimExt1.y },
     end: { x: entity.dimExt2.x, y: entity.dimExt2.y },
     offset,
-    text: entity.text,
+    text: entity.text ?? metadata?.text,
+    ...(typeof metadata?.color === 'string' ? { color: metadata.color } : {}),
+    ...(typeof metadata?.lineWeight === 'number' && metadata.lineWeight > 0
+      ? { lineWeight: metadata.lineWeight }
+      : {}),
+    ...(lineType && ['solid', 'dashed', 'dotted', 'chain', 'dashdot'].includes(lineType)
+      ? { lineType }
+      : {}),
   };
+}
+
+export function readSimpleCadMetadata<T>(
+  entity: DxfEntity,
+  kind: string,
+): T | undefined {
+  const prefix = `SIMPLECAD_${kind}:`;
+  const encoded = entity.metadata?.find((item) => item.startsWith(prefix))?.slice(prefix.length);
+  if (!encoded) return undefined;
+  try {
+    return JSON.parse(decodeURIComponent(encoded)) as T;
+  } catch {
+    return undefined;
+  }
+}
+
+export function reserveMetadataId(
+  preferred: string | undefined,
+  prefix: string,
+  usedIds: Set<string>,
+): string {
+  if (preferred && !usedIds.has(preferred)) {
+    usedIds.add(preferred);
+    return preferred;
+  }
+  return generateId(prefix, usedIds);
 }

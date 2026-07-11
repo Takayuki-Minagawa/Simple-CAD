@@ -1,4 +1,5 @@
 import type { StepEntity, StepValue } from './types';
+import { decodeStepString } from './stringEncoding';
 
 export function parseIfcEntities(content: string): Map<number, StepEntity> {
   const dataMatch = content.match(/DATA;([\s\S]*?)ENDSEC;/i);
@@ -94,7 +95,7 @@ function createStepParser(source: string) {
       value += char;
       index++;
     }
-    return value;
+    return decodeStepString(value);
   };
 
   const parseWord = () => {
@@ -141,6 +142,14 @@ function createStepParser(source: string) {
     }
 
     const word = parseWord();
+    skipWhitespace();
+    if (word && source[index] === '(') {
+      const values = parseList();
+      return {
+        typedType: word.toUpperCase(),
+        value: values.length === 1 ? values[0] : values,
+      };
+    }
     const number = Number(word);
     return Number.isFinite(number) ? number : word;
   };
@@ -161,6 +170,7 @@ export function asString(value: StepValue | undefined): string | null {
 }
 
 export function asNumber(value: StepValue | undefined): number | null {
+  if (isTypedValue(value)) return asNumber(value.value);
   return typeof value === 'number' ? value : null;
 }
 
@@ -170,4 +180,8 @@ export function asNumberList(value: StepValue | undefined): number[] {
 
 function isRef(value: StepValue | undefined): value is { ref: number } {
   return typeof value === 'object' && value !== null && 'ref' in value;
+}
+
+function isTypedValue(value: StepValue | undefined): value is import('./types').StepTypedValue {
+  return typeof value === 'object' && value !== null && 'typedType' in value;
 }

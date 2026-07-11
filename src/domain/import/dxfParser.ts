@@ -23,6 +23,8 @@ export interface DxfEntity {
   dimExt1?: { x: number; y: number };
   dimExt2?: { x: number; y: number };
   closed?: boolean;
+  /** Simple-CAD metadata carried in DXF comment groups (code 999). */
+  metadata?: string[];
 }
 
 export interface DxfHeader {
@@ -214,6 +216,10 @@ export function parseDxfEntities(content: string): DxfEntity[] {
         break;
       case 51:
         current.endAngle = parseFloat(value);
+        break;
+      case 999:
+        current.metadata ??= [];
+        current.metadata.push(value);
         break;
     }
   }

@@ -1,6 +1,7 @@
-import { useRef, useCallback, type ReactNode } from 'react';
+import { useRef, useCallback, useEffect, type ReactNode } from 'react';
 import { useEditorStore } from '@/app/store';
 import { screenToWorld } from '@/domain/geometry/transform';
+import { useShallow } from 'zustand/react/shallow';
 
 interface Props {
   children: ReactNode;
@@ -20,9 +21,23 @@ export function SvgCanvas({
   onWorldDoubleClick,
 }: Props) {
   const svgRef = useRef<SVGSVGElement>(null);
-  const { pan, zoom, setPan, setZoom, setCursorWorld, activeTool } = useEditorStore();
+  const { pan, zoom, setPan, setZoom, setCursorWorld, activeTool } = useEditorStore(
+    useShallow((state) => ({
+      pan: state.pan,
+      zoom: state.zoom,
+      setPan: state.setPan,
+      setZoom: state.setZoom,
+      setCursorWorld: state.setCursorWorld,
+      activeTool: state.activeTool,
+    })),
+  );
   const isPanningRef = useRef(false);
   const lastMouseRef = useRef({ x: 0, y: 0 });
+  const pointerFrameRef = useRef<number | null>(null);
+  const pendingPointerRef = useRef<{
+    world: { x: number; y: number };
+    event: React.MouseEvent;
+  } | null>(null);
 
   const getWorldPos = useCallback(
     (e: React.MouseEvent) => {
@@ -53,6 +68,24 @@ export function SvgCanvas({
     [pan, zoom, setPan, setZoom],
   );
 
+  const flushPointerMove = useCallback(() => {
+    pointerFrameRef.current = null;
+    const pending = pendingPointerRef.current;
+    pendingPointerRef.current = null;
+    if (!pending) return;
+    setCursorWorld(pending.world);
+    onWorldMouseMove?.(pending.world, pending.event);
+  }, [onWorldMouseMove, setCursorWorld]);
+
+  useEffect(
+    () => () => {
+      if (pointerFrameRef.current != null && typeof cancelAnimationFrame === 'function') {
+        cancelAnimationFrame(pointerFrameRef.current);
+      }
+    },
+    [],
+  );
+
   const handleMouseDown = useCallback(
     (e: React.MouseEvent) => {
       // Middle button or pan tool
@@ -79,14 +112,21 @@ export function SvgCanvas({
         return;
       }
       const world = getWorldPos(e);
-      setCursorWorld(world);
-      onWorldMouseMove?.(world, e);
+      pendingPointerRef.current = { world, event: e };
+      if (pointerFrameRef.current == null) {
+        if (typeof requestAnimationFrame === 'function') {
+          pointerFrameRef.current = requestAnimationFrame(flushPointerMove);
+        } else {
+          flushPointerMove();
+        }
+      }
     },
-    [pan, setPan, getWorldPos, setCursorWorld, onWorldMouseMove],
+    [flushPointerMove, getWorldPos, pan, setPan],
   );
 
   const handleMouseUp = useCallback(
     (e: React.MouseEvent) => {
+      flushPointerMove();
       if (isPanningRef.current) {
         isPanningRef.current = false;
         return;
@@ -95,7 +135,7 @@ export function SvgCanvas({
         onWorldMouseUp(getWorldPos(e), e);
       }
     },
-    [getWorldPos, onWorldMouseUp],
+    [flushPointerMove, getWorldPos, onWorldMouseUp],
   );
 
   const handleClick = useCallback(

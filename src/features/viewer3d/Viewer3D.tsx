@@ -21,11 +21,18 @@ import {
   type SectionMode,
 } from './sectionMath';
 import { getViewerLabels } from './viewerLabels';
+import { AnalysisResultsPanel } from './AnalysisResultsPanel';
 
 export function Viewer3D() {
   const data = useProjectStore((state) => state.data);
-  const { activeStory, selectedIds, wireframe, orthographic, setWireframe, setOrthographic, setSelectedIds } =
-    useEditorStore();
+  const activeStory = useEditorStore((state) => state.activeStory);
+  const selectedIds = useEditorStore((state) => state.selectedIds);
+  const wireframe = useEditorStore((state) => state.wireframe);
+  const orthographic = useEditorStore((state) => state.orthographic);
+  const layerLocked = useEditorStore((state) => state.layerLocked);
+  const setWireframe = useEditorStore((state) => state.setWireframe);
+  const setOrthographic = useEditorStore((state) => state.setOrthographic);
+  const setSelectedIds = useEditorStore((state) => state.setSelectedIds);
   const { t, locale } = useI18n();
 
   const [sectionMode, setSectionMode] = useState<SectionMode>('off');
@@ -35,6 +42,21 @@ export function Viewer3D() {
   const [sectionBox, setSectionBox] = useState<SectionBoxState | null>(null);
   const [geometryEngine, setGeometryEngine] = useState<GeometryEngine>('native');
   const [showAllStories, setShowAllStories] = useState(true);
+  const [showAnalysisResults, setShowAnalysisResults] = useState(false);
+  const [analysisScaleState, setAnalysisScaleState] = useState(() => ({
+    source: data?.analysisResults,
+    scale: data?.analysisResults?.deformationScale ?? 20,
+  }));
+  if (analysisScaleState.source !== data?.analysisResults) {
+    setAnalysisScaleState({
+      source: data?.analysisResults,
+      scale: data?.analysisResults?.deformationScale ?? 20,
+    });
+  }
+  const analysisScale = analysisScaleState.scale;
+  const setAnalysisScale = (scale: number) => {
+    setAnalysisScaleState((current) => ({ ...current, scale }));
+  };
 
   // ── 3D measurement tool state ──
   const [measureMode, setMeasureMode] = useState(false);
@@ -148,6 +170,11 @@ export function Viewer3D() {
         toggleMeasure={toggleMeasure}
         clearMeasure={clearMeasure}
         measureCount={measurePoints.length}
+        hasAnalysisResults={Boolean(
+          data.analysisResults?.nodeDisplacements?.length || data.analysisResults?.memberResults?.length,
+        )}
+        showAnalysisResults={showAnalysisResults}
+        toggleAnalysisResults={() => setShowAnalysisResults((visible) => !visible)}
       />
 
       <ViewerInfoPanel
@@ -177,6 +204,15 @@ export function Viewer3D() {
         setGeometryEngine={setGeometryEngine}
       />
 
+      {showAnalysisResults && data.analysisResults && (
+        <AnalysisResultsPanel
+          labels={labels}
+          results={data.analysisResults}
+          scale={analysisScale}
+          setScale={setAnalysisScale}
+        />
+      )}
+
       <Canvas
         gl={{ antialias: true }}
         style={{ width: '100%', height: '100%' }}
@@ -197,6 +233,7 @@ export function Viewer3D() {
           sectionMap={sectionMap}
           openingsMap={openingsMap}
           selectedIds={selectedIds}
+          layerLocked={layerLocked}
           wireframe={wireframe}
           geometryEngine={geometryEngine}
           clippingPlanes={clippingPlanes}
@@ -205,6 +242,10 @@ export function Viewer3D() {
           measurePoints={measurePoints}
           addMeasurePoint={addMeasurePoint}
           labels={labels}
+          analysisResults={data.analysisResults}
+          showAnalysisResults={showAnalysisResults}
+          analysisScale={analysisScale}
+          showAllStories={showAllStories}
         />
       </Canvas>
     </div>

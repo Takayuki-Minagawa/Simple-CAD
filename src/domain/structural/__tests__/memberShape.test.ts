@@ -43,6 +43,28 @@ describe('memberShape', () => {
     ]);
   });
 
+  it('places beam and wall faces on the reference axis', () => {
+    const beam: Member = {
+      id: 'B1', type: 'beam', story: '1F', sectionId: 'SB', materialId: 'M1',
+      start: { x: 0, y: 0, z: 3000 }, end: { x: 1000, y: 0, z: 3000 },
+      faceAlign: 'left',
+    };
+    const section: Section = { id: 'SB', kind: 'rc_beam_rect', width: 200, depth: 400 };
+    expect(getMemberPlanPolygon(beam, section)).toEqual([
+      { x: 0, y: 200 },
+      { x: 1000, y: 200 },
+      { x: 1000, y: 0 },
+      { x: 0, y: 0 },
+    ]);
+
+    expect(getMemberPlanPolygon({ ...beam, faceAlign: 'right' }, section)).toEqual([
+      { x: 0, y: 0 },
+      { x: 1000, y: 0 },
+      { x: 1000, y: -200 },
+      { x: 0, y: -200 },
+    ]);
+  });
+
   it('applies column rotation and slab offset in plan polygons', () => {
     const column: Member = {
       id: 'C1',

@@ -1,16 +1,33 @@
 import { useProjectStore, useEditorStore } from '@/app/store';
 import { useI18n } from '@/i18n';
-import type { Member, Annotation, Dimension, LineType, TextAlign } from '@/domain/structural/types';
+import type {
+  Member,
+  Annotation,
+  Dimension,
+  LineType,
+  Opening,
+  Section,
+  TextAlign,
+} from '@/domain/structural/types';
 import { useMemo } from 'react';
 import { polygonArea, polygonPerimeter, linearLength } from '@/domain/geometry/measurement';
 import { CoordRow, VertexCoordInput } from './PropertyInputs';
+import { isEntityLayerInteractive } from '@/domain/rendering/layerLock';
+import { radiansToDisplayDegrees } from '@/domain/geometry/precision';
 
 const LINE_TYPE_OPTIONS: LineType[] = ['solid', 'dashed', 'dotted', 'chain', 'dashdot'];
 const TEXT_ALIGN_OPTIONS: TextAlign[] = ['left', 'center', 'right'];
 
 export function PropertyPanel() {
   const data = useProjectStore((s) => s.data);
-  const { selectedIds } = useEditorStore();
+  const rawSelectedIds = useEditorStore((state) => state.selectedIds);
+  const layerLocked = useEditorStore((state) => state.layerLocked);
+  const layerVisibility = useEditorStore((state) => state.layerVisibility);
+  const selectedIds = data
+    ? rawSelectedIds.filter((id) =>
+        isEntityLayerInteractive(data, id, layerLocked, layerVisibility),
+      )
+    : [];
   const { t } = useI18n();
 
   if (!data || selectedIds.length === 0) {
@@ -27,6 +44,10 @@ export function PropertyPanel() {
   // Multi-selection: show group info if all belong to same group
   if (selectedIds.length > 1) {
     const group = data.groups?.find((g) => selectedIds.every((id) => g.memberIds.includes(id)));
+    const selectedMembers = data.members.filter((member) => selectedIds.includes(member.id));
+    if (selectedMembers.length === selectedIds.length) {
+      return <BulkMemberProps members={selectedMembers} groupName={group?.name} />;
+    }
     return (
       <div>
         <div className="panel-header">{t.panelProperties}</div>
@@ -55,10 +76,116 @@ export function PropertyPanel() {
   const dimension = data.dimensions.find((d) => d.id === id);
   if (dimension) return <DimensionProps dimension={dimension} />;
 
+  const opening = data.openings.find((item) => item.id === id);
+  if (opening) return <OpeningProps opening={opening} />;
+
   return (
     <div>
       <div className="panel-header">{t.panelProperties}</div>
       <div className="panel-content">Unknown</div>
+    </div>
+  );
+}
+
+function sectionSupportsMember(section: Section, memberType: Member['type']): boolean {
+  switch (memberType) {
+    case 'column':
+      return ['rc_column_rect', 's_column_h', 's_pipe'].includes(section.kind);
+    case 'beam':
+      return ['rc_beam_rect', 's_beam_h', 's_pipe'].includes(section.kind);
+    case 'wall':
+      return section.kind === 'rc_wall';
+    case 'slab':
+      return section.kind === 'rc_slab';
+  }
+}
+
+function commonValue<T>(values: T[]): T | undefined {
+  return values.length > 0 && values.every((value) => value === values[0])
+    ? values[0]
+    : undefined;
+}
+
+function BulkMemberProps({ members, groupName }: { members: Member[]; groupName?: string }) {
+  const data = useProjectStore((state) => state.data)!;
+  const updateMembers = useProjectStore((state) => state.updateMembers);
+  const { t } = useI18n();
+  const ids = members.map((member) => member.id);
+  const compatibleSections = data.sections.filter((section) =>
+    members.every((member) => sectionSupportsMember(section, member.type)),
+  );
+  const story = commonValue(members.map((member) => member.story));
+  const section = commonValue(members.map((member) => member.sectionId));
+  const material = commonValue(members.map((member) => member.materialId));
+  const rotation = commonValue(members.map((member) => member.rotation ?? 0));
+  const color = commonValue(members.map((member) => member.color ?? '#000000'));
+
+  return (
+    <div>
+      <div className="panel-header">{t.panelProperties}</div>
+      <div className="panel-content">
+        <div>{members.length} {t.objectsSelected}</div>
+        <div className="prop-row">
+          <span className="prop-label">{t.propStory}</span>
+          <select className="prop-select" value={story ?? ''} onChange={(event) => {
+            if (event.target.value) updateMembers(ids, { story: event.target.value });
+          }}>
+            <option value="">—</option>
+            {data.stories.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
+          </select>
+        </div>
+        <div className="prop-row">
+          <span className="prop-label">{t.propSection}</span>
+          <select className="prop-select" value={section ?? ''} onChange={(event) => {
+            if (event.target.value) updateMembers(ids, { sectionId: event.target.value });
+          }}>
+            <option value="">—</option>
+            {compatibleSections.map((item) => <option key={item.id} value={item.id}>{item.id}</option>)}
+          </select>
+        </div>
+        <div className="prop-row">
+          <span className="prop-label">Material</span>
+          <select className="prop-select" value={material ?? ''} onChange={(event) => {
+            if (event.target.value) updateMembers(ids, { materialId: event.target.value });
+          }}>
+            <option value="">—</option>
+            {data.materials.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
+          </select>
+        </div>
+        <CoordRow
+          label={`${t.propRotation} (°)`}
+          value={rotation == null ? 0 : radiansToDisplayDegrees(rotation)}
+          mixed={rotation == null}
+          mixedLabel={t.propMixed}
+          placeholder={rotation == null ? '—' : undefined}
+          onChange={(value) => updateMembers(ids, { rotation: (value * Math.PI) / 180 })}
+        />
+        <div className="prop-row">
+          <span className="prop-label">{t.propColor}</span>
+          <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+            <input
+              type="color"
+              aria-label={t.propColor}
+              value={color ?? '#000000'}
+              onChange={(event) => updateMembers(ids, { color: event.target.value })}
+            />
+            {color == null && (
+              <>
+                <small style={{ color: 'var(--text-secondary)' }}>{t.propMixed}</small>
+                <button
+                  type="button"
+                  className="toolbar-btn"
+                  aria-label={`${t.propApply} ${t.propColor}`}
+                  onClick={() => updateMembers(ids, { color: '#000000' })}
+                >
+                  {t.propApply}
+                </button>
+              </>
+            )}
+          </span>
+        </div>
+        {groupName && <div className="prop-row"><span className="prop-label">{t.groupName}</span><span>{groupName}</span></div>}
+      </div>
     </div>
   );
 }
@@ -89,6 +216,9 @@ function MemberProps({ member }: { member: Member }) {
 
   // Group info
   const group = data.groups?.find((g) => g.memberIds.includes(member.id));
+  const compatibleSections = data.sections.filter((section) =>
+    sectionSupportsMember(section, member.type),
+  );
 
   return (
     <div>
@@ -123,13 +253,61 @@ function MemberProps({ member }: { member: Member }) {
             value={member.sectionId}
             onChange={(e) => updateMember(member.id, { sectionId: e.target.value })}
           >
-            {data.sections.map((s) => (
+            {compatibleSections.map((s) => (
               <option key={s.id} value={s.id}>
                 {s.id}
               </option>
             ))}
           </select>
         </div>
+        <div className="prop-row">
+          <span className="prop-label">Material</span>
+          <select
+            className="prop-select"
+            value={member.materialId}
+            onChange={(e) => updateMember(member.id, { materialId: e.target.value })}
+          >
+            {data.materials.map((material) => (
+              <option key={material.id} value={material.id}>{material.name}</option>
+            ))}
+          </select>
+        </div>
+        <CoordRow
+          label={`${t.propRotation} (°)`}
+          value={radiansToDisplayDegrees(member.rotation ?? 0)}
+          onChange={(value) => updateMember(member.id, { rotation: (value * Math.PI) / 180 })}
+        />
+        <CoordRow
+          label="Axis offset X"
+          value={member.axisOffset?.dx ?? 0}
+          onChange={(value) => updateMember(member.id, {
+            axisOffset: { dx: value, dy: member.axisOffset?.dy ?? 0 },
+          })}
+        />
+        <CoordRow
+          label="Axis offset Y"
+          value={member.axisOffset?.dy ?? 0}
+          onChange={(value) => updateMember(member.id, {
+            axisOffset: { dx: member.axisOffset?.dx ?? 0, dy: value },
+          })}
+        />
+        {(member.type === 'beam' || member.type === 'wall') && (
+          <div className="prop-row">
+            <span className="prop-label">Face align</span>
+            <select
+              className="prop-select"
+              value={member.faceAlign ?? 'center'}
+              onChange={(event) => updateMember(member.id, {
+                faceAlign: event.target.value as 'center' | 'left' | 'right',
+              })}
+            >
+              <option value="center">center</option>
+              <option value="left">left</option>
+              <option value="right">right</option>
+            </select>
+          </div>
+        )}
+        <GridReferenceEditor member={member} />
 
         {/* Linear member coordinates */}
         {member.type !== 'slab' && (
@@ -162,7 +340,29 @@ function MemberProps({ member }: { member: Member }) {
                 updateMember(member.id, { end: { ...member.end, y: v } } as Partial<Member>)
               }
             />
+            <CoordRow
+              label="Start Z"
+              value={member.start.z}
+              onChange={(v) =>
+                updateMember(member.id, { start: { ...member.start, z: v } } as Partial<Member>)
+              }
+            />
+            <CoordRow
+              label="End Z"
+              value={member.end.z}
+              onChange={(v) =>
+                updateMember(member.id, { end: { ...member.end, z: v } } as Partial<Member>)
+              }
+            />
           </>
+        )}
+
+        {member.type === 'slab' && (
+          <CoordRow
+            label="Level Z"
+            value={member.level}
+            onChange={(value) => updateMember(member.id, { level: value } as Partial<Member>)}
+          />
         )}
 
         {/* Measurements */}
@@ -302,6 +502,43 @@ function MemberProps({ member }: { member: Member }) {
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+function GridReferenceEditor({ member }: { member: Member }) {
+  const data = useProjectStore((state) => state.data)!;
+  const updateMember = useProjectStore((state) => state.updateMember);
+  if (member.type === 'slab') return null;
+  const xNames = data.grids.filter((grid) => grid.axis === 'X').map((grid) => grid.name);
+  const yNames = data.grids.filter((grid) => grid.axis === 'Y').map((grid) => grid.name);
+  const pairs = xNames.flatMap((x) => yNames.map((y) => [x, y] as [string, string]));
+  const setPair = (endpoint: 'startGrid' | 'endGrid', encoded: string) => {
+    const nextGridRef = { ...(member.gridRef ?? {}) };
+    nextGridRef[endpoint] = encoded ? encoded.split('|') as [string, string] : undefined;
+    updateMember(member.id, {
+      gridRef:
+        nextGridRef.startGrid || nextGridRef.endGrid
+          ? nextGridRef
+          : undefined,
+    });
+  };
+
+  return (
+    <div style={{ marginTop: 6 }}>
+      {(['startGrid', 'endGrid'] as const).map((endpoint) => (
+        <div key={endpoint} className="prop-row">
+          <span className="prop-label">{endpoint === 'startGrid' ? 'Start grid' : 'End grid'}</span>
+          <select
+            className="prop-select"
+            value={member.gridRef?.[endpoint]?.join('|') ?? ''}
+            onChange={(event) => setPair(endpoint, event.target.value)}
+          >
+            <option value="">—</option>
+            {pairs.map(([x, y]) => <option key={`${x}|${y}`} value={`${x}|${y}`}>{x} / {y}</option>)}
+          </select>
+        </div>
+      ))}
     </div>
   );
 }
@@ -515,6 +752,49 @@ function DimensionProps({ dimension }: { dimension: Dimension }) {
             ))}
           </select>
         </div>
+      </div>
+    </div>
+  );
+}
+
+function OpeningProps({ opening }: { opening: Opening }) {
+  const updateOpening = useProjectStore((state) => state.updateOpening);
+  const { t } = useI18n();
+  return (
+    <div>
+      <div className="panel-header">{t.panelProperties}</div>
+      <div className="panel-content">
+        <div className="prop-row"><span className="prop-label">{t.propId}</span><span>{opening.id}</span></div>
+        <div className="prop-row">
+          <span className="prop-label">{t.propType}</span>
+          <select
+            className="prop-select"
+            value={opening.type}
+            onChange={(event) => updateOpening(opening.id, {
+              type: event.target.value as Opening['type'],
+            })}
+          >
+            <option value="door">door</option>
+            <option value="window">window</option>
+            <option value="void">void</option>
+          </select>
+        </div>
+        <div className="prop-row"><span className="prop-label">Host</span><span>{opening.memberId}</span></div>
+        <CoordRow label="X" value={opening.position.x} onChange={(value) => updateOpening(opening.id, {
+          position: { ...opening.position, x: value },
+        })} />
+        <CoordRow label="Y" value={opening.position.y} onChange={(value) => updateOpening(opening.id, {
+          position: { ...opening.position, y: value },
+        })} />
+        <CoordRow label="Z" value={opening.position.z} onChange={(value) => updateOpening(opening.id, {
+          position: { ...opening.position, z: value },
+        })} />
+        <CoordRow label="Width" value={opening.width} onChange={(width) =>
+          updateOpening(opening.id, { width })
+        } />
+        <CoordRow label="Height" value={opening.height} onChange={(height) =>
+          updateOpening(opening.id, { height })
+        } />
       </div>
     </div>
   );

@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useI18n } from '@/i18n';
 import type { Translations } from '@/i18n';
+import { Modal } from '@/components/common/Modal';
 
 interface Props {
   onClose: () => void;
@@ -26,116 +27,88 @@ export function HelpDialog({ onClose }: Props) {
   const [activeIdx, setActiveIdx] = useState(0);
 
   return (
-    <div
-      style={{
-        position: 'fixed',
-        inset: 0,
-        background: 'var(--bg-modal-overlay)',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        zIndex: 1000,
-      }}
-      onClick={onClose}
+    <Modal
+      title={t.helpTitle}
+      onClose={onClose}
+      width={680}
+      maxHeight="82vh"
+      bodyStyle={{ padding: 0, display: 'flex', minHeight: 420 }}
+      footer={
+        <button
+          className="toolbar-btn"
+          style={{ background: 'var(--border-color)', color: 'var(--text-primary)', minHeight: 28 }}
+          onClick={onClose}
+        >
+          {t.helpClose}
+        </button>
+      }
     >
-      <div
-        style={{
-          background: 'var(--bg-modal)',
-          borderRadius: 8,
-          padding: 0,
-          width: 640,
-          maxWidth: '90vw',
-          maxHeight: '80vh',
-          display: 'flex',
-          flexDirection: 'column',
-          boxShadow: '0 8px 32px rgba(0,0,0,0.3)',
-          color: 'var(--text-primary)',
-          overflow: 'hidden',
-        }}
-        onClick={(e) => e.stopPropagation()}
-      >
-        {/* Header */}
-        <div
+      <div style={{ display: 'flex', flex: 1, minHeight: 0 }}>
+        {/* Sidebar nav */}
+        <nav
+          aria-label={t.helpTitle}
           style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            padding: '16px 20px',
-            borderBottom: '1px solid var(--border-color)',
+            width: 180,
+            minWidth: 180,
+            borderRight: '1px solid var(--border-color)',
+            overflowY: 'auto',
+            padding: '8px 0',
+            background: 'var(--bg-secondary)',
           }}
         >
-          <h3 style={{ margin: 0, fontSize: 16 }}>{t.helpTitle}</h3>
-          <button
-            className="toolbar-btn"
-            style={{ background: 'var(--border-color)', color: 'var(--text-primary)', minHeight: 28 }}
-            onClick={onClose}
-          >
-            {t.helpClose}
-          </button>
-        </div>
+          {SECTIONS.map((sec, idx) => (
+            <button
+              key={sec.titleKey}
+              type="button"
+              onClick={() => setActiveIdx(idx)}
+              aria-current={idx === activeIdx ? 'page' : undefined}
+              style={{
+                width: '100%',
+                border: 0,
+                textAlign: 'left',
+                padding: '8px 16px',
+                fontSize: 12,
+                cursor: 'pointer',
+                background: idx === activeIdx ? 'var(--bg-active)' : 'transparent',
+                color: idx === activeIdx ? 'var(--accent)' : 'var(--text-primary)',
+                fontWeight: idx === activeIdx ? 600 : 400,
+                borderLeft: idx === activeIdx ? '3px solid var(--accent)' : '3px solid transparent',
+              }}
+            >
+              {t[sec.titleKey]}
+            </button>
+          ))}
+        </nav>
 
-        {/* Body */}
-        <div style={{ display: 'flex', flex: 1, minHeight: 0 }}>
-          {/* Sidebar nav */}
-          <nav
+        {/* Content */}
+        <div
+          style={{
+            flex: 1,
+            overflowY: 'auto',
+            padding: '20px 24px',
+          }}
+        >
+          <h4
             style={{
-              width: 180,
-              minWidth: 180,
-              borderRight: '1px solid var(--border-color)',
-              overflowY: 'auto',
-              padding: '8px 0',
-              background: 'var(--bg-secondary)',
+              margin: '0 0 12px',
+              fontSize: 15,
+              color: 'var(--accent)',
             }}
           >
-            {SECTIONS.map((sec, idx) => (
-              <div
-                key={sec.titleKey}
-                onClick={() => setActiveIdx(idx)}
-                style={{
-                  padding: '8px 16px',
-                  fontSize: 12,
-                  cursor: 'pointer',
-                  background: idx === activeIdx ? 'var(--bg-active)' : 'transparent',
-                  color: idx === activeIdx ? 'var(--accent)' : 'var(--text-primary)',
-                  fontWeight: idx === activeIdx ? 600 : 400,
-                  borderLeft: idx === activeIdx ? '3px solid var(--accent)' : '3px solid transparent',
-                }}
-              >
-                {t[sec.titleKey]}
-              </div>
-            ))}
-          </nav>
-
-          {/* Content */}
+            {t[SECTIONS[activeIdx].titleKey]}
+          </h4>
           <div
             style={{
-              flex: 1,
-              overflowY: 'auto',
-              padding: '20px 24px',
+              fontSize: 13,
+              lineHeight: 1.8,
+              whiteSpace: 'pre-wrap',
+              color: 'var(--text-primary)',
             }}
           >
-            <h4
-              style={{
-                margin: '0 0 12px',
-                fontSize: 15,
-                color: 'var(--accent)',
-              }}
-            >
-              {t[SECTIONS[activeIdx].titleKey]}
-            </h4>
-            <div
-              style={{
-                fontSize: 13,
-                lineHeight: 1.8,
-                whiteSpace: 'pre-wrap',
-                color: 'var(--text-primary)',
-              }}
-            >
-              {t[SECTIONS[activeIdx].contentKey]}
-            </div>
+            {t[SECTIONS[activeIdx].contentKey]}
           </div>
         </div>
       </div>
-    </div>
+    </Modal>
   );
 }

@@ -1,8 +1,16 @@
 import { useState, type Dispatch, type SetStateAction } from 'react';
 import type { Material } from '@/domain/structural/types';
+import { changeMaterialType } from '@/domain/structural/materials';
 import type { Labels, MaterialPreset } from './masterDataHelpers';
 import { MATERIAL_PRESETS, MATERIAL_TYPES, applyMaterialPreset } from './masterDataHelpers';
-import { DeleteButton, ReadonlyField, SectionHeader, SelectField, TextField } from './masterDataFields';
+import {
+  DeleteButton,
+  OptionalNumberField,
+  ReadonlyField,
+  SectionHeader,
+  SelectField,
+  TextField,
+} from './masterDataFields';
 
 interface MaterialsSectionProps {
   materials: Material[];
@@ -15,33 +23,6 @@ interface MaterialsSectionProps {
   deleteMaterial: (id: string) => void;
 }
 
-/** Optional numeric field that maps an empty value to `undefined`. */
-function OptionalNumberField({
-  label,
-  value,
-  onChange,
-}: {
-  label: string;
-  value: number | undefined;
-  onChange: (value: number | undefined) => void;
-}) {
-  return (
-    <label style={{ display: 'grid', gap: 4, minWidth: 0 }}>
-      <span style={{ fontSize: 11, color: 'var(--text-secondary)' }}>{label}</span>
-      <input
-        className="prop-input"
-        style={{ maxWidth: '100%' }}
-        type="number"
-        value={value ?? ''}
-        onChange={(event) => {
-          const raw = event.target.value;
-          onChange(raw === '' ? undefined : Number(raw));
-        }}
-      />
-    </label>
-  );
-}
-
 function StrengthRow({
   material,
   labels,
@@ -51,12 +32,11 @@ function StrengthRow({
   labels: Labels;
   updateMaterial: (id: string, updates: Partial<Material>) => void;
 }) {
-  const update = (updates: Partial<Material>) => updateMaterial(material.id, updates);
   return (
     <div
       style={{
         display: 'grid',
-        gridTemplateColumns: 'repeat(4, minmax(0, 1fr))',
+        gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))',
         gap: 8,
         marginTop: 8,
         alignItems: 'end',
@@ -65,20 +45,71 @@ function StrengthRow({
       <OptionalNumberField
         label={labels.elasticModulus}
         value={material.elasticModulus}
-        onChange={(value) => update({ elasticModulus: value })}
+        onChange={(value) => updateMaterial(material.id, { elasticModulus: value })}
+      />
+      <OptionalNumberField
+        label={labels.shearModulus}
+        value={material.shearModulus}
+        onChange={(value) => updateMaterial(material.id, { shearModulus: value })}
+      />
+      <OptionalNumberField
+        label={labels.poissonRatio}
+        value={material.poissonRatio}
+        onChange={(value) => updateMaterial(material.id, { poissonRatio: value })}
       />
       <OptionalNumberField
         label={labels.unitWeight}
         value={material.unitWeight}
-        onChange={(value) => update({ unitWeight: value })}
+        onChange={(value) => updateMaterial(material.id, { unitWeight: value })}
       />
       {material.type === 'concrete' && (
-        <OptionalNumberField label={labels.fc} value={material.Fc} onChange={(value) => update({ Fc: value })} />
+        <OptionalNumberField
+          label={labels.fc}
+          value={material.Fc}
+          onChange={(value) => updateMaterial(material.id, { Fc: value })}
+        />
       )}
       {material.type === 'steel' && (
         <>
-          <OptionalNumberField label={labels.steelF} value={material.F} onChange={(value) => update({ F: value })} />
-          <OptionalNumberField label={labels.fy} value={material.Fy} onChange={(value) => update({ Fy: value })} />
+          <OptionalNumberField
+            label={labels.steelF}
+            value={material.F}
+            onChange={(value) => updateMaterial(material.id, { F: value })}
+          />
+          <OptionalNumberField
+            label={labels.fy}
+            value={material.Fy}
+            onChange={(value) => updateMaterial(material.id, { Fy: value })}
+          />
+        </>
+      )}
+      {material.type === 'wood' && (
+        <>
+          <OptionalNumberField
+            label={labels.referenceStrength}
+            value={material.referenceStrength}
+            onChange={(value) => updateMaterial(material.id, { referenceStrength: value })}
+          />
+          <OptionalNumberField
+            label={labels.moistureContent}
+            value={material.moistureContent}
+            onChange={(value) => updateMaterial(material.id, { moistureContent: value })}
+          />
+          <OptionalNumberField
+            label={labels.allowableBendingStress}
+            value={material.allowableBendingStress}
+            onChange={(value) => updateMaterial(material.id, { allowableBendingStress: value })}
+          />
+          <OptionalNumberField
+            label={labels.allowableCompressionStress}
+            value={material.allowableCompressionStress}
+            onChange={(value) => updateMaterial(material.id, { allowableCompressionStress: value })}
+          />
+          <OptionalNumberField
+            label={labels.allowableShearStress}
+            value={material.allowableShearStress}
+            onChange={(value) => updateMaterial(material.id, { allowableShearStress: value })}
+          />
         </>
       )}
     </div>
@@ -87,24 +118,27 @@ function StrengthRow({
 
 function PresetPicker({
   labels,
+  type,
   onApply,
 }: {
   labels: Labels;
+  type: Material['type'];
   onApply: (preset: MaterialPreset) => void;
 }) {
-  const [presetId, setPresetId] = useState<string>(MATERIAL_PRESETS[0]?.id ?? '');
+  const presets = MATERIAL_PRESETS.filter((preset) => preset.values.type === type);
+  const [presetId, setPresetId] = useState<string>(presets[0]?.id ?? '');
   return (
     <div style={{ display: 'flex', gap: 6, alignItems: 'end' }}>
       <SelectField
         label={labels.preset}
         value={presetId}
-        options={MATERIAL_PRESETS.map((p) => p.id)}
+        options={presets.map((preset) => preset.id)}
         onChange={setPresetId}
       />
       <button
         className="toolbar-btn"
         onClick={() => {
-          const preset = MATERIAL_PRESETS.find((p) => p.id === presetId);
+          const preset = presets.find((candidate) => candidate.id === presetId);
           if (preset) onApply(preset);
         }}
       >
@@ -151,7 +185,12 @@ export function MaterialsSection({
                 label={labels.type}
                 value={material.type}
                 options={MATERIAL_TYPES}
-                onChange={(value) => updateMaterial(material.id, { type: value as Material['type'] })}
+                onChange={(value) =>
+                  updateMaterial(
+                    material.id,
+                    changeMaterialType(material, value as Material['type']),
+                  )
+                }
               />
               <DeleteButton
                 label={labels.delete}
@@ -163,7 +202,9 @@ export function MaterialsSection({
             <StrengthRow material={material} labels={labels} updateMaterial={updateMaterial} />
             <div style={{ marginTop: 8 }}>
               <PresetPicker
+                key={material.type}
                 labels={labels}
+                type={material.type}
                 onApply={(preset) => {
                   const next = applyMaterialPreset(material, preset);
                   const { id: _id, name: _name, ...updates } = next;
@@ -191,7 +232,11 @@ export function MaterialsSection({
             label={labels.type}
             value={newMaterial.type}
             options={MATERIAL_TYPES}
-            onChange={(value) => setNewMaterial((prev) => ({ ...prev, type: value as Material['type'] }))}
+            onChange={(value) =>
+              setNewMaterial((previous) =>
+                changeMaterialType(previous, value as Material['type']),
+              )
+            }
           />
           <button className="toolbar-btn" onClick={onAddMaterial}>{labels.addMaterial}</button>
         </div>

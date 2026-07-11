@@ -1,8 +1,11 @@
 import { useEditorStore, useProjectStore, LAYER_NAMES } from '@/app/store';
 import { useI18n } from '@/i18n';
 import type { Translations } from '@/i18n';
+import type { LayerName } from '@/app/store';
+import { useShallow } from 'zustand/react/shallow';
+import { entityLayerForId } from '@/domain/rendering/layerLock';
 
-const LAYER_LABEL_KEYS: Record<string, keyof Translations> = {
+const LAYER_LABEL_KEYS: Record<LayerName, keyof Translations> = {
   grid: 'layerGrid',
   'member-column': 'layerColumn',
   'member-beam': 'layerBeam',
@@ -15,9 +18,28 @@ const LAYER_LABEL_KEYS: Record<string, keyof Translations> = {
 };
 
 export function LayerPanel() {
-  const { layerVisibility, toggleLayerVisibility, layerLocked, setLayerLocked } = useEditorStore();
+  const {
+    layerVisibility,
+    toggleLayerVisibility,
+    layerLocked,
+    setLayerLocked,
+    setSelectedIds,
+  } = useEditorStore(
+    useShallow((state) => ({
+      layerVisibility: state.layerVisibility,
+      toggleLayerVisibility: state.toggleLayerVisibility,
+      layerLocked: state.layerLocked,
+      setLayerLocked: state.setLayerLocked,
+      setSelectedIds: state.setSelectedIds,
+    })),
+  );
   const data = useProjectStore((s) => s.data);
-  const { toggleExternalRefVisibility, removeExternalRef } = useProjectStore();
+  const { toggleExternalRefVisibility, removeExternalRef } = useProjectStore(
+    useShallow((state) => ({
+      toggleExternalRefVisibility: state.toggleExternalRefVisibility,
+      removeExternalRef: state.removeExternalRef,
+    })),
+  );
   const { t } = useI18n();
 
   return (
@@ -30,13 +52,31 @@ export function LayerPanel() {
               <input
                 type="checkbox"
                 checked={layerVisibility[name] !== false}
-                onChange={() => toggleLayerVisibility(name)}
+                onChange={() => {
+                  if (layerVisibility[name] !== false && data) {
+                    setSelectedIds(
+                      useEditorStore
+                        .getState()
+                        .selectedIds.filter((id) => entityLayerForId(data, id) !== name),
+                    );
+                  }
+                  toggleLayerVisibility(name);
+                }}
               />
               {t[LAYER_LABEL_KEYS[name]] || name}
             </label>
             <button
               title={layerLocked[name] ? 'Unlock' : 'Lock'}
-              onClick={() => setLayerLocked(name, !layerLocked[name])}
+              onClick={() => {
+                if (!layerLocked[name] && data) {
+                  setSelectedIds(
+                    useEditorStore
+                      .getState()
+                      .selectedIds.filter((id) => entityLayerForId(data, id) !== name),
+                  );
+                }
+                setLayerLocked(name, !layerLocked[name]);
+              }}
               style={{
                 background: 'none',
                 border: 'none',

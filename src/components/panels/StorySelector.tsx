@@ -9,7 +9,8 @@ function buildNextStoryId(id: string, index: number): string {
 export function StorySelector() {
   const data = useProjectStore((s) => s.data);
   const duplicateStory = useProjectStore((s) => s.duplicateStory);
-  const { activeStory, setActiveStory } = useEditorStore();
+  const activeStory = useEditorStore((state) => state.activeStory);
+  const setActiveStory = useEditorStore((state) => state.setActiveStory);
   const { t, locale } = useI18n();
 
   if (!data) return null;
@@ -43,6 +44,7 @@ export function StorySelector() {
       </div>
       <div className="panel-content">
         <select
+          aria-label={t.panelStory}
           className="prop-select"
           style={{ maxWidth: '100%' }}
           value={activeStory ?? ''}

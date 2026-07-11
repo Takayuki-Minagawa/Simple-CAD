@@ -88,6 +88,40 @@ describe('validateTopology', () => {
     expect(result.errors.some((e) => e.message.includes('範囲'))).toBe(true);
   });
 
+  it('warns when a slab edge is not supported by a beam or wall loop', () => {
+    const data: ProjectData = {
+      ...validData,
+      members: [
+        {
+          id: 'SLAB-OPEN-LOOP',
+          type: 'slab',
+          story: '1F',
+          sectionId: 'SEC-SLAB180',
+          materialId: 'MAT-RC-24',
+          polygon: [
+            { x: 0, y: 0 },
+            { x: 1000, y: 0 },
+            { x: 1000, y: 1000 },
+            { x: 0, y: 1000 },
+          ],
+          level: 3000,
+        },
+        {
+          id: 'ONLY-ONE-EDGE',
+          type: 'beam',
+          story: '1F',
+          sectionId: 'SEC-B300x600',
+          materialId: 'MAT-RC-24',
+          start: { x: 0, y: 0, z: 3000 },
+          end: { x: 1000, y: 0, z: 3000 },
+        },
+      ],
+    };
+
+    const result = validateTopology(data);
+    expect(result.errors.some((error) => error.message.includes('slab外周'))).toBe(true);
+  });
+
   it('warns when wall height exceeds story height', () => {
     const data: ProjectData = {
       ...validData,
@@ -109,6 +143,48 @@ describe('validateTopology', () => {
     expect(result.errors.some((e) => e.message.includes('階高'))).toBe(true);
   });
 
+  it('warns when a column vertical span differs from its story height', () => {
+    const data: ProjectData = {
+      ...validData,
+      stories: [{ id: '1F', name: '1F', elevation: 0, height: 3000 }],
+      members: [
+        {
+          id: 'C-SHORT',
+          type: 'column',
+          story: '1F',
+          sectionId: 'SEC-C600',
+          materialId: 'MAT-RC-24',
+          start: { x: 0, y: 0, z: 0 },
+          end: { x: 0, y: 0, z: 2500 },
+        },
+      ],
+    };
+
+    const result = validateTopology(data);
+    expect(result.errors.some((error) => error.message.includes('柱の鉛直スパン'))).toBe(true);
+  });
+
+  it('warns when a full-height column is offset from its assigned story level', () => {
+    const data: ProjectData = {
+      ...validData,
+      stories: [{ id: '1F', name: '1F', elevation: 0, height: 3000 }],
+      members: [
+        {
+          id: 'C-OFFSET',
+          type: 'column',
+          story: '1F',
+          sectionId: 'SEC-C600',
+          materialId: 'MAT-RC-24',
+          start: { x: 0, y: 0, z: 500 },
+          end: { x: 0, y: 0, z: 3500 },
+        },
+      ],
+    };
+
+    const result = validateTopology(data);
+    expect(result.errors.some((error) => error.message.includes('柱端レベル'))).toBe(true);
+  });
+
   it('warns on a floating beam endpoint (joint not satisfied)', () => {
     const data: ProjectData = {
       ...validData,
@@ -126,5 +202,29 @@ describe('validateTopology', () => {
     };
     const result = validateTopology(data);
     expect(result.errors.some((e) => e.message.includes('接合'))).toBe(true);
+  });
+
+  it('does not treat a beam as connected only because it overlaps a column in plan', () => {
+    const sourceBeam = validData.members.find((member) => member.type === 'beam')!;
+    const data: ProjectData = {
+      ...validData,
+      members: validData.members.map((member) =>
+        member.id === sourceBeam.id && member.type === 'beam'
+          ? {
+              ...member,
+              start: { ...member.start, z: 9000 },
+              end: { ...member.end, z: 9000 },
+            }
+          : member,
+      ),
+    };
+
+    const result = validateTopology(data);
+    expect(result.errors.some((error) => error.message.includes('梁端レベル'))).toBe(true);
+    expect(
+      result.errors.some(
+        (error) => error.path === `/members/${sourceBeam.id}` && error.message.includes('接続'),
+      ),
+    ).toBe(true);
   });
 });

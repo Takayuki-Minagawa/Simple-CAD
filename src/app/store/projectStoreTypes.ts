@@ -24,6 +24,12 @@ export interface ProjectState {
   data: ProjectData | null;
   isDirty: boolean;
   fileHandle: FileSystemFileHandle | null;
+  /** Undoable identity of the current document revision. */
+  currentRevision: number;
+  /** Non-undoable revision recorded by the most recent successful save/load. */
+  savedRevision: number;
+  /** Changes only when the whole document is replaced, never for normal edits/undo. */
+  documentGeneration: number;
 
   loadProject: (data: ProjectData) => void;
   newProject: () => void;
@@ -32,6 +38,7 @@ export interface ProjectState {
 
   addMember: (member: Member) => void;
   updateMember: (id: string, updates: Partial<Member>) => void;
+  updateMembers: (ids: string[], updates: Partial<Member>) => void;
   deleteMember: (id: string) => void;
   moveMember: (id: string, dx: number, dy: number) => void;
   duplicateMember: (id: string) => string | null;
@@ -53,11 +60,15 @@ export interface ProjectState {
   deleteDimension: (id: string) => void;
 
   addOpening: (opening: Opening) => void;
+  updateOpening: (id: string, updates: Partial<Opening>) => void;
   deleteOpening: (id: string) => void;
 
   addStory: (story: Story) => void;
   updateStory: (id: string, updates: Partial<Story>) => void;
+  updateStories: (updates: Array<{ id: string; updates: Partial<Story> }>) => void;
   duplicateStory: (sourceId: string, story: Story) => string | null;
+  deleteStory: (id: string) => boolean;
+  reorderStories: (orderedIds: string[], chainElevations?: boolean) => void;
 
   addGrid: (grid: Grid) => void;
   updateGrid: (id: string, updates: Partial<Grid>) => void;
@@ -75,6 +86,8 @@ export interface ProjectState {
   deleteSection: (id: string) => void;
   addPlanSheet: (storyId: string) => string | null;
   updateSheet: (id: string, updates: Partial<Sheet>) => void;
+  deleteSheet: (id: string) => boolean;
+  reorderSheets: (orderedIds: string[]) => void;
 
   trimMember: (memberId: string, cutPoint: Point2D, side: 'start' | 'end') => boolean;
   extendMember: (memberId: string, targetMemberId: string) => boolean;
@@ -98,5 +111,60 @@ export interface ProjectState {
   updateViewport: (id: string, updates: Partial<Viewport>) => void;
   removeViewport: (id: string) => void;
 
+  updateAnalysisData: (updates: AnalysisDataPatch) => void;
+
+  /** Apply a file import as one undoable transaction. */
+  importEntities: (batch: ProjectImportBatch) => ProjectImportSummary;
+  /** Delete many selected entities as one undoable transaction. */
+  deleteEntities: (ids: string[]) => void;
+  /** Move every linear endpoint sharing a structural joint. */
+  moveConnectedJoint: (
+    origin: Point2D,
+    point: Point2D,
+    storyId: string | null,
+    tolerance?: number,
+  ) => void;
   deleteById: (id: string) => void;
+}
+
+export type AnalysisDataPatch = Partial<
+  Pick<
+    ProjectData,
+    | 'supports'
+    | 'nodalLoads'
+    | 'memberLoads'
+    | 'areaLoads'
+    | 'loadCombinations'
+    | 'masses'
+    | 'diaphragms'
+    | 'analysisResults'
+  >
+>;
+
+export interface ProjectImportBatch {
+  members?: Member[];
+  openings?: Opening[];
+  annotations?: Annotation[];
+  dimensions?: Dimension[];
+  grids?: Grid[];
+  materials?: Material[];
+  sections?: Section[];
+  constructionLines?: ConstructionLine[];
+}
+
+export type ProjectImportCategory =
+  | 'materials'
+  | 'sections'
+  | 'grids'
+  | 'members'
+  | 'openings'
+  | 'annotations'
+  | 'dimensions'
+  | 'constructionLines';
+
+export interface ProjectImportSummary {
+  added: Record<ProjectImportCategory, number>;
+  skipped: Record<ProjectImportCategory, number>;
+  remappedIds: Record<string, string>;
+  warnings: string[];
 }

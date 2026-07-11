@@ -1,7 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import { validateReferences } from '../referenceValidator';
+import { validateProject } from '..';
 import sampleProject from '@/samples/sample-project.json';
-import type { ProjectData } from '@/domain/structural/types';
+import { isLinearMember, type ProjectData } from '@/domain/structural/types';
 
 const validData = sampleProject as unknown as ProjectData;
 
@@ -9,7 +10,8 @@ describe('validateReferences', () => {
   it('passes for valid sample project', () => {
     const result = validateReferences(validData);
     expect(result.ok).toBe(true);
-    expect(result.errors).toHaveLength(0);
+    expect(result.errors.every((error) => error.level !== 'error')).toBe(true);
+    expect(result.errors.some((error) => error.path === '/supports')).toBe(true);
   });
 
   it('detects invalid story reference in member', () => {
@@ -101,5 +103,107 @@ describe('validateReferences', () => {
     const result = validateReferences(data);
     expect(result.ok).toBe(false);
     expect(result.errors.some((e) => e.message.includes('重複'))).toBe(true);
+  });
+
+  it('detects IDs colliding across selectable entity collections', () => {
+    const memberId = validData.members[0].id;
+    const data: ProjectData = {
+      ...validData,
+      annotations: [
+        ...validData.annotations,
+        { id: memberId, type: 'text', story: '1F', x: 0, y: 0, text: 'collision' },
+      ],
+    };
+    const result = validateReferences(data);
+    expect(result.ok).toBe(false);
+    expect(result.errors.some((error) => error.path === '/selectableEntities')).toBe(true);
+  });
+
+  it('rejects isolated supports, nodal loads and masses beyond the 1mm tolerance', () => {
+    const data: ProjectData = {
+      ...validData,
+      loadCases: [{ id: 'LC1', name: 'Dead', type: 'dead' }],
+      supports: [{
+        id: 'SUP-ISO', storyId: '1F', position: { x: 999999, y: 999999, z: 0 },
+        restraints: { ux: true, uy: true, uz: true, rx: false, ry: false, rz: false },
+      }],
+      nodalLoads: [{
+        id: 'NL-ISO', storyId: '1F', loadCaseId: 'LC1',
+        position: { x: 999999, y: 999999, z: 0 }, force: { x: 0, y: 0, z: -1 },
+      }],
+      masses: [{
+        id: 'M-ISO', storyId: '1F', position: { x: 999999, y: 999999, z: 0 },
+        mass: { x: 1, y: 1, z: 1 },
+      }],
+    };
+    const result = validateReferences(data);
+    expect(result.errors.filter((error) => error.message.includes('接続されていません'))).toHaveLength(3);
+  });
+
+  it('accepts analysis points connected to a member node or diaphragm master', () => {
+    const member = validData.members.find(
+      (item) => item.story === '1F' && isLinearMember(item),
+    );
+    if (!member || !isLinearMember(member)) throw new Error('missing linear member');
+    const master = { x: 12345, y: 6789, z: 3000 };
+    const data: ProjectData = {
+      ...validData,
+      supports: [{
+        id: 'SUP-NODE', storyId: '1F', position: { ...member.start },
+        restraints: { ux: true, uy: true, uz: true, rx: false, ry: false, rz: false },
+      }],
+      diaphragms: [{ id: 'DIA', storyId: '1F', type: 'rigid', masterPosition: master }],
+      masses: [{ id: 'M-MASTER', storyId: '1F', position: master, mass: { x: 1, y: 1, z: 1 } }],
+    };
+    const result = validateReferences(data);
+    expect(result.errors.some((error) => error.message.includes('接続されていません'))).toBe(false);
+  });
+
+  it('detects duplicate load-case factors in a combination', () => {
+    const data: ProjectData = {
+      ...validData,
+      loadCases: [{ id: 'LC1', name: 'Dead', type: 'dead' }],
+      loadCombinations: [
+        {
+          id: 'COMB1',
+          name: 'duplicate',
+          type: 'linear',
+          factors: [
+            { loadCaseId: 'LC1', factor: 1 },
+            { loadCaseId: 'LC1', factor: 0.5 },
+          ],
+        },
+      ],
+    };
+
+    const result = validateReferences(data);
+    expect(result.ok).toBe(false);
+    expect(result.errors.some((error) => error.message.includes('重複'))).toBe(true);
+  });
+
+  it('recursively validates references inside external projects', () => {
+    const nested = structuredClone(validData);
+    nested.members[0].materialId = 'MISSING-IN-XREF';
+    const data = structuredClone(validData);
+    data.externalRefs = [
+      {
+        id: 'XREF-1',
+        name: 'invalid nested project',
+        data: nested,
+        offsetX: 0,
+        offsetY: 0,
+        visible: true,
+      },
+    ];
+
+    const result = validateProject(data);
+    expect(result.ok).toBe(false);
+    expect(
+      result.errors.some(
+        (error) =>
+          error.path?.startsWith('/externalRefs/0/data') &&
+          error.message.includes('MISSING-IN-XREF'),
+      ),
+    ).toBe(true);
   });
 });

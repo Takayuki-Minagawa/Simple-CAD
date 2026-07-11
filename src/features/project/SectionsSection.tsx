@@ -1,5 +1,6 @@
 import type { Dispatch, SetStateAction } from 'react';
 import type { RebarSpec, Section } from '@/domain/structural/types';
+import type { HSectionLibraryEntry } from '@/domain/structural/sectionLibrary';
 import type { Labels, SectionKindDraft } from './masterDataHelpers';
 import {
   SECTION_KIND_OPTIONS,
@@ -8,7 +9,16 @@ import {
   sectionIsSteelH,
   sectionKindLabel,
 } from './masterDataHelpers';
-import { DeleteButton, NumberField, ReadonlyField, SectionHeader, SelectField, TextField } from './masterDataFields';
+import {
+  DeleteButton,
+  NumberField,
+  OptionalNumberField,
+  ReadonlyField,
+  SectionHeader,
+  SelectField,
+  TextField,
+} from './masterDataFields';
+import { HSectionLibraryPicker } from './HSectionLibraryPicker';
 
 interface SectionsSectionProps {
   sections: Section[];
@@ -27,35 +37,12 @@ interface SectionsSectionProps {
   newSectionDiameter: number;
   setNewSectionDiameter: Dispatch<SetStateAction<number>>;
   onAddSection: () => void;
+  onAddHSectionPreset: (
+    entry: HSectionLibraryEntry,
+    kind: 's_column_h' | 's_beam_h',
+  ) => void;
   updateSection: (id: string, updates: Partial<Section>) => void;
   deleteSection: (id: string) => void;
-}
-
-/** Optional numeric field that maps empty input to `undefined`. */
-function OptionalNumberField({
-  label,
-  value,
-  onChange,
-}: {
-  label: string;
-  value: number | undefined;
-  onChange: (value: number | undefined) => void;
-}) {
-  return (
-    <label style={{ display: 'grid', gap: 4, minWidth: 0 }}>
-      <span style={{ fontSize: 11, color: 'var(--text-secondary)' }}>{label}</span>
-      <input
-        className="prop-input"
-        style={{ maxWidth: '100%' }}
-        type="number"
-        value={value ?? ''}
-        onChange={(event) => {
-          const raw = event.target.value;
-          onChange(raw === '' ? undefined : Number(raw));
-        }}
-      />
-    </label>
-  );
 }
 
 /** Render the dimension inputs that are specific to a section's kind. */
@@ -208,6 +195,7 @@ export function SectionsSection({
   newSectionDiameter,
   setNewSectionDiameter,
   onAddSection,
+  onAddHSectionPreset,
   updateSection,
   deleteSection,
 }: SectionsSectionProps) {
@@ -215,6 +203,7 @@ export function SectionsSection({
     <section>
       <SectionHeader title={labels.sections} />
       <div style={{ display: 'grid', gap: 8 }}>
+        <HSectionLibraryPicker onAdd={onAddHSectionPreset} />
         {sections.map((section) => (
           <div key={section.id} style={{ border: '1px solid var(--border-color)', borderRadius: 8, padding: 12 }}>
             <div

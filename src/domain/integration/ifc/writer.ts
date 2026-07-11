@@ -1,6 +1,8 @@
 import { v5 as uuidv5 } from 'uuid';
 import type { Point2D, Point3D } from '@/domain/geometry/types';
+import type { Material } from '@/domain/structural/types';
 import type { Vector3 } from './types';
+import { encodeStepString } from './stringEncoding';
 
 const IFC_UUID_NAMESPACE = '6ba7b810-9dad-11d1-80b4-00c04fd430c8';
 
@@ -73,9 +75,32 @@ export class IfcWriter {
   }
 
   polylineProfile(name: string, points: Point2D[]): number {
-    const refs = points.map((point) => this.ref(this.cartesianPoint2D(point)));
+    const closed = closePolyline(points);
+    const refs = closed.map((point) => this.ref(this.cartesianPoint2D(point)));
     const polyline = this.add(`IFCPOLYLINE((${refs.join(',')}))`);
     return this.add(`IFCARBITRARYCLOSEDPROFILEDEF(.AREA.,${this.str(name)},${this.ref(polyline)})`);
+  }
+
+  iShapeProfile(
+    name: string,
+    overallWidth: number,
+    overallDepth: number,
+    webThickness: number,
+    flangeThickness: number,
+  ): number {
+    const origin = this.cartesianPoint2D({ x: 0, y: 0 });
+    const placement = this.axis2Placement2D(origin);
+    return this.add(
+      `IFCISHAPEPROFILEDEF(.AREA.,${this.str(name)},${this.ref(placement)},${this.num(overallWidth)},${this.num(overallDepth)},${this.num(webThickness)},${this.num(flangeThickness)},$,$,$)`,
+    );
+  }
+
+  hollowCircleProfile(name: string, diameter: number, wallThickness: number): number {
+    const origin = this.cartesianPoint2D({ x: 0, y: 0 });
+    const placement = this.axis2Placement2D(origin);
+    return this.add(
+      `IFCHOLLOWCIRCLEPROFILEDEF(.AREA.,${this.str(name)},${this.ref(placement)},${this.num(diameter / 2)},${this.num(wallThickness)})`,
+    );
   }
 
   extrudedSolid(profileRef: number, depth: number): number {
@@ -95,9 +120,16 @@ export class IfcWriter {
     return this.add(`IFCPRODUCTDEFINITIONSHAPE($,$,(${this.ref(shape)}))`);
   }
 
-  product(type: string, seed: string, name: string, placementRef: number, shapeRef: number): number {
+  product(
+    type: string,
+    seed: string,
+    name: string,
+    placementRef: number,
+    shapeRef: number,
+    description?: string,
+  ): number {
     return this.add(
-      `${type}('${toIfcGlobalId(seed)}',$,${this.str(name)},$,$,${this.ref(placementRef)},${this.ref(shapeRef)},$,$)`,
+      `${type}('${toIfcGlobalId(seed)}',$,${this.str(name)},${description ? this.str(description) : '$'},$,${this.ref(placementRef)},${this.ref(shapeRef)},$,$)`,
     );
   }
 
@@ -112,21 +144,52 @@ export class IfcWriter {
       `IFCRELCONTAINEDINSPATIALSTRUCTURE('${toIfcGlobalId(seed)}',$,$,$,(${elementRefs.map((ref) => this.ref(ref)).join(',')}),${this.ref(storyRef)})`,
     );
   }
+
+  material(material: Material): number {
+    return this.add(
+      `IFCMATERIAL(${this.str(material.id)},${this.str(JSON.stringify(material))},${this.str(material.type)})`,
+    );
+  }
+
+  relAssociatesMaterial(seed: string, elementRefs: number[], materialRef: number): number {
+    return this.add(
+      `IFCRELASSOCIATESMATERIAL('${toIfcGlobalId(seed)}',$,$,$,(${elementRefs.map((ref) => this.ref(ref)).join(',')}),${this.ref(materialRef)})`,
+    );
+  }
+
+  relVoids(seed: string, hostRef: number, openingRef: number): number {
+    return this.add(
+      `IFCRELVOIDSELEMENT('${toIfcGlobalId(seed)}',$,$,$,${this.ref(hostRef)},${this.ref(openingRef)})`,
+    );
+  }
+}
+
+function closePolyline(points: Point2D[]): Point2D[] {
+  if (points.length === 0) return [];
+  const first = points[0];
+  const last = points[points.length - 1];
+  if (first.x === last.x && first.y === last.y) return points;
+  return [...points, first];
 }
 
 export function toIfcGlobalId(seed: string): string {
-  const chars = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz_$';
-  const hex = uuidv5(seed, IFC_UUID_NAMESPACE).replace(/-/g, '');
-  let state = BigInt(`0x${hex}`);
+  return compressIfcUuid(uuidv5(seed, IFC_UUID_NAMESPACE));
+}
 
-  let value = '';
-  for (let index = 0; index < 22; index++) {
-    value += chars[Number(state % 64n)];
-    state /= 64n;
+/** Compress a UUID into IFC's big-endian 22-character base64 GlobalId. */
+export function compressIfcUuid(uuid: string): string {
+  const chars = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz_$';
+  const hex = uuid.replace(/-/g, '');
+  if (!/^[0-9a-fA-F]{32}$/.test(hex)) throw new Error(`Invalid UUID: ${uuid}`);
+  let state = BigInt(`0x${hex}`);
+  const value = Array<string>(22);
+  for (let index = 21; index >= 0; index--) {
+    value[index] = chars[Number(state & 63n)];
+    state >>= 6n;
   }
-  return value;
+  return value.join('');
 }
 
 export function escapeIfcString(value: string): string {
-  return value.replace(/'/g, "''");
+  return encodeStepString(value);
 }
