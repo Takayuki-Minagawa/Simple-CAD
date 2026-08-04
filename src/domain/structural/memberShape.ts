@@ -95,7 +95,9 @@ export function buildLinearMemberPolygon(
 ): Point2D[] | null {
   const dx = end.x - start.x;
   const dy = end.y - start.y;
-  const length = Math.hypot(dx, dy);
+  // sqrt(dx²+dy²) instead of Math.hypot: identical IEEE754 result across
+  // languages, so ports (e.g. the Python CLI renderer) match bit-for-bit.
+  const length = Math.sqrt(dx * dx + dy * dy);
   if (length === 0) return null;
 
   const normal = {
