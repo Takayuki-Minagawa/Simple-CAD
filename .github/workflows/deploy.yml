@@ -31,6 +31,9 @@ jobs:
       - run: npm run audit
       - run: npm run build
       - run: npm run check:bundle
+      # The headless CLI is a shipped artifact (the Python port calls it to
+      # regenerate golden files), so build it and exercise the bundle.
+      - run: npm run smoke:cli
 
   e2e:
     runs-on: ubuntu-latest

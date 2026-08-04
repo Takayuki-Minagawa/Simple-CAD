@@ -70,7 +70,9 @@ export function linearAxisOffsetToWorld(
   if (isZero(offset)) return ZERO;
   const ax = end.x - start.x;
   const ay = end.y - start.y;
-  const len = Math.hypot(ax, ay);
+  // sqrt(ax²+ay²) instead of Math.hypot: identical IEEE754 result across
+  // languages, so ports (e.g. the Python CLI renderer) match bit-for-bit.
+  const len = Math.sqrt(ax * ax + ay * ay);
   if (len === 0) {
     // Degenerate plan direction: treat like a column (dx→x, dy→y).
     return { x: offset.dx, y: offset.dy, z: 0 };

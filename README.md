@@ -72,6 +72,41 @@ npm run build
 
 `dist/` に静的ファイルが生成されます。任意の Web サーバーや CDN から配信可能です。
 
+### ヘッドレス CLI(図面のコマンドライン出力)
+
+描画コア(`src/domain/`)はブラウザ非依存の純粋 TypeScript であり、Node CLI から直接利用できます:
+
+```bash
+npm run build:cli   # dist-cli/index.js を生成
+node dist-cli/index.js list src/samples/sample-project.json
+node dist-cli/index.js validate src/samples/sample-project.json
+node dist-cli/index.js export src/samples/sample-project.json --format svg --sheet S-001 -o out.svg
+node dist-cli/index.js export src/samples/sample-project.json --format dxf --story 1F -o out.dxf
+```
+
+CLI エントリは [src/cli/index.ts](src/cli/index.ts)、実装は [src/cli/run.ts](src/cli/run.ts)。
+`@/domain/**` と Node 標準モジュールのみに依存し、ブラウザ専用アダプタ(`pdfExport`、React UI、ストア)には依存しません。
+
+終了コードは 0(成功)/ 1(実行時エラー)/ 2(引数エラー)。存在しない `--sheet` / `--story` を
+指定した場合は**出力ファイルを作らずに非ゼロ終了**します(タイプミスで一見正常な図面が
+下流パイプラインに流れ込むのを防ぐため)。
+
+```bash
+npm run smoke:cli   # ビルド + dist-cli の動作確認(正常系・異常系)
+```
+
+#### Python 移植(simple-cad-py)
+
+構造計算書ツール等の Python パイプラインから図面出力するための移植パッケージが
+別フォルダ `simple-cad-py/` にあります(将来の独立リポジトリ化を想定)。
+同一のプロジェクト JSON(契約: [src/schemas/project.schema.json](src/schemas/project.schema.json))から
+**バイト単位で同一**の SVG / DXF を出力することをゴールデンテストで担保しています。
+
+- 正の実装(source of truth)は本リポジトリの `src/domain/`
+- 描画仕様を変更したら `npm run build:cli && node scripts/generate-golden.mjs <path-to-simple-cad-py>`
+  でゴールデンを再生成し、Python 側を追従させて `pytest` を通すこと
+- 計画・経緯は [docs/CLI分離作業計画.md](docs/CLI分離作業計画.md) を参照
+
 ### テスト
 
 ```bash
