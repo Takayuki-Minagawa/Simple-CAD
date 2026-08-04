@@ -8,6 +8,7 @@
     "build": "tsc -b && vite build",
     "build:cli": "tsc -b && vite build --config vite.cli.config.ts",
     "cli": "node dist-cli/index.js",
+    "smoke:cli": "npm run build:cli && node scripts/cli-smoke.mjs",
     "typecheck": "tsc -b",
     "lint": "eslint .",
     "preview": "vite preview",

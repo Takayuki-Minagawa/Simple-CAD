@@ -55,6 +55,13 @@
   - `validate` : プロジェクトJSONの検証(既存 `domain/validation` を利用)
   - PDF はブラウザ依存(jspdf)のため CLI 対象外とし、SVG→PDF 変換は Python 側で担う
 - [x] `package.json` に `build:cli` スクリプト追加(esbuild + tsconfig paths でバンドル)
+- [x] コマンド実装を `src/cli/run.ts`(`process.exit` を持たない純関数 `runCli`)に分離し、
+  `src/cli/index.ts` はプロセスへの配線のみとする(単体テスト可能にするため)
+- [x] 存在しない `--sheet` / `--story` の指定を非ゼロ終了で拒否
+  (DXF は storyId で部材を絞り込むだけのため、未知IDでもグリッド・表題欄を含む
+  「一見正常な」ファイルが生成されてしまう。計算書パイプラインへの静かな混入を防ぐ)
+- [x] CLI の単体テスト(`src/cli/__tests__/run.test.ts`)とバンドル済み成果物の
+  スモークテスト(`npm run smoke:cli`)を追加し、CI(quality ジョブ)に組み込み
 - [x] 浮動小数点の移植性対応: `Math.hypot` → `Math.sqrt(dx*dx + dy*dy)` に置換
   (`memberShape.ts` / `eccentricity.ts`。JSとPythonで最終ビット単位の出力一致を保証するため。
   実用上の数値差は最終桁ulpレベルで図面には影響なし)
@@ -130,6 +137,7 @@ simple-cad-py/
 | リスク | 対応 |
 |---|---|
 | 描画ロジックの二重管理(TS/Python乖離) | ゴールデンテストをCI化できる構成にし、TS側変更時に検知 |
+| CLI の退行がCIで検知されない | quality ジョブに `npm run smoke:cli`(ビルド + 正常系/異常系スモーク)を追加済み |
 | JS/Python の数値文字列化の差 | `jsnum.py` に集約し単体テストで網羅。最終的にバイト一致で検証 |
 | PDF出力のブラウザ依存 | Python側は SVG→PDF 変換(cairosvg等の任意依存)で代替。未導入環境ではSVG/DXFのみ |
 | スキーマ進化への追従 | スキーマ変更をトリガーにゴールデン再生成+Python側更新の運用ルールを文書化 |

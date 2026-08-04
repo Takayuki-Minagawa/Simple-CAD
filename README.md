@@ -84,8 +84,16 @@ node dist-cli/index.js export src/samples/sample-project.json --format svg --she
 node dist-cli/index.js export src/samples/sample-project.json --format dxf --story 1F -o out.dxf
 ```
 
-CLI エントリは [src/cli/index.ts](src/cli/index.ts)。`@/domain/**` と Node 標準モジュールのみに依存し、
-ブラウザ専用アダプタ(`pdfExport`、React UI、ストア)には依存しません。
+CLI エントリは [src/cli/index.ts](src/cli/index.ts)、実装は [src/cli/run.ts](src/cli/run.ts)。
+`@/domain/**` と Node 標準モジュールのみに依存し、ブラウザ専用アダプタ(`pdfExport`、React UI、ストア)には依存しません。
+
+終了コードは 0(成功)/ 1(実行時エラー)/ 2(引数エラー)。存在しない `--sheet` / `--story` を
+指定した場合は**出力ファイルを作らずに非ゼロ終了**します(タイプミスで一見正常な図面が
+下流パイプラインに流れ込むのを防ぐため)。
+
+```bash
+npm run smoke:cli   # ビルド + dist-cli の動作確認(正常系・異常系)
+```
 
 #### Python 移植(simple-cad-py)
 
