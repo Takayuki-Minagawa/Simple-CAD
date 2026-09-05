@@ -23,6 +23,8 @@ import {
 export { DXF_MATERIAL, DXF_MATERIAL_ID, isRectangle, isSquarish } from './dxfConverters';
 
 export interface DxfImportResult {
+  sourceVersion?: string;
+  error?: string;
   annotations: Annotation[];
   members: Member[];
   dimensions: Dimension[];
@@ -203,6 +205,8 @@ export function importDxf(
   const constructionLines: ConstructionLine[] = [];
   const warnings: string[] = [];
   let primitiveCount = 0;
+  let error: string | undefined;
+  const header = parseDxfHeader(content);
 
   const convertGeometry = options.convertGeometry ?? false;
   const sections = new SectionRegistry();
@@ -211,12 +215,32 @@ export function importDxf(
 
   try {
     const entities = parseDxfEntities(content);
+    if (
+      header.acadVersion &&
+      ![
+        'AC1006',
+        'AC1009',
+        'AC1012',
+        'AC1014',
+        'AC1015',
+        'AC1018',
+        'AC1021',
+        'AC1024',
+        'AC1027',
+        'AC1032',
+      ].includes(header.acadVersion)
+    ) {
+      warnings.push(`未確認のDXF形式 ${header.acadVersion}: 対応エンティティのみ読み込みます`);
+    }
 
     // Determine the source unit → mm scale (3-3 / B4).
-    if (typeof options.unitScale === 'number' && options.unitScale > 0) {
+    if (
+      typeof options.unitScale === 'number' &&
+      Number.isFinite(options.unitScale) &&
+      options.unitScale > 0
+    ) {
       unitScale = options.unitScale;
     } else {
-      const header = parseDxfHeader(content);
       const fromHeader = insUnitsToMm(header.insUnits);
       if (fromHeader !== null) {
         unitScale = fromHeader;
@@ -237,13 +261,19 @@ export function importDxf(
       }
     }
 
-    if (typeof options.unitScale === 'number' && options.unitScale <= 0) {
-      warnings.push(`無効な単位倍率 ${options.unitScale} は使用せず、DXFヘッダーから単位を解決しました`);
+    if (
+      typeof options.unitScale === 'number' &&
+      (!Number.isFinite(options.unitScale) || options.unitScale <= 0)
+    ) {
+      warnings.push(
+        `無効な単位倍率 ${options.unitScale} は使用せず、DXFヘッダーから単位を解決しました`,
+      );
     }
     if (convertGeometry && options.unitScale === undefined) {
-      const header = parseDxfHeader(content);
       if (insUnitsToMm(header.insUnits) === null && unitScale === 1) {
-        warnings.push('$INSUNITS が無いため mm と仮定しました（必要に応じて単位を指定してください）');
+        warnings.push(
+          '$INSUNITS が無いため mm と仮定しました（必要に応じて単位を指定してください）',
+        );
       }
     }
 
@@ -254,6 +284,31 @@ export function importDxf(
       // be multiplied by the source unit scale.
       const entity = scaleEntityToMillimetres(rawEntity, unitScale);
       const role = classifyDxfLayer(entity.layer);
+      const points = [
+        entity.startPoint,
+        entity.endPoint,
+        entity.center,
+        entity.dimExt1,
+        entity.dimExt2,
+        entity.dimLineOrigin,
+        ...(entity.vertices ?? []),
+      ];
+      if (
+        entity.type !== 'TEXT' &&
+        entity.type !== 'MTEXT' &&
+        points.some((point) => point && !isFiniteDxfPoint(point))
+      ) {
+        primitiveCount++;
+        warnings.push(`${entity.type} の座標が有限でないためスキップしました`);
+        continue;
+      }
+      if (convertGeometry && entity.hasBulge) {
+        primitiveCount++;
+        warnings.push(
+          `${entity.type} の円弧区間（bulge）は構造部材へ変換できないためスキップしました`,
+        );
+        continue;
+      }
       if (
         convertGeometry &&
         role === 'unknown' &&
@@ -283,7 +338,9 @@ export function importDxf(
               const member = convertLineToMember(entity, defaultStory, sections, usedIds, role);
               if (member) {
                 if (isZeroLength(member)) {
-                  warnings.push(`長さ0の ${entity.type} をレイヤー ${entity.layer ?? '(なし)'} でスキップしました`);
+                  warnings.push(
+                    `長さ0の ${entity.type} をレイヤー ${entity.layer ?? '(なし)'} でスキップしました`,
+                  );
                 } else {
                   members.push(member);
                 }
@@ -356,6 +413,7 @@ export function importDxf(
               y: entity.startPoint.y,
               text: entity.text,
               fontSize,
+              ...(Number.isFinite(entity.rotation) ? { rotation: entity.rotation } : {}),
             });
           } else if (entity.text && role !== 'dimension' && role !== 'grid') {
             warnings.push(`${entity.type} の挿入点が有限座標でないためスキップしました`);
@@ -367,10 +425,13 @@ export function importDxf(
       }
     }
   } catch (e) {
-    warnings.push(`DXF parse error: ${String(e)}`);
+    error = `DXF parse error: ${String(e)}`;
+    warnings.push(error);
   }
 
   return {
+    sourceVersion: header.acadVersion,
+    ...(error ? { error } : {}),
     annotations,
     members,
     dimensions,
@@ -396,11 +457,8 @@ function convertGridLine(entity: DxfEntity, existing: Grid[], usedIds: Set<strin
   const dy = Math.abs(entity.endPoint.y - entity.startPoint.y);
   if (dx === 0 && dy === 0) return null;
   const metadata = readSimpleCadMetadata<Partial<Grid>>(entity, 'GRID');
-  const axis: Grid['axis'] = metadata?.axis === 'X' || metadata?.axis === 'Y'
-    ? metadata.axis
-    : dy >= dx
-      ? 'X'
-      : 'Y';
+  const axis: Grid['axis'] =
+    metadata?.axis === 'X' || metadata?.axis === 'Y' ? metadata.axis : dy >= dx ? 'X' : 'Y';
   const position =
     axis === 'X'
       ? (entity.startPoint.x + entity.endPoint.x) / 2

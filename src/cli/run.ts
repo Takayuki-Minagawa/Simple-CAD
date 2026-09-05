@@ -9,6 +9,7 @@
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { exportSvg } from '@/domain/export/svgExport';
+import { isDxfVersion, type DxfVersion } from '@/domain/dxf/format';
 import { exportDxfWithWarnings } from '@/domain/export/dxfExport';
 import { validateProject } from '@/domain/validation';
 import type { ProjectData } from '@/domain/structural/types';
@@ -26,6 +27,8 @@ Usage:
       Render a drawing.
       --format svg|dxf   Output format (default: svg)
       --sheet <id>       Sheet id for SVG export (default: first sheet)
+      --dxf-version AC1015|AC1027|AC1032
+                        DXF generation: 2000 / 2015–2017 / 2018+ (default: AC1032)
       --story <id>       Story id for DXF export (default: first story)
       -o, --output <f>   Output file (default: stdout)
 `;
@@ -115,6 +118,7 @@ function writeOutput(content: string, outputPath: string | undefined, streams: C
 interface ExportOptions {
   input: string;
   format: 'svg' | 'dxf';
+  dxfVersion?: DxfVersion;
   sheet?: string;
   story?: string;
   output?: string;
@@ -139,6 +143,13 @@ function parseExportArgs(args: string[]): ExportOptions {
         options.format = value;
         break;
       }
+      case '--dxf-version': {
+        const value = next();
+        if (!isDxfVersion(value))
+          fail(`unsupported DXF version "${value}" (AC1015|AC1027|AC1032)`, 2);
+        options.dxfVersion = value;
+        break;
+      }
       case '--sheet':
         options.sheet = next();
         break;
@@ -155,6 +166,8 @@ function parseExportArgs(args: string[]): ExportOptions {
     }
   }
   if (positional.length !== 1) fail('export needs exactly one <project.json> argument', 2);
+  if (options.dxfVersion && options.format !== 'dxf')
+    fail('--dxf-version requires --format dxf', 2);
   options.input = positional[0];
   return options;
 }
@@ -205,7 +218,9 @@ function commandExport(args: string[], streams: CliStreams): void {
     options.story,
     data.stories.map((story) => story.id),
   );
-  const { content, warnings } = exportDxfWithWarnings(data, storyId);
+  const { content, warnings } = exportDxfWithWarnings(data, storyId, {
+    version: options.dxfVersion,
+  });
   for (const warning of warnings) {
     streams.err(`warning: ${warning}\n`);
   }

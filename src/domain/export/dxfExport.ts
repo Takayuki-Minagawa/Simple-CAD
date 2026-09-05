@@ -1,3 +1,12 @@
+import {
+  DxfWriter,
+  Units,
+  point3d,
+  type EntitiesManager,
+  type Dxfier,
+  MText,
+} from '@tarikjabiri/dxf';
+import { DEFAULT_DXF_VERSION, isDxfVersion, type DxfVersion } from '@/domain/dxf/format';
 import type { ProjectData, Member, Section } from '@/domain/structural/types';
 import { distance2D, sub2D, normalize2D, perpendicular2D } from '@/domain/geometry/point';
 import { getMemberPlanPolygon } from '@/domain/structural/memberShape';
@@ -6,23 +15,40 @@ import { validateGeometry, validateReferences } from '@/domain/validation';
 /** Decimal places for DXF coordinate output. 4 dp at mm = 0.1µm — plenty. */
 const DXF_DECIMALS = 4;
 
+export interface DxfExportOptions {
+  version?: DxfVersion;
+}
+
 /**
  * Format a coordinate with fixed decimals (no full FP precision / exponent noise),
  * trimming trailing zeros so integers stay compact and parseFloat round-trips.
  */
-function fmt(value: number): string {
-  if (!Number.isFinite(value)) return '0';
+function fmt(value: number): number {
+  if (!Number.isFinite(value)) return 0;
   const fixed = value.toFixed(DXF_DECIMALS);
   // Strip trailing zeros and a dangling decimal point.
-  return fixed.replace(/\.?0+$/, '') || '0';
+  return Number(fixed);
 }
 
 /**
- * Export DXF using manual string generation.
- * Using DXF ASCII format for maximum compatibility.
+ * Export UTF-8 text DXF with complete tables, ownership handles and subclasses.
+ * All target generations support all entities emitted here.
  */
-export function exportDxf(data: ProjectData, storyId: string, warnings: string[] = []): string {
-  const lines: string[] = [];
+export function exportDxf(
+  data: ProjectData,
+  storyId: string,
+  warnings: string[] = [],
+  options: DxfExportOptions = {},
+): string {
+  const version = options.version ?? DEFAULT_DXF_VERSION;
+  if (!isDxfVersion(version)) throw new Error(`未対応のDXF出力形式: ${version}`);
+  if (!data.stories.some((story) => story.id === storyId)) {
+    throw new Error(`DXF出力対象の階がありません: ${storyId}`);
+  }
+  const writer = new DxfWriter();
+  const lines = writer.modelSpace;
+  writer.setUnits(Units.Millimeters);
+  writer.tables.addAppId('SIMPLECAD');
 
   for (const issue of [...validateReferences(data).errors, ...validateGeometry(data).errors]) {
     warnings.push(`Export validation: ${issue.message}`);
@@ -30,21 +56,11 @@ export function exportDxf(data: ProjectData, storyId: string, warnings: string[]
 
   const bbox = computeBoundingBox(data, storyId);
 
-  // Header section
-  lines.push('0', 'SECTION', '2', 'HEADER');
-  lines.push('9', '$ACADVER', '1', 'AC1015'); // AutoCAD 2000
-  // Units: 4 = millimetres. Pairs with $MEASUREMENT=1 (metric) so receiving
-  // CADs don't misread the drawing as inches/metres (B4 / 3-3).
-  lines.push('9', '$INSUNITS', '70', '4');
-  lines.push('9', '$MEASUREMENT', '70', '1');
-  // Drawing extents from the bounding box (3-8).
-  lines.push('9', '$EXTMIN', '10', fmt(bbox.minX), '20', fmt(bbox.minY), '30', '0');
-  lines.push('9', '$EXTMAX', '10', fmt(bbox.maxX), '20', fmt(bbox.maxY), '30', '0');
-  lines.push('0', 'ENDSEC');
-
-  // Tables section (layers)
-  lines.push('0', 'SECTION', '2', 'TABLES');
-  lines.push('0', 'TABLE', '2', 'LAYER');
+  writer.setVariable('$ACADVER', { 1: version });
+  if (version === 'AC1015') writer.setVariable('$DWGCODEPAGE', { 3: 'ANSI_1252' });
+  writer.setVariable('$MEASUREMENT', { 70: 1 });
+  writer.setVariable('$EXTMIN', { 10: fmt(bbox.minX), 20: fmt(bbox.minY), 30: 0 });
+  writer.setVariable('$EXTMAX', { 10: fmt(bbox.maxX), 20: fmt(bbox.maxY), 30: 0 });
 
   const layerDefs = [
     { name: 'GRID', color: 3 }, // green
@@ -55,21 +71,11 @@ export function exportDxf(data: ProjectData, storyId: string, warnings: string[]
     { name: 'DIMENSION', color: 7 }, // white
     { name: 'ANNOTATION', color: 7 },
     { name: 'CONSTRUCTION', color: 8 }, // gray
-    { name: 'SIMPLECAD_META', color: -7 }, // hidden metadata carrier
   ];
 
   for (const layer of layerDefs) {
-    lines.push('0', 'LAYER');
-    lines.push('2', layer.name);
-    lines.push('70', '0');
-    lines.push('62', String(layer.color));
-    lines.push('6', 'CONTINUOUS');
+    writer.addLayer(layer.name, layer.color, 'Continuous');
   }
-  lines.push('0', 'ENDTAB');
-  lines.push('0', 'ENDSEC');
-
-  // Entities section
-  lines.push('0', 'SECTION', '2', 'ENTITIES');
 
   // Grids
   const xGrids = data.grids.filter((g) => g.axis === 'X');
@@ -110,23 +116,42 @@ export function exportDxf(data: ProjectData, storyId: string, warnings: string[]
     }
   }
 
-  // Dimensions (decomposed to lines + text)
+  // Native dimensions reference actual graphical blocks, so other CADs can
+  // display them without repairing a dangling *D block reference.
   const dimensions = data.dimensions.filter((d) => d.story === storyId);
   for (const [dimensionIndex, d] of dimensions.entries()) {
     const dir = normalize2D(sub2D(d.end, d.start));
     const perp = perpendicular2D(dir);
     const s = { x: d.start.x + perp.x * d.offset, y: d.start.y + perp.y * d.offset };
     const e = { x: d.end.x + perp.x * d.offset, y: d.end.y + perp.y * d.offset };
-    addLine(lines, 'DIMENSION', s.x, s.y, e.x, e.y);
-    // Extension lines
-    addLine(lines, 'DIMENSION', d.start.x, d.start.y, s.x, s.y);
-    addLine(lines, 'DIMENSION', d.end.x, d.end.y, e.x, e.y);
-    // Text
-    const len = distance2D(d.start, d.end);
-    const text = d.text ?? len.toFixed(0);
+    const block = writer.addBlock(`SIMPLECAD_DIM_${dimensionIndex + 1}`);
+    addLine(block, '0', s.x, s.y, e.x, e.y);
+    addLine(block, '0', d.start.x, d.start.y, s.x, s.y);
+    addLine(block, '0', d.end.x, d.end.y, e.x, e.y);
+    const text = d.text ?? distance2D(d.start, d.end).toFixed(0);
     const mid = { x: (s.x + e.x) / 2, y: (s.y + e.y) / 2 };
-    addText(lines, 'DIMENSION', mid.x, mid.y, 250, text);
-    addDimensionMetadata(lines, d, mid.x, mid.y, dimensionIndex + 1);
+    addText(block, '0', mid.x, mid.y, 250, text);
+    const entity = lines.addAlignedDim(
+      point3d(fmt(d.start.x), fmt(d.start.y), 0),
+      point3d(fmt(d.end.x), fmt(d.end.y), 0),
+      {
+        blockName: block.name,
+        definitionPoint: point3d(fmt(mid.x), fmt(mid.y), 0),
+        middlePoint: point3d(fmt(mid.x), fmt(mid.y), 0),
+        layerName: 'DIMENSION',
+        styleName: 'Standard',
+        text: d.text?.replace(/\r?\n/g, ' '),
+      },
+    );
+    addMetadata(
+      entity,
+      encodeMetadata('DIMENSION', {
+        id: d.id,
+        color: d.color,
+        lineWeight: d.lineWeight,
+        lineType: d.lineType,
+      }),
+    );
   }
 
   // Annotations
@@ -136,8 +161,17 @@ export function exportDxf(data: ProjectData, storyId: string, warnings: string[]
       addSpline(lines, 'ANNOTATION', a.points);
       continue;
     }
-    if (a.text.includes('\n')) {
-      addMText(lines, 'ANNOTATION', a.x, a.y, a.fontSize ?? 250, a.text, a.rotation);
+    if (a.text.includes('\n') || a.text.length > 250) {
+      addMText(
+        lines,
+        'ANNOTATION',
+        a.x,
+        a.y,
+        a.fontSize ?? 250,
+        a.text,
+        a.rotation,
+        version === 'AC1015',
+      );
     } else {
       addText(lines, 'ANNOTATION', a.x, a.y, a.fontSize ?? 250, a.text, a.rotation);
     }
@@ -170,21 +204,29 @@ export function exportDxf(data: ProjectData, storyId: string, warnings: string[]
     }
   }
 
-  lines.push('0', 'ENDSEC');
-  lines.push('0', 'EOF');
+  const content = writer.stringify();
+  // Pre-2007 DXF uses a legacy code page. ASCII Unicode escapes preserve
+  // Japanese without pretending an AutoCAD 2000 file is UTF-8.
+  return version === 'AC1015' ? escapeUnicode(content) : content;
+}
 
-  return lines.join('\n');
+function escapeUnicode(content: string): string {
+  return content.replace(
+    /[\u0080-\uffff]/g,
+    (char) => `\\U+${char.charCodeAt(0).toString(16).toUpperCase().padStart(4, '0')}`,
+  );
 }
 
 export function exportDxfWithWarnings(
   data: ProjectData,
   storyId: string,
+  options: DxfExportOptions = {},
 ): { content: string; warnings: string[] } {
   const warnings: string[] = [];
-  return { content: exportDxf(data, storyId, warnings), warnings };
+  return { content: exportDxf(data, storyId, warnings, options), warnings };
 }
 
-function renderMemberDxf(lines: string[], m: Member, sections: Section[]): boolean {
+function renderMemberDxf(lines: EntitiesManager, m: Member, sections: Section[]): boolean {
   const sec = sections.find((s) => s.id === m.sectionId);
   const polygon = getMemberPlanPolygon(m, sec);
   if (!polygon) return false;
@@ -221,7 +263,7 @@ function memberLayerName(member: Member): string {
 }
 
 function addLine(
-  lines: string[],
+  lines: EntitiesManager,
   layer: string,
   x1: number,
   y1: number,
@@ -229,40 +271,23 @@ function addLine(
   y2: number,
   metadata?: string,
 ) {
-  lines.push('0', 'LINE');
-  lines.push('8', layer);
-  lines.push('10', fmt(x1), '20', fmt(y1), '30', '0');
-  lines.push('11', fmt(x2), '21', fmt(y2), '31', '0');
-  if (metadata) lines.push('999', metadata);
+  const entity = lines.addLine(point3d(fmt(x1), fmt(y1), 0), point3d(fmt(x2), fmt(y2), 0), {
+    layerName: layer,
+  });
+  if (metadata) addMetadata(entity, metadata);
 }
 
-function addDimensionMetadata(
-  lines: string[],
-  dimension: ProjectData['dimensions'][number],
-  lineX: number,
-  lineY: number,
-  anonymousBlockIndex: number,
-) {
-  lines.push('0', 'DIMENSION');
-  lines.push('8', 'SIMPLECAD_META');
-  // Group 2 (anonymous block name) and group 70 (dimension type) are required
-  // by strict DXF readers even though this hidden entity only carries our
-  // round-trip metadata; visible dimension graphics are emitted above.
-  lines.push('2', `*D${anonymousBlockIndex}`);
-  lines.push('70', '0');
-  lines.push('10', fmt(lineX), '20', fmt(lineY), '30', '0');
-  lines.push('13', fmt(dimension.start.x), '23', fmt(dimension.start.y), '33', '0');
-  lines.push('14', fmt(dimension.end.x), '24', fmt(dimension.end.y), '34', '0');
-  if (dimension.text) lines.push('1', dimension.text.replace(/\r?\n/g, ' '));
-  lines.push(
-    '999',
-    encodeMetadata('DIMENSION', {
-      id: dimension.id,
-      color: dimension.color,
-      lineWeight: dimension.lineWeight,
-      lineType: dimension.lineType,
-    }),
-  );
+/** Registered, chunked XDATA survives CAD saves, unlike DXF comments. */
+function addMetadata(entity: Pick<ReturnType<DxfWriter['addLine']>, 'addXData'>, metadata: string) {
+  const xdata = entity.addXData('SIMPLECAD');
+  // @tarikjabiri/dxf 2.8.9's stringChunksSplit drops the last character of
+  // each chunk. Emit these ASCII chunks directly through the public Dxfier.
+  xdata.dxfy = (dx) => {
+    dx.push(1001, 'SIMPLECAD');
+    for (let offset = 0; offset < metadata.length; offset += 250) {
+      dx.push(1000, metadata.slice(offset, offset + 250));
+    }
+  };
 }
 
 function encodeMetadata(kind: string, value: unknown): string {
@@ -270,24 +295,21 @@ function encodeMetadata(kind: string, value: unknown): string {
 }
 
 function addLwPolyline(
-  lines: string[],
+  lines: EntitiesManager,
   layer: string,
   points: number[][],
   closed: boolean,
   metadata?: string,
 ) {
-  lines.push('0', 'LWPOLYLINE');
-  lines.push('8', layer);
-  lines.push('90', String(points.length));
-  lines.push('70', closed ? '1' : '0');
-  for (const [x, y] of points) {
-    lines.push('10', fmt(x), '20', fmt(y));
-  }
-  if (metadata) lines.push('999', metadata);
+  const entity = lines.addLWPolyline(
+    points.map(([x, y]) => ({ point: { x: fmt(x), y: fmt(y) } })),
+    { layerName: layer, flags: closed ? 1 : 0 },
+  );
+  if (metadata) addMetadata(entity, metadata);
 }
 
 function addText(
-  lines: string[],
+  lines: EntitiesManager,
   layer: string,
   x: number,
   y: number,
@@ -295,38 +317,68 @@ function addText(
   text: string,
   rotation?: number,
 ) {
-  const sanitized = text.replace(/\r?\n/g, ' ');
-  lines.push('0', 'TEXT');
-  lines.push('8', layer);
-  lines.push('10', fmt(x), '20', fmt(y), '30', '0');
-  lines.push('40', fmt(height));
-  if (rotation) {
-    lines.push('50', fmt(rotation));
-  }
-  lines.push('1', sanitized);
+  lines.addText(point3d(fmt(x), fmt(y), 0), fmt(height), text.replace(/\r?\n/g, ' '), {
+    layerName: layer,
+    rotation,
+  });
 }
 
 function addMText(
-  lines: string[],
+  lines: EntitiesManager,
   layer: string,
   x: number,
   y: number,
   height: number,
   text: string,
   rotation?: number,
+  legacy = false,
 ) {
-  lines.push('0', 'MTEXT');
-  lines.push('8', layer);
-  lines.push('10', fmt(x), '20', fmt(y), '30', '0');
-  lines.push('40', fmt(height));
-  if (rotation) {
-    lines.push('50', fmt(rotation));
-  }
-  const encoded = text.replace(/\r?\n/g, '\\P');
-  lines.push('1', encoded);
+  // Escape literal formatting characters before encoding paragraph breaks.
+  let encoded = text.replace(/\\/g, '\\\\').replace(/[{}]/g, '\\$&').replace(/\r?\n/g, '\\P');
+  if (legacy) encoded = escapeUnicode(encoded);
+  lines.addEntity(
+    new ChunkedMText(point3d(fmt(x), fmt(y), 0), fmt(height), encoded, {
+      layerName: layer,
+      rotation,
+      width: 0,
+    }),
+  );
 }
 
-function addSpline(lines: string[], layer: string, points: { x: number; y: number }[]) {
+/** MTEXT requires group 3 chunks followed by one final group 1. */
+class ChunkedMText extends MText {
+  protected dxfyChild(dx: Dxfier): void {
+    dx.point3d(this.position);
+    dx.push(40, this.height);
+    dx.push(41, this.width);
+    dx.push(71, this.attachmentPoint ?? 1);
+    const encoder = new TextEncoder();
+    let chunk = '';
+    let bytes = 0;
+    for (const char of this.value) {
+      const size = encoder.encode(char).length;
+      if (bytes + size > 250) {
+        dx.push(3, chunk);
+        chunk = '';
+        bytes = 0;
+      }
+      chunk += char;
+      bytes += size;
+    }
+    dx.push(1, chunk);
+    // A direction vector avoids the inconsistent angle-unit descriptions
+    // for MTEXT group 50 across CAD implementations.
+    if (this.rotation !== undefined) {
+      const angle = (this.rotation * Math.PI) / 180;
+      dx.push(11, Math.cos(angle));
+      dx.push(21, Math.sin(angle));
+      dx.push(31, 0);
+    }
+    dx.textStyle(this.textStyle);
+  }
+}
+
+function addSpline(lines: EntitiesManager, layer: string, points: { x: number; y: number }[]) {
   // Valid open clamped B-spline. Degree must be lower than control-point count,
   // and DXF requires an explicit knot count/vector.
   const degree = Math.min(3, points.length - 1);
@@ -334,23 +386,21 @@ function addSpline(lines: string[], layer: string, points: { x: number; y: numbe
   const interiorCount = knotCount - (degree + 1) * 2;
   const knots = [
     ...Array<number>(degree + 1).fill(0),
-    ...Array.from({ length: Math.max(interiorCount, 0) }, (_, index) =>
-      (index + 1) / (interiorCount + 1),
+    ...Array.from(
+      { length: Math.max(interiorCount, 0) },
+      (_, index) => (index + 1) / (interiorCount + 1),
     ),
     ...Array<number>(degree + 1).fill(1),
   ];
-  lines.push('0', 'SPLINE');
-  lines.push('8', layer);
-  lines.push('70', '8'); // Planar flag
-  lines.push('71', String(degree));
-  lines.push('72', String(knots.length));
-  lines.push('73', String(points.length)); // Number of control points
-  lines.push('74', '0');
-  for (const knot of knots) lines.push('40', fmt(knot));
-  for (const p of points) {
-    lines.push('10', fmt(p.x), '20', fmt(p.y), '30', '0');
-  }
-  lines.push('210', '0', '220', '0', '230', '1');
+  lines.addSpline(
+    {
+      controlPoints: points.map((p) => point3d(fmt(p.x), fmt(p.y), 0)),
+      degreeCurve: degree,
+      flags: 8,
+      knots: knots.map(fmt),
+    },
+    { layerName: layer, extrusion: point3d(0, 0, 1) },
+  );
 }
 
 /** Compute the 2D bounding box of all renderable geometry for `storyId`. */

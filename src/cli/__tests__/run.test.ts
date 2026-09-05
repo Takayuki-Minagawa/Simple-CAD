@@ -53,7 +53,9 @@ describe('simple-cad CLI', () => {
 
     const defaulted = run('export', projectPath, '--format', 'svg');
     expect(defaulted.code).toBe(0);
-    expect(defaulted.out).toBe(run('export', projectPath, '--format', 'svg', '--sheet', 'S-001').out);
+    expect(defaulted.out).toBe(
+      run('export', projectPath, '--format', 'svg', '--sheet', 'S-001').out,
+    );
   });
 
   it('exports DXF for an explicit story and defaults to the first one', () => {
@@ -64,6 +66,18 @@ describe('simple-cad CLI', () => {
     const defaulted = run('export', projectPath, '--format', 'dxf');
     expect(defaulted.code).toBe(0);
     expect(defaulted.out).toBe(run('export', projectPath, '--format', 'dxf', '--story', '1F').out);
+  });
+
+  it.each(['AC1015', 'AC1027', 'AC1032'])('selects DXF version %s', (version) => {
+    const result = run('export', projectPath, '--format', 'dxf', '--dxf-version', version);
+    expect(result.code).toBe(0);
+    expect(result.out).toContain(`$ACADVER\n1\n${version}\n`);
+  });
+
+  it('rejects invalid or misplaced DXF version options', () => {
+    expect(run('export', projectPath, '--format', 'dxf', '--dxf-version', '2015').code).toBe(2);
+    expect(run('export', projectPath, '--dxf-version', 'AC1032').code).toBe(2);
+    expect(run('export', projectPath, '--format', 'dxf', '--dxf-version').code).toBe(2);
   });
 
   // A missing story used to fall through to exportDxfWithWarnings, which only

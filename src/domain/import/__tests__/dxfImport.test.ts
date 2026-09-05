@@ -85,7 +85,7 @@ describe('importDxf', () => {
       story: '1F',
       x: 1000,
       y: 2000,
-      text: 'Line1 Line2',
+      text: 'Line1\nLine2',
       fontSize: 250,
     });
   });

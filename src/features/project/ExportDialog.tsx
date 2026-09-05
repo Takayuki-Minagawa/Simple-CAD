@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { DEFAULT_DXF_VERSION, DXF_VERSIONS, type DxfVersion } from '@/domain/dxf/format';
 import { useProjectStore, useEditorStore } from '@/app/store';
 import { useI18n } from '@/i18n';
 import { downloadBlob, isAbortError, saveFile } from '@/libs/fileSystem';
@@ -14,6 +15,8 @@ export function ExportDialog({ onClose }: Props) {
   const activeStory = useEditorStore((s) => s.activeStory);
   const { t, locale } = useI18n();
   const [format, setFormat] = useState<'svg' | 'pdf' | 'dxf' | 'ifc' | 'structural-json'>('svg');
+  const [dxfVersion, setDxfVersion] = useState<DxfVersion>(DEFAULT_DXF_VERSION);
+  const [dxfStoryId, setDxfStoryId] = useState(activeStory ?? data?.stories[0]?.id ?? '');
   const [sheetId, setSheetId] = useState(data?.sheets[0]?.id ?? '');
   const [exportAllSheets, setExportAllSheets] = useState(false);
   const [exporting, setExporting] = useState(false);
@@ -62,7 +65,7 @@ export function ExportDialog({ onClose }: Props) {
         );
         return;
       }
-      if (format === 'dxf' && !(activeStory ?? data.stories[0]?.id)) {
+      if (format === 'dxf' && !data.stories.some((story) => story.id === dxfStoryId)) {
         showAlert(locale === 'ja' ? '出力する階がありません。' : 'There is no story to export.');
         return;
       }
@@ -84,8 +87,7 @@ export function ExportDialog({ onClose }: Props) {
         }
         case 'dxf': {
           const { exportDxfWithWarnings } = await import('@/domain/export/dxfExport');
-          const sid = activeStory ?? data.stories[0]?.id ?? '';
-          const result = exportDxfWithWarnings(data, sid);
+          const result = exportDxfWithWarnings(data, dxfStoryId, { version: dxfVersion });
           if (
             result.warnings.length > 0 &&
             !showConfirm(
@@ -151,7 +153,9 @@ export function ExportDialog({ onClose }: Props) {
             style={{ background: 'var(--accent)', color: '#fff' }}
             onClick={handleExport}
             disabled={
-              exporting || ((format === 'svg' || format === 'pdf') && data.sheets.length === 0)
+              exporting ||
+              (format === 'dxf' && !data.stories.some((story) => story.id === dxfStoryId)) ||
+              ((format === 'svg' || format === 'pdf') && data.sheets.length === 0)
             }
           >
             {exporting ? t.exportExporting : t.exportExecute}
@@ -161,6 +165,7 @@ export function ExportDialog({ onClose }: Props) {
     >
       <div style={{ marginBottom: 12 }}>
         <label
+          htmlFor="export-format"
           style={{
             display: 'block',
             marginBottom: 4,
@@ -171,6 +176,7 @@ export function ExportDialog({ onClose }: Props) {
           {t.exportFormat}
         </label>
         <select
+          id="export-format"
           className="prop-select"
           style={{ maxWidth: '100%', width: '100%' }}
           value={format}
@@ -185,6 +191,43 @@ export function ExportDialog({ onClose }: Props) {
           <option value="structural-json">{structuralJsonLabel}</option>
         </select>
       </div>
+      {format === 'dxf' && (
+        <div style={{ display: 'grid', gap: 8, marginBottom: 12 }}>
+          <label htmlFor="dxf-version">{locale === 'ja' ? 'DXFバージョン' : 'DXF version'}</label>
+          <select
+            id="dxf-version"
+            className="prop-select"
+            style={{ width: '100%', maxWidth: '100%' }}
+            value={dxfVersion}
+            onChange={(e) => setDxfVersion(e.target.value as DxfVersion)}
+          >
+            {Object.entries(DXF_VERSIONS).map(([value, label]) => (
+              <option key={value} value={value}>
+                {label}
+              </option>
+            ))}
+          </select>
+          <label htmlFor="dxf-story">{locale === 'ja' ? '出力する階' : 'Story to export'}</label>
+          <select
+            id="dxf-story"
+            className="prop-select"
+            style={{ width: '100%', maxWidth: '100%' }}
+            value={dxfStoryId}
+            onChange={(e) => setDxfStoryId(e.target.value)}
+          >
+            {data.stories.map((story) => (
+              <option key={story.id} value={story.id}>
+                {story.name}
+              </option>
+            ))}
+          </select>
+          <p style={{ fontSize: 12, color: 'var(--text-secondary)', margin: 0 }}>
+            {locale === 'ja'
+              ? '単位はmm。2015〜2017ではDXF 2013形式を使用します。読み込んだ対応図形も、選択した形式で再出力できます。'
+              : 'Units: mm. AutoCAD 2015–2017 uses DXF 2013. Imported supported geometry can be re-exported in the selected version.'}
+          </p>
+        </div>
+      )}
       {(format === 'svg' || format === 'pdf') && (
         <div style={{ marginBottom: 12 }}>
           <label

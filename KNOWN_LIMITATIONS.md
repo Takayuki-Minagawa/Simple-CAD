@@ -8,3 +8,5 @@
 - External-reference projects are recursively validated but intentionally remain read-only from the host project.
 - JIS H-section presets provide geometry only. Section plausibility/cover checks are advisory warnings and do not replace project-specific code, fire, exposure, or strength verification.
 - Very large models remain bounded by browser memory and GPU capacity. The 3D viewer is lazy-loaded and interaction paths are optimized, but it is not a replacement for desktop-scale BIM streaming.
+
+- DXF version conversion re-exports supported imported structural geometry; it does not preserve arbitrary source entities or all drawing settings. Binary DXF and block INSERT expansion are unsupported. Curves/fills and bulged polylines are skipped with warnings during structural import.

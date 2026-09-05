@@ -72,6 +72,34 @@ npm run build
 
 `dist/` に静的ファイルが生成されます。任意の Web サーバーや CDN から配信可能です。
 
+### DXFの読込み・形式変換
+
+「DXF取込」で既存ファイルを読み込み、形状を残す場合は「構造部材へ変換」を選択して、単位・変換件数・警告を確認してください。その後「出力 → DXF」で対象階とDXFバージョンを選択すると、対応図形を指定形式で保存できます。
+
+| 出力形式 | 識別コード | 文字の保存方法 |
+|---|---|---|
+| AutoCAD 2000（従来形式を継続） | AC1015 | ASCII + Unicodeエスケープ |
+| AutoCAD 2015〜2017互換（DXF 2013） | AC1027 | UTF-8 |
+| AutoCAD 2018以降（既定） | AC1032 | UTF-8 |
+
+2015専用のDXF識別コードはなく、2015〜2017では2013世代の形式を使います。識別コードは[AutodeskのDXF HEADER仕様](https://help.autodesk.com/cloudhelp/2018/ENU/AutoCAD-DXF/files/GUID-A85E8E67-27CD-4C59-BE61-4DC9FADBE74A.htm)に従います。
+
+- 読込み時に元のDXF形式を表示します。旧形式の日本語Shift-JIS（`$DWGCODEPAGE=ANSI_932`）と、近年のUTF-8を読み分けます。
+- 日本語・複数行注記・文字の回転を保持します。長いMTEXTは分割して出力します。
+- 寸法には実体のある図形ブロックを付け、部材・通り芯等の補助情報は登録済みXDATAとして保存します。以前のSimple-CADが出力したコメント形式の補助情報も読み込めます。
+- 出力単位はmmです。読込み時は自動判定または単位指定ができます。
+- これは対応図形を構造モデルとして取り込んで再出力する機能です。汎用の無損失DXF変換ではありません。INSERT（ブロック参照）、ARC、SPLINE、HATCH、ELLIPSE等は構造部材への取込対象外で、警告に表示します。円弧区間を含むポリラインも、直線部材への誤変換を避けるため警告して省略します。
+- バイナリDXFは未対応です。CAD側でテキストDXFとして保存してください。構造情報全体を保持する場合はプロジェクトJSONを併用してください。
+
+CLIでも形式を指定できます。
+
+```bash
+npm run build:cli
+node dist-cli/index.js export project.json --format dxf --story 1F --dxf-version AC1015 -o plan-2000.dxf
+node dist-cli/index.js export project.json --format dxf --story 1F --dxf-version AC1027 -o plan-2015.dxf
+node dist-cli/index.js export project.json --format dxf --story 1F --dxf-version AC1032 -o plan-2018.dxf
+```
+
 ### ヘッドレス CLI(図面のコマンドライン出力)
 
 描画コア(`src/domain/`)はブラウザ非依存の純粋 TypeScript であり、Node CLI から直接利用できます:
@@ -173,7 +201,7 @@ npm run check         # lint / typecheck / coverage / build / bundle budget
 | 3D ビュー | [Three.js](https://threejs.org/) + [@react-three/fiber](https://r3f.docs.pmnd.rs/) + [@react-three/drei](https://drei.docs.pmnd.rs/) |
 | バリデーション | [Ajv](https://ajv.js.org/) (JSON Schema 2020-12) |
 | PDF 出力 | [jsPDF](https://github.com/parallax/jsPDF) + [svg2pdf.js](https://github.com/yWorks/svg2pdf.js/) |
-| DXF 出力 | DXF ASCII 直接生成 |
+| DXF 出力 | AutoCAD 2000 / 2015〜2017互換 / 2018以降のテキストDXF。形式・対象階を選択可能 |
 | DXF 取込 | 自作パーサー (LINE / LWPOLYLINE / POLYLINE / CIRCLE / ARC / TEXT / MTEXT / SPLINE / HATCH / ELLIPSE / DIMENSION)。形状→構造部材変換対応 |
 | IFC 連携 | 自作 IFC4 基本サブセットパーサー / ライター（STEP Part 21 形式） |
 | 構造計算 JSON | 独自スキーマ (`simple-cad.structural-analysis/v1`) による節点・境界条件・荷重・結果の双方向入出力 |

@@ -1,3 +1,5 @@
+import { decodeDxfBytes } from '@/domain/dxf/format';
+
 export function supportsFileSystemAccess(): boolean {
   return typeof window !== 'undefined' && typeof window.showOpenFilePicker === 'function';
 }
@@ -47,10 +49,10 @@ export async function openDxfFile(): Promise<{ content: string }> {
       ],
     });
     const file = await handle.getFile();
-    const content = await file.text();
+    const content = await readDxfFile(file);
     return { content };
   }
-  return openFileViaInput('.dxf');
+  return openFileViaInput('.dxf', readDxfFile);
 }
 
 export async function openIfcFile(): Promise<{ content: string }> {
@@ -70,7 +72,14 @@ export async function openIfcFile(): Promise<{ content: string }> {
   return openFileViaInput('.ifc');
 }
 
-export function openFileViaInput(accept: string): Promise<{ content: string }> {
+async function readDxfFile(file: File): Promise<string> {
+  return decodeDxfBytes(new Uint8Array(await file.arrayBuffer()));
+}
+
+export function openFileViaInput(
+  accept: string,
+  read: (file: File) => Promise<string> = (file) => file.text(),
+): Promise<{ content: string }> {
   return new Promise((resolve, reject) => {
     const input = document.createElement('input');
     input.type = 'file';
@@ -100,7 +109,7 @@ export function openFileViaInput(accept: string): Promise<{ content: string }> {
       const file = input.files?.[0];
       if (!file) return cancel();
       try {
-        const content = await file.text();
+        const content = await read(file);
         finish({ ok: true, value: { content } });
       } catch (error) {
         finish({ ok: false, error });

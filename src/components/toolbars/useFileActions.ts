@@ -1,3 +1,4 @@
+import { describeDxfVersion } from '@/domain/dxf/format';
 import { useRef, useState } from 'react';
 import { useEditorStore, useProjectStore } from '@/app/store';
 import type { ProjectImportSummary } from '@/app/store';
@@ -96,7 +97,11 @@ export function useFileActions() {
 
       const currentProject = useProjectStore.getState();
       if (currentProject.documentGeneration !== targetGeneration) {
-        showAlert(locale === 'ja' ? '取込中にプロジェクトが切り替わったため、外部参照の追加を中止しました。' : 'The project changed during import; the external reference was not added.');
+        showAlert(
+          locale === 'ja'
+            ? '取込中にプロジェクトが切り替わったため、外部参照の追加を中止しました。'
+            : 'The project changed during import; the external reference was not added.',
+        );
         return;
       }
       const currentData = currentProject.data;
@@ -137,7 +142,11 @@ export function useFileActions() {
       }
       if (!confirmProjectPreview(imported.data, imported.warnings)) return;
       if (useProjectStore.getState().documentGeneration !== targetGeneration) {
-        showAlert(locale === 'ja' ? '取込中にプロジェクトが切り替わったため、読み込みを中止しました。' : 'The project changed during import; loading was cancelled.');
+        showAlert(
+          locale === 'ja'
+            ? '取込中にプロジェクトが切り替わったため、読み込みを中止しました。'
+            : 'The project changed during import; loading was cancelled.',
+        );
         return;
       }
       if (useProjectStore.getState().isDirty && !showConfirm(t.confirmUnsaved)) return;
@@ -258,6 +267,10 @@ export function useFileActions() {
       });
       if (parsed.kind !== 'dxf') return;
       const imported = parsed.result;
+      if (imported.error) {
+        showAlert(imported.error);
+        return;
+      }
       const counts = {
         column: imported.members.filter((member) => member.type === 'column').length,
         beam: imported.members.filter((member) => member.type === 'beam').length,
@@ -268,6 +281,7 @@ export function useFileActions() {
         locale === 'ja'
           ? [
               `DXF取込プレビュー（単位: ${normalizedUnit}）`,
+              `読込形式: ${describeDxfVersion(imported.sourceVersion)}`,
               `プリミティブ: ${imported.primitiveCount}`,
               `注記: ${imported.annotations.length} / 寸法: ${imported.dimensions.length}`,
               `通り芯: ${imported.grids.length} / 補助線: ${imported.constructionLines.length}`,
@@ -279,6 +293,7 @@ export function useFileActions() {
             ]
           : [
               `DXF import preview (unit: ${normalizedUnit})`,
+              `Source format: ${describeDxfVersion(imported.sourceVersion)}`,
               `Primitives: ${imported.primitiveCount}`,
               `Annotations: ${imported.annotations.length} / Dimensions: ${imported.dimensions.length}`,
               `Grids: ${imported.grids.length} / Construction lines: ${imported.constructionLines.length}`,
@@ -306,7 +321,11 @@ export function useFileActions() {
         currentProject.documentGeneration !== targetGeneration ||
         !currentProject.data?.stories.some((story) => story.id === storyId)
       ) {
-        showAlert(locale === 'ja' ? '取込中に対象プロジェクトまたは階が変更されたため、DXFの追加を中止しました。' : 'The target project or story changed during import; the DXF was not added.');
+        showAlert(
+          locale === 'ja'
+            ? '取込中に対象プロジェクトまたは階が変更されたため、DXFの追加を中止しました。'
+            : 'The target project or story changed during import; the DXF was not added.',
+        );
         return;
       }
 
@@ -326,7 +345,10 @@ export function useFileActions() {
         importSummary = importEntities(batch);
       }
       const addedTotal = Object.values(importSummary.added).reduce((sum, count) => sum + count, 0);
-      const skippedTotal = Object.values(importSummary.skipped).reduce((sum, count) => sum + count, 0);
+      const skippedTotal = Object.values(importSummary.skipped).reduce(
+        (sum, count) => sum + count,
+        0,
+      );
       const remappedTotal = Object.keys(importSummary.remappedIds).length;
       showAlert(
         (locale === 'ja'
@@ -355,7 +377,11 @@ export function useFileActions() {
       }
       if (!confirmProjectPreview(imported.data, imported.warnings)) return;
       if (useProjectStore.getState().documentGeneration !== targetGeneration) {
-        showAlert(locale === 'ja' ? '取込中にプロジェクトが切り替わったため、IFC読み込みを中止しました。' : 'The project changed during import; IFC loading was cancelled.');
+        showAlert(
+          locale === 'ja'
+            ? '取込中にプロジェクトが切り替わったため、IFC読み込みを中止しました。'
+            : 'The project changed during import; IFC loading was cancelled.',
+        );
         return;
       }
       if (useProjectStore.getState().isDirty && !showConfirm(t.confirmUnsaved)) return;

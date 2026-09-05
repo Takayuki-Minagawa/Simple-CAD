@@ -291,9 +291,14 @@ describe('roundtrip: DXF', () => {
     expect(dxf).toContain('$EXTMAX');
   });
 
-  it('writes required block-name and type groups on DIMENSION metadata entities', () => {
+  it('writes native aligned dimensions backed by real graphical blocks', () => {
     const dxf = exportDxf(base, '1F');
-    expect(dxf).toMatch(/0\nDIMENSION\n8\nSIMPLECAD_META\n2\n\*D1\n70\n0\n/);
+    const dimension = dxf.split('0\nDIMENSION\n')[1].split('0\nENDSEC')[0];
+    expect(dimension).toContain('2\nSIMPLECAD_DIM_1\n');
+    expect(dimension).toContain('100\nAcDbAlignedDimension\n');
+    const blocks = dxf.split('2\nBLOCKS\n')[1].split('0\nENDSEC')[0];
+    expect(blocks).toContain('2\nSIMPLECAD_DIM_1\n');
+    expect(blocks).toContain('0\nLINE\n');
   });
 
   it('scales metre-unit DXF to mm via $INSUNITS=6', () => {

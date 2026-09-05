@@ -12,6 +12,8 @@ export interface DxfEntity {
   vertices?: DxfPoint[];
   text?: string;
   textHeight?: number;
+  rotation?: number;
+  hasBulge?: boolean;
   center?: DxfPoint;
   radius?: number;
   majorAxisEndpoint?: { x: number; y: number };
@@ -23,11 +25,13 @@ export interface DxfEntity {
   dimExt1?: { x: number; y: number };
   dimExt2?: { x: number; y: number };
   closed?: boolean;
-  /** Simple-CAD metadata carried in DXF comment groups (code 999). */
+  /** Simple-CAD metadata carried in registered XDATA (or legacy code 999 comments). */
   metadata?: string[];
 }
 
 export interface DxfHeader {
+  acadVersion?: string;
+  codePage?: string;
   /** $INSUNITS code (4 = mm, 6 = m, 1 = inch, …). Undefined when absent. */
   insUnits?: number;
   /** $MEASUREMENT (0 = imperial, 1 = metric). */
@@ -39,7 +43,7 @@ export interface DxfHeader {
  * Returns an empty object when there is no HEADER section.
  */
 export function parseDxfHeader(content: string): DxfHeader {
-  const lines = content.split(/\r?\n/);
+  const lines = content.replace(/^\uFEFF/, '').split(/\r\n|\n|\r/);
   const header: DxfHeader = {};
   let inHeader = false;
   let currentVar: string | null = null;
@@ -67,7 +71,13 @@ export function parseDxfHeader(content: string): DxfHeader {
       continue;
     }
 
-    if (currentVar === '$INSUNITS' && code === 70) {
+    if (currentVar === '$ACADVER' && code === 1) {
+      header.acadVersion = value;
+      currentVar = null;
+    } else if (currentVar === '$DWGCODEPAGE' && code === 3) {
+      header.codePage = value;
+      currentVar = null;
+    } else if (currentVar === '$INSUNITS' && code === 70) {
       header.insUnits = parseInt(value, 10);
       currentVar = null;
     } else if (currentVar === '$MEASUREMENT' && code === 70) {
@@ -91,10 +101,22 @@ function withY(point: DxfPoint | undefined, y: number): DxfPoint {
  * Minimal DXF parser - extracts entity types and basic properties.
  */
 export function parseDxfEntities(content: string): DxfEntity[] {
-  const lines = content.split(/\r?\n/);
+  const lines = content.replace(/^\uFEFF/, '').split(/\r\n|\n|\r/);
+  if (content.startsWith('AutoCAD Binary DXF')) {
+    throw new Error('バイナリDXFは未対応です。テキストDXFとして保存してください。');
+  }
+  if (
+    !/0\s*[\r\n]+\s*SECTION\s*[\r\n]+\s*2\s*[\r\n]+\s*ENTITIES(?:\s|$)/.test(content) ||
+    !/0\s*[\r\n]+\s*EOF\s*$/.test(content)
+  ) {
+    throw new Error('DXFのENTITIESセクションまたはEOFがありません。ファイルを確認してください。');
+  }
   const entities: DxfEntity[] = [];
   let inEntities = false;
   let current: DxfEntity | null = null;
+  let inVertex = false;
+  let xdataApp = '';
+  let metadataIndex = -1;
 
   for (let i = 0; i < lines.length - 1; i += 2) {
     const code = parseInt(lines[i].trim(), 10);
@@ -122,6 +144,8 @@ export function parseDxfEntities(content: string): DxfEntity[] {
     if (code === 0) {
       // Classic POLYLINE: accumulate VERTEX rows into parent, finalize on SEQEND
       if (current && current.type === 'POLYLINE' && value === 'VERTEX') {
+        inVertex = true;
+        xdataApp = '';
         continue;
       }
       if (current && current.type === 'POLYLINE' && value === 'SEQEND') {
@@ -131,14 +155,35 @@ export function parseDxfEntities(content: string): DxfEntity[] {
       }
       if (current) entities.push(current);
       current = { type: value };
+      inVertex = false;
+      xdataApp = '';
+      metadataIndex = -1;
       continue;
     }
 
     if (!current) continue;
 
+    if (code === 1001) {
+      xdataApp = value;
+      if (value === 'SIMPLECAD') {
+        current.metadata ??= [];
+        metadataIndex = current.metadata.push('') - 1;
+      }
+      continue;
+    }
+    if (code >= 1000) {
+      if (code === 1000 && xdataApp === 'SIMPLECAD' && metadataIndex >= 0) {
+        current.metadata![metadataIndex] += value;
+      }
+      continue;
+    }
+    // POLYLINE header coordinates are an elevation/dummy point, not a vertex.
+    if (current.type === 'POLYLINE' && !inVertex && [10, 20, 30].includes(code)) continue;
+    if (current.type === 'POLYLINE' && inVertex && [8, 70].includes(code)) continue;
+
     switch (code) {
       case 8:
-        current.layer = value;
+        current.layer = decodeDxfUnicode(value);
         break;
       case 10:
         assignPrimaryX(current, parseFloat(value));
@@ -200,7 +245,14 @@ export function parseDxfEntities(content: string): DxfEntity[] {
         break;
       case 1:
       case 3:
-        current.text = current.text ? `${current.text} ${normalizeDxfText(value)}` : normalizeDxfText(value);
+        if (code === 1 || current.type === 'MTEXT') {
+          current.text = (current.text ?? '') + (lines[i + 1] ?? '');
+        }
+        break;
+      case 42:
+        if (['LWPOLYLINE', 'POLYLINE'].includes(current.type) && Number(value) !== 0) {
+          current.hasBulge = true;
+        }
         break;
       case 40:
         if (current.type === 'CIRCLE' || current.type === 'ARC') {
@@ -213,6 +265,9 @@ export function parseDxfEntities(content: string): DxfEntity[] {
         break;
       case 50:
         current.startAngle = parseFloat(value);
+        if (current.type === 'TEXT' || current.type === 'MTEXT') {
+          current.rotation = parseFloat(value);
+        }
         break;
       case 51:
         current.endAngle = parseFloat(value);
@@ -225,6 +280,17 @@ export function parseDxfEntities(content: string): DxfEntity[] {
   }
 
   if (current) entities.push(current);
+  for (const entity of entities) {
+    if (entity.text !== undefined)
+      entity.text = normalizeDxfText(entity.text, entity.type === 'MTEXT');
+    if (
+      entity.type === 'MTEXT' &&
+      entity.endPoint &&
+      (entity.endPoint.x !== 0 || entity.endPoint.y !== 0)
+    ) {
+      entity.rotation = (Math.atan2(entity.endPoint.y, entity.endPoint.x) * 180) / Math.PI;
+    }
+  }
   return entities;
 }
 
@@ -299,6 +365,22 @@ function assignPrimaryZ(entity: DxfEntity, value: number) {
   if (entity.startPoint) entity.startPoint.z = value;
 }
 
-function normalizeDxfText(value: string): string {
-  return value.replace(/\\P/g, ' ').trim();
+function decodeDxfUnicode(value: string): string {
+  return value.replace(/\\U\+([0-9a-f]{4})/gi, (_, hex: string) =>
+    String.fromCharCode(parseInt(hex, 16)),
+  );
+}
+
+function normalizeDxfText(value: string, multiline: boolean): string {
+  if (!multiline) return decodeDxfUnicode(value);
+  // Parse escapes in one pass so a literal \\P is not treated as a paragraph.
+  return value.replace(
+    /\\U\+([0-9a-f]{4})|\\([\\{}P~])/gi,
+    (token, hex: string | undefined, escaped: string) => {
+      if (hex) return String.fromCharCode(parseInt(hex, 16));
+      if (escaped === 'P') return '\n';
+      if (escaped === '~') return ' ';
+      return escaped ?? token;
+    },
+  );
 }

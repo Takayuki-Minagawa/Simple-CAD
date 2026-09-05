@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- Preserve AutoCAD 2000 (AC1015) output and add selectable AutoCAD 2015–2017 compatible (AC1027) and 2018+ (AC1032, default) DXF output in the UI and CLI.
+- Add DXF export story selection and import source-version reporting; decode legacy Japanese code pages and preserve Unicode, multiline text, long MTEXT, and text rotation.
+- Generate complete DXF tables, entity handles/subclasses and real dimension blocks; store round-trip metadata in registered, chunked XDATA while continuing to read legacy comments.
+- Reject binary/truncated DXF, warn on unsupported curved polylines/nonfinite coordinates, and fix classic POLYLINE dummy-point handling and DIMENSION style-name parsing.
+
+
+## Unreleased
+
 ### Added
 
 - IndexedDB autosave recovery, recent projects, persisted editor preferences, and installable PWA support.
