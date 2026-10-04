@@ -1,7 +1,8 @@
+import { useMemo, useState } from 'react';
 import { useProjectStore, useEditorStore } from '@/app/store';
 import { useI18n } from '@/i18n';
-import { isEntityLayerInteractive } from '@/domain/rendering/layerLock';
 import { useShallow } from 'zustand/react/shallow';
+import { buildObjectTreeRows, OBJECT_TYPES, type ObjectType } from './objectTreeRows';
 
 export function ObjectTreePanel() {
   const data = useProjectStore((s) => s.data);
@@ -15,112 +16,105 @@ export function ObjectTreePanel() {
     })),
   );
   const { t } = useI18n();
+  const [query, setQuery] = useState('');
+  const [typeFilter, setTypeFilter] = useState<ObjectType | 'all'>('all');
+  const rows = useMemo(() => data ? buildObjectTreeRows(data) : [], [data]);
+  const selected = useMemo(() => new Set(selectedIds), [selectedIds]);
+  const eligibleIds = useMemo(() => new Set(rows
+    .filter((row) => !layerLocked[row.layer] && layerVisibility[row.layer] !== false)
+    .map((row) => row.id)), [rows, layerLocked, layerVisibility]);
+  const scopedRows = rows.filter((row) => !activeStory || row.story === activeStory);
+  const search = query.trim().toLocaleLowerCase();
+  const matches = scopedRows.filter((row) =>
+    (typeFilter === 'all' || row.type === typeFilter) && row.searchText.includes(search));
+  const selectableMatches = matches.filter((row) => eligibleIds.has(row.id));
+  const typeLabels: Record<ObjectType, string> = {
+    column: t.layerColumn,
+    beam: t.layerBeam,
+    wall: t.layerWall,
+    slab: t.layerSlab,
+    annotation: t.layerAnnotation,
+    dimension: t.layerDimension,
+    opening: t.layerOpening,
+    construction: t.layerConstruction,
+  };
 
   if (!data) return <div className="panel-content">{t.noProject}</div>;
 
-  const membersByType = {
-    column: data.members.filter((m) => m.type === 'column' && (!activeStory || m.story === activeStory)),
-    beam: data.members.filter((m) => m.type === 'beam' && (!activeStory || m.story === activeStory)),
-    wall: data.members.filter((m) => m.type === 'wall' && (!activeStory || m.story === activeStory)),
-    slab: data.members.filter((m) => m.type === 'slab' && (!activeStory || m.story === activeStory)),
-  };
-
-  const typeLabels: Record<string, string> = {
-    column: t.memberColumn,
-    beam: t.memberBeam,
-    wall: t.memberWall,
-    slab: t.memberSlab,
-  };
-
-  const annotations = data.annotations.filter((a) => !activeStory || a.story === activeStory);
-  const dimensions = data.dimensions.filter((d) => !activeStory || d.story === activeStory);
-  const memberById = new Map(data.members.map((member) => [member.id, member]));
-  const openings = data.openings.filter((opening) => {
-    const host = memberById.get(opening.memberId);
-    return host && (!activeStory || host.story === activeStory);
-  });
+  function selectRow(id: string, additive: boolean) {
+    if (!eligibleIds.has(id)) return;
+    if (!additive) {
+      setSelectedIds([id]);
+      return;
+    }
+    const next = selectedIds.filter((selectedId) => eligibleIds.has(selectedId) && selectedId !== id);
+    setSelectedIds(selected.has(id) ? next : [...next, id]);
+  }
 
   return (
-    <div>
+    <div onKeyDown={(event) => {
+      // Native control activation must not also complete an in-progress canvas drawing.
+      if (event.key === 'Enter' || event.key === ' ') event.stopPropagation();
+    }}>
       <div className="panel-header">{t.panelObjects}</div>
       <div className="panel-content">
-        {Object.entries(membersByType).map(([type, members]) => (
-          <div key={type}>
-            <div className="tree-group-label">{typeLabels[type]} ({members.length})</div>
-            {members.map((m) => {
-              const interactive = isEntityLayerInteractive(
-                data,
-                m.id,
-                layerLocked,
-                layerVisibility,
-              );
-              return (
-                <div
-                  key={m.id}
-                  className={`tree-node ${selectedIds.includes(m.id) ? 'selected' : ''}`}
-                  style={!interactive ? { opacity: 0.4, cursor: 'not-allowed' } : undefined}
-                  onClick={() => { if (interactive) setSelectedIds([m.id]); }}
-                >
-                  {m.id}
-                </div>
-              );
-            })}
+        <div className="tree-filters">
+          <input
+            type="search"
+            aria-label={t.objectSearch}
+            placeholder={t.objectSearchPlaceholder}
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+          />
+          <select
+            aria-label={t.objectTypeFilter}
+            value={typeFilter}
+            onChange={(event) => setTypeFilter(event.target.value as ObjectType | 'all')}
+          >
+            <option value="all">{t.objectAllTypes}</option>
+            {OBJECT_TYPES.map((type) => <option key={type} value={type}>{typeLabels[type]}</option>)}
+          </select>
+          <div className="tree-filter-actions">
+            <button
+              type="button"
+              disabled={selectableMatches.length === 0}
+              onClick={() => setSelectedIds(selectableMatches.map((row) => row.id))}
+            >
+              {t.objectSelectMatches}
+            </button>
+            <button
+              type="button"
+              disabled={!query && typeFilter === 'all'}
+              onClick={() => { setQuery(''); setTypeFilter('all'); }}
+            >
+              {t.objectClearFilters}
+            </button>
           </div>
-        ))}
-        <div className="tree-group-label">{t.memberAnnotation} ({annotations.length})</div>
-        {annotations.map((a) => {
-          const interactive = isEntityLayerInteractive(
-            data,
-            a.id,
-            layerLocked,
-            layerVisibility,
-          );
+          <div className="tree-result-count" role="status">
+            {t.objectResults.replace('{count}', String(matches.length)).replace('{total}', String(scopedRows.length))}
+            {' · '}{t.objectSelectable.replace('{count}', String(selectableMatches.length))}
+          </div>
+        </div>
+        {matches.length === 0 && <div className="tree-empty">{t.objectNoMatches}</div>}
+        {OBJECT_TYPES.map((type) => {
+          const group = matches.filter((row) => row.type === type);
+          if (group.length === 0) return null;
           return (
-            <div
-              key={a.id}
-              className={`tree-node ${selectedIds.includes(a.id) ? 'selected' : ''}`}
-              style={!interactive ? { opacity: 0.4, cursor: 'not-allowed' } : undefined}
-              onClick={() => { if (interactive) setSelectedIds([a.id]); }}
-            >
-              {a.id}: {a.text}
-            </div>
-          );
-        })}
-        <div className="tree-group-label">{t.memberDimension} ({dimensions.length})</div>
-        {dimensions.map((d) => {
-          const interactive = isEntityLayerInteractive(
-            data,
-            d.id,
-            layerLocked,
-            layerVisibility,
-          );
-          return (
-            <div
-              key={d.id}
-              className={`tree-node ${selectedIds.includes(d.id) ? 'selected' : ''}`}
-              style={!interactive ? { opacity: 0.4, cursor: 'not-allowed' } : undefined}
-              onClick={() => { if (interactive) setSelectedIds([d.id]); }}
-            >
-              {d.id}
-            </div>
-          );
-        })}
-        <div className="tree-group-label">{t.layerOpening} ({openings.length})</div>
-        {openings.map((opening) => {
-          const interactive = isEntityLayerInteractive(
-            data,
-            opening.id,
-            layerLocked,
-            layerVisibility,
-          );
-          return (
-            <div
-              key={opening.id}
-              className={`tree-node ${selectedIds.includes(opening.id) ? 'selected' : ''}`}
-              style={!interactive ? { opacity: 0.4, cursor: 'not-allowed' } : undefined}
-              onClick={() => { if (interactive) setSelectedIds([opening.id]); }}
-            >
-              {opening.id}: {opening.type}
+            <div key={type}>
+              <div className="tree-group-label">{typeLabels[type]} ({group.length})</div>
+              {group.map((row) => (
+                <button
+                  type="button"
+                  key={row.id}
+                  className={`tree-node ${selected.has(row.id) ? 'selected' : ''}`}
+                  aria-pressed={selected.has(row.id)}
+                  disabled={!eligibleIds.has(row.id)}
+                  title={`${row.label}\n${eligibleIds.has(row.id) ? t.objectSelectionHint : t.objectUnavailable}`}
+                  onClick={(event) => selectRow(row.id, event.shiftKey || event.ctrlKey || event.metaKey)}
+                >
+                  {row.label}
+                </button>
+              ))}
             </div>
           );
         })}

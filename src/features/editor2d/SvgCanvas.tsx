@@ -2,14 +2,16 @@ import { useRef, useCallback, useEffect, type ReactNode } from 'react';
 import { useEditorStore } from '@/app/store';
 import { screenToWorld } from '@/domain/geometry/transform';
 import { useShallow } from 'zustand/react/shallow';
+import { isCanvasDrag, type CanvasMouseEvent } from './canvasGesture';
 
 interface Props {
   children: ReactNode;
-  onWorldClick?: (worldPos: { x: number; y: number }, e: React.MouseEvent) => void;
-  onWorldMouseMove?: (worldPos: { x: number; y: number }, e: React.MouseEvent) => void;
-  onWorldMouseDown?: (worldPos: { x: number; y: number }, e: React.MouseEvent) => void;
-  onWorldMouseUp?: (worldPos: { x: number; y: number }, e: React.MouseEvent) => void;
+  onWorldClick?: (worldPos: { x: number; y: number }, e: CanvasMouseEvent) => void;
+  onWorldMouseMove?: (worldPos: { x: number; y: number }, e: CanvasMouseEvent) => void;
+  onWorldMouseDown?: (worldPos: { x: number; y: number }, e: CanvasMouseEvent) => void;
+  onWorldMouseUp?: (worldPos: { x: number; y: number }, e: CanvasMouseEvent) => void;
   onWorldDoubleClick?: (worldPos: { x: number; y: number }) => void;
+  onWorldCancel?: () => void;
 }
 
 export function SvgCanvas({
@@ -19,9 +21,10 @@ export function SvgCanvas({
   onWorldMouseDown,
   onWorldMouseUp,
   onWorldDoubleClick,
+  onWorldCancel,
 }: Props) {
   const svgRef = useRef<SVGSVGElement>(null);
-  const { pan, zoom, setPan, setZoom, setCursorWorld, activeTool } = useEditorStore(
+  const { pan, zoom, setPan, setZoom, setCursorWorld, activeTool, activeStory } = useEditorStore(
     useShallow((state) => ({
       pan: state.pan,
       zoom: state.zoom,
@@ -29,24 +32,32 @@ export function SvgCanvas({
       setZoom: state.setZoom,
       setCursorWorld: state.setCursorWorld,
       activeTool: state.activeTool,
+      activeStory: state.activeStory,
     })),
   );
-  const isPanningRef = useRef(false);
-  const lastMouseRef = useRef({ x: 0, y: 0 });
+  const gestureRef = useRef<{
+    button: number;
+    panning: boolean;
+    start: { x: number; y: number };
+    last: { x: number; y: number };
+    dragged: boolean;
+  } | null>(null);
+  const suppressClickRef = useRef(false);
   const pointerFrameRef = useRef<number | null>(null);
   const pendingPointerRef = useRef<{
     world: { x: number; y: number };
-    event: React.MouseEvent;
+    event: CanvasMouseEvent;
   } | null>(null);
 
   const getWorldPos = useCallback(
-    (e: React.MouseEvent) => {
+    (e: CanvasMouseEvent) => {
       const rect = svgRef.current!.getBoundingClientRect();
       const sx = e.clientX - rect.left;
       const sy = e.clientY - rect.top;
-      return screenToWorld({ x: sx, y: sy }, pan, zoom);
+      const editor = useEditorStore.getState();
+      return screenToWorld({ x: sx, y: sy }, editor.pan, editor.zoom);
     },
-    [pan, zoom],
+    [],
   );
 
   const handleWheel = useCallback(
@@ -69,6 +80,9 @@ export function SvgCanvas({
   );
 
   const flushPointerMove = useCallback(() => {
+    if (pointerFrameRef.current != null && typeof cancelAnimationFrame === 'function') {
+      cancelAnimationFrame(pointerFrameRef.current);
+    }
     pointerFrameRef.current = null;
     const pending = pendingPointerRef.current;
     pendingPointerRef.current = null;
@@ -86,12 +100,29 @@ export function SvgCanvas({
     [],
   );
 
+  const cancelGesture = useCallback(() => {
+    if (gestureRef.current) suppressClickRef.current = true;
+    gestureRef.current = null;
+    pendingPointerRef.current = null;
+    flushPointerMove();
+    onWorldCancel?.();
+  }, [flushPointerMove, onWorldCancel]);
+
   const handleMouseDown = useCallback(
     (e: React.MouseEvent) => {
+      if (e.button !== 0 && e.button !== 1) return;
+      suppressClickRef.current = false;
+      const position = { x: e.clientX, y: e.clientY };
+      const panning = e.button === 1 || activeTool === 'pan';
+      gestureRef.current = {
+        button: e.button,
+        panning,
+        start: position,
+        last: position,
+        dragged: false,
+      };
       // Middle button or pan tool
-      if (e.button === 1 || (e.button === 0 && activeTool === 'pan')) {
-        isPanningRef.current = true;
-        lastMouseRef.current = { x: e.clientX, y: e.clientY };
+      if (panning) {
         e.preventDefault();
         return;
       }
@@ -102,13 +133,20 @@ export function SvgCanvas({
     [activeTool, getWorldPos, onWorldMouseDown],
   );
 
-  const handleMouseMove = useCallback(
-    (e: React.MouseEvent) => {
-      if (isPanningRef.current) {
-        const dx = e.clientX - lastMouseRef.current.x;
-        const dy = e.clientY - lastMouseRef.current.y;
-        setPan({ x: pan.x + dx, y: pan.y + dy });
-        lastMouseRef.current = { x: e.clientX, y: e.clientY };
+  const trackPointerMove = useCallback(
+    (e: CanvasMouseEvent) => {
+      const gesture = gestureRef.current;
+      const position = { x: e.clientX, y: e.clientY };
+      if (gesture) {
+        gesture.dragged ||= isCanvasDrag(gesture.start, position);
+      }
+      if (gesture?.panning) {
+        const currentPan = useEditorStore.getState().pan;
+        setPan({
+          x: currentPan.x + position.x - gesture.last.x,
+          y: currentPan.y + position.y - gesture.last.y,
+        });
+        gesture.last = position;
         return;
       }
       const world = getWorldPos(e);
@@ -121,26 +159,41 @@ export function SvgCanvas({
         }
       }
     },
-    [flushPointerMove, getWorldPos, pan, setPan],
+    [flushPointerMove, getWorldPos, setPan],
   );
 
-  const handleMouseUp = useCallback(
-    (e: React.MouseEvent) => {
+  useEffect(() => {
+    const handleMove = (event: MouseEvent) => {
+      if (gestureRef.current) trackPointerMove(event);
+    };
+    const handleUp = (event: MouseEvent) => {
+      const gesture = gestureRef.current;
+      if (!gesture || gesture.button !== event.button) return;
+      trackPointerMove(event);
       flushPointerMove();
-      if (isPanningRef.current) {
-        isPanningRef.current = false;
-        return;
-      }
-      if (e.button === 0 && onWorldMouseUp) {
-        onWorldMouseUp(getWorldPos(e), e);
-      }
-    },
-    [flushPointerMove, getWorldPos, onWorldMouseUp],
-  );
+      gestureRef.current = null;
+      suppressClickRef.current = gesture.dragged || gesture.panning;
+      if (!gesture.panning) onWorldMouseUp?.(getWorldPos(event), event);
+    };
+    window.addEventListener('mousemove', handleMove);
+    window.addEventListener('mouseup', handleUp);
+    window.addEventListener('blur', cancelGesture);
+    return () => {
+      window.removeEventListener('mousemove', handleMove);
+      window.removeEventListener('mouseup', handleUp);
+      window.removeEventListener('blur', cancelGesture);
+    };
+  }, [cancelGesture, flushPointerMove, getWorldPos, onWorldMouseUp, trackPointerMove]);
+
+  useEffect(() => {
+    cancelGesture();
+  }, [activeTool, activeStory, cancelGesture]);
 
   const handleClick = useCallback(
     (e: React.MouseEvent) => {
-      if (activeTool === 'pan') return;
+      if (activeTool === 'pan' || suppressClickRef.current) {
+        return;
+      }
       onWorldClick?.(getWorldPos(e), e);
     },
     [activeTool, getWorldPos, onWorldClick],
@@ -148,9 +201,10 @@ export function SvgCanvas({
 
   const handleDoubleClick = useCallback(
     (e: React.MouseEvent) => {
+      if (activeTool === 'pan' || suppressClickRef.current) return;
       onWorldDoubleClick?.(getWorldPos(e));
     },
-    [getWorldPos, onWorldDoubleClick],
+    [activeTool, getWorldPos, onWorldDoubleClick],
   );
 
   return (
@@ -163,8 +217,10 @@ export function SvgCanvas({
       }}
       onWheel={handleWheel}
       onMouseDown={handleMouseDown}
-      onMouseMove={handleMouseMove}
-      onMouseUp={handleMouseUp}
+      onMouseMove={(event) => {
+        // Active drags are handled once by the window listener, including outside the SVG.
+        if (!gestureRef.current) trackPointerMove(event);
+      }}
       onClick={handleClick}
       onDoubleClick={handleDoubleClick}
       onContextMenu={(e) => e.preventDefault()}

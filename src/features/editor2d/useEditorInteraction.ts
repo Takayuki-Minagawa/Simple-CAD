@@ -27,6 +27,7 @@ import {
 } from './drawingEntities';
 import { showPrompt } from '@/app/browserDialogs';
 import { isEntityLayerInteractive } from '@/domain/rendering/layerLock';
+import { hasSelectionModifier, isCanvasDrag, type CanvasMouseEvent } from './canvasGesture';
 
 export interface DrawState {
   /** Points collected so far for multi-click tools */
@@ -214,6 +215,7 @@ export function useEditorInteraction() {
     end: null,
   });
   const rectSelectRef = useRef<RectSelectState>(rectSelect);
+  const rectangleGestureRef = useRef<{ start: Point2D; additive: boolean } | null>(null);
 
   const commitDrawState = useCallback((next: DrawState) => {
     drawStateRef.current = next;
@@ -363,7 +365,7 @@ export function useEditorInteraction() {
   }, [commitDrawState]);
 
   const handleClick = useCallback(
-    (worldPos: Point2D, e: React.MouseEvent) => {
+    (worldPos: Point2D, e: CanvasMouseEvent) => {
       const { activeTool, setSelectedIds, toggleSelection, layerLocked, layerVisibility } =
         useEditorStore.getState();
 
@@ -376,7 +378,7 @@ export function useEditorInteraction() {
           ? pickSelectionCandidate(candidateIds, useEditorStore.getState().selectedIds)
           : (candidateIds[0] ?? null);
         if (!id) {
-          setSelectedIds([]);
+          if (!hasSelectionModifier(e)) setSelectedIds([]);
           return;
         }
         const data = useProjectStore.getState().data;
@@ -566,7 +568,7 @@ export function useEditorInteraction() {
   }, [completeDrawing]);
 
   const handleMouseMove = useCallback(
-    (worldPos: Point2D, e: React.MouseEvent) => {
+    (worldPos: Point2D, e: CanvasMouseEvent) => {
       const { activeTool, orthoMode, polarTrackingEnabled, polarAngleStep } =
         useEditorStore.getState();
       const previous = drawStateRef.current;
@@ -593,58 +595,67 @@ export function useEditorInteraction() {
     [commitDrawState, commitRectSelect, getSnapPos],
   );
 
-  const handleMouseDown = useCallback((worldPos: Point2D, e: React.MouseEvent) => {
+  const handleMouseDown = useCallback((worldPos: Point2D, e: CanvasMouseEvent) => {
     const { activeTool } = useEditorStore.getState();
     if (activeTool === 'select' && e.button === 0) {
       // Start rect select only if clicking on empty area (not on an entity)
       const target = (e.target as SVGElement).closest('[data-id]');
       if (!target) {
+        rectangleGestureRef.current = {
+          start: { x: e.clientX, y: e.clientY },
+          additive: hasSelectionModifier(e),
+        };
         commitRectSelect({ start: worldPos, end: worldPos });
       }
     }
   }, [commitRectSelect]);
 
-  const handleMouseUp = useCallback(() => {
-    const previous = rectSelectRef.current;
-    if (previous.start && previous.end) {
-        const minX = Math.min(previous.start.x, previous.end.x);
-        const maxX = Math.max(previous.start.x, previous.end.x);
-        const minY = Math.min(previous.start.y, previous.end.y);
-        const maxY = Math.max(previous.start.y, previous.end.y);
-        const width = maxX - minX;
-        const height = maxY - minY;
-
-        // Only process if drag was big enough (avoid accidental micro-drags)
-        if (width > 50 || height > 50) {
-          const data = useProjectStore.getState().data;
-          const { activeStory } = useEditorStore.getState();
-          if (data) {
-            const entities = getEntityBoundsList(data, activeStory);
-            for (const opening of data.openings) {
-              const host = data.members.find((member) => member.id === opening.memberId);
-              if (!host || (activeStory && host.story !== activeStory)) continue;
-              entities.push({
-                id: opening.id,
-                minX: opening.position.x - opening.width / 2,
-                minY: opening.position.y - opening.width / 2,
-                maxX: opening.position.x + opening.width / 2,
-                maxY: opening.position.y + opening.width / 2,
-              });
-            }
-            // left-to-right = window, right-to-left = crossing
-            const mode = previous.end.x >= previous.start.x ? 'window' : 'crossing';
-            const ids = selectByRectangle(entities, minX, minY, maxX, maxY, mode);
-            const editor = useEditorStore.getState();
-            editor.setSelectedIds(
-              ids.filter((id) =>
-                isSelectableId(id, editor.layerLocked, editor.layerVisibility),
-              ),
-            );
-          }
-        }
-      }
+  const cancelRectangleSelection = useCallback(() => {
+    rectangleGestureRef.current = null;
     commitRectSelect({ start: null, end: null });
   }, [commitRectSelect]);
+
+  const handleMouseUp = useCallback((worldPos: Point2D, event: CanvasMouseEvent) => {
+    const previous = rectSelectRef.current;
+    const gesture = rectangleGestureRef.current;
+    cancelRectangleSelection();
+    if (
+      !previous.start ||
+      !gesture ||
+      !isCanvasDrag(gesture.start, { x: event.clientX, y: event.clientY })
+    ) return;
+
+    const data = useProjectStore.getState().data;
+    const editor = useEditorStore.getState();
+    if (!data) return;
+    const minX = Math.min(previous.start.x, worldPos.x);
+    const maxX = Math.max(previous.start.x, worldPos.x);
+    const minY = Math.min(previous.start.y, worldPos.y);
+    const maxY = Math.max(previous.start.y, worldPos.y);
+    const entities = getEntityBoundsList(data, editor.activeStory);
+    for (const opening of data.openings) {
+      const host = data.members.find((member) => member.id === opening.memberId);
+      if (!host || (editor.activeStory && host.story !== editor.activeStory)) continue;
+      entities.push({
+        id: opening.id,
+        minX: opening.position.x - opening.width / 2,
+        minY: opening.position.y - opening.width / 2,
+        maxX: opening.position.x + opening.width / 2,
+        maxY: opening.position.y + opening.width / 2,
+      });
+    }
+    // left-to-right = window, right-to-left = crossing
+    const mode = worldPos.x >= previous.start.x ? 'window' : 'crossing';
+    const ids = selectByRectangle(entities, minX, minY, maxX, maxY, mode);
+    const selectableIds = ids.filter((id) =>
+      isSelectableId(id, editor.layerLocked, editor.layerVisibility),
+    );
+    editor.setSelectedIds(
+      gesture.additive || hasSelectionModifier(event)
+        ? [...new Set([...editor.selectedIds, ...selectableIds])]
+        : selectableIds,
+    );
+  }, [cancelRectangleSelection]);
 
   /** Inject a coordinate point as if user clicked at that position. */
   const injectCoordinate = useCallback(
@@ -669,9 +680,9 @@ export function useEditorInteraction() {
       useEditorStore.subscribe((state, previous) => {
         if (state.activeStory === previous.activeStory) return;
         resetDrawing();
-        commitRectSelect({ start: null, end: null });
+        cancelRectangleSelection();
       }),
-    [commitRectSelect, resetDrawing],
+    [cancelRectangleSelection, resetDrawing],
   );
 
   return {
@@ -685,5 +696,6 @@ export function useEditorInteraction() {
     injectCoordinate,
     completeDrawing,
     resetDrawing,
+    cancelRectangleSelection,
   };
 }

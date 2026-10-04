@@ -62,4 +62,22 @@ describe('PropertyPanel member values', () => {
 
     expect(screen.getByRole('textbox', { name: 'Rotation (°)' })).toHaveValue('30');
   });
+
+  it('shows a read-only construction line summary', () => {
+    const data = structuredClone(useProjectStore.getState().data!);
+    data.constructionLines = [{
+      id: 'X-REFERENCE', story: '1F', type: 'ray',
+      origin: { x: 1200, y: 500 }, direction: { x: 0, y: 1 },
+    }];
+    useProjectStore.getState().loadProject(data);
+    useEditorStore.getState().setSelectedIds(['X-REFERENCE']);
+    render(<PropertyPanel />);
+
+    expect(screen.getByText('X-REFERENCE')).toBeVisible();
+    expect(screen.getByText('Construction (ray)')).toBeVisible();
+    expect(screen.getByText('Origin (mm)').closest('.prop-row')).toHaveTextContent('1200, 500');
+    expect(screen.getByText('Direction').closest('.prop-row')).toHaveTextContent('0, 1');
+    expect(screen.queryByRole('textbox')).not.toBeInTheDocument();
+    expect(screen.queryByText('Unknown')).not.toBeInTheDocument();
+  });
 });
