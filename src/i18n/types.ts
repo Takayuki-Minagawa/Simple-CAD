@@ -54,6 +54,17 @@ export interface Translations {
   noSelection: string;
   objectsSelected: string;
   noProject: string;
+  objectSearch: string;
+  objectSearchPlaceholder: string;
+  objectTypeFilter: string;
+  objectAllTypes: string;
+  objectSelectMatches: string;
+  objectClearFilters: string;
+  objectResults: string;
+  objectSelectable: string;
+  objectNoMatches: string;
+  objectSelectionHint: string;
+  objectUnavailable: string;
 
   // Layers
   layerGrid: string;
@@ -83,6 +94,8 @@ export interface Translations {
   propRotation: string;
   propMixed: string;
   propApply: string;
+  propOrigin: string;
+  propDirection: string;
 
   // Status bar
   statusZoom: string;

@@ -442,15 +442,72 @@
 }
 
 /* ── Tree ── */
+.tree-filters {
+  display: grid;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.tree-filters input,
+.tree-filters select,
+.tree-filter-actions button {
+  min-width: 0;
+  width: 100%;
+  padding: 4px 6px;
+  border: 1px solid var(--border-color);
+  border-radius: 3px;
+  background: var(--input-bg, var(--bg-primary));
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 12px;
+}
+
+.tree-filter-actions {
+  display: flex;
+  gap: 4px;
+}
+
+.tree-filter-actions button {
+  cursor: pointer;
+}
+
+.tree-result-count,
+.tree-empty {
+  color: var(--text-secondary);
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
+
 .tree-node {
+  display: block;
+  width: 100%;
   padding: 3px 0 3px 12px;
+  border: 0;
+  background: transparent;
+  color: var(--text-primary);
+  text-align: left;
+  font: inherit;
   cursor: pointer;
   font-size: 12px;
   border-radius: 3px;
+  overflow-wrap: anywhere;
 }
 
-.tree-node:hover {
+.tree-node:hover:not(:disabled),
+.tree-filter-actions button:hover:not(:disabled) {
   background: var(--bg-hover);
+}
+
+.tree-node:disabled,
+.tree-filter-actions button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.tree-node:focus-visible,
+.tree-filters :focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
 }
 
 .tree-node.selected {

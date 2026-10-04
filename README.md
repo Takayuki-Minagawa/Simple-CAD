@@ -26,7 +26,7 @@
 | **Undo / Redo** | 全編集操作の履歴管理 |
 | **自動保存 / 復元** | IndexedDB に未保存作業、最近のプロジェクト、表示設定を保存。異常終了後の復元に対応 |
 | **スナップ** | グリッド・端点・中点・垂直・最近点スナップ |
-| **選択** | クリック / Shift 複数選択 / 矩形選択（窓/交差） |
+| **選択 / 検索** | クリック / Shift・Ctrl・Cmd 複数選択 / 矩形選択（窓/交差）。オブジェクト一覧の検索・種類フィルター・一致対象の一括選択 |
 | **座標入力** | 絶対 (`x,y`) / 相対 (`@dx,dy`) / 極座標 (`@dist<angle`) |
 | **計測** | 面積(m2)・周長・部材長さの自動表示 |
 | **印刷プレビュー** | シートレイアウトの WYSIWYG プレビュー |
@@ -50,7 +50,7 @@
 
 ### 必要環境
 
-- Node.js 20.19 以上、または 22.12 以上
+- Node.js 24 LTS 推奨（22.13 以上の22系も対応）
 - npm 9 以上
 
 ### ローカル起動
@@ -123,17 +123,13 @@ CLI エントリは [src/cli/index.ts](src/cli/index.ts)、実装は [src/cli/ru
 npm run smoke:cli   # ビルド + dist-cli の動作確認(正常系・異常系)
 ```
 
-#### Python 移植(simple-cad-py)
+#### 外部のPython移植との比較データ
 
-構造計算書ツール等の Python パイプラインから図面出力するための移植パッケージが
-別フォルダ `simple-cad-py/` にあります(将来の独立リポジトリ化を想定)。
-同一のプロジェクト JSON(契約: [src/schemas/project.schema.json](src/schemas/project.schema.json))から
-**バイト単位で同一**の SVG / DXF を出力することをゴールデンテストで担保しています。
-
-- 正の実装(source of truth)は本リポジトリの `src/domain/`
-- 描画仕様を変更したら `npm run build:cli && node scripts/generate-golden.mjs <path-to-simple-cad-py>`
-  でゴールデンを再生成し、Python 側を追従させて `pytest` を通すこと
-- 計画・経緯は [docs/CLI分離作業計画.md](docs/CLI分離作業計画.md) を参照
+Python移植パッケージはこのリポジトリには含まれていません。別途用意した移植先に対して、
+`npm run build:cli && node scripts/generate-golden.mjs <path-to-simple-cad-py>`
+で比較用の SVG / DXF を生成できます。引数を省略した場合は隣接する `../simple-cad-py` が出力先です。
+正の実装は本リポジトリの `src/domain/`、JSONの契約は
+[src/schemas/project.schema.json](src/schemas/project.schema.json)です。
 
 ### テスト
 
@@ -164,6 +160,19 @@ npm run check         # lint / typecheck / coverage / build / bundle budget
 11. 🌙 / ☀️ ボタンでダーク / ライトモードを切替
 12. **EN / JA** ボタンで表示言語を切替
 13. **ツール → ヘルプ** で簡易マニュアルを表示
+
+### オブジェクトの検索と一括選択
+
+左側の「オブジェクト」一覧で、ID・注記テキスト・断面ID/種別・材料名を検索し、
+種類を選ぶと対象をさらに絞り込めます。対象は現在表示している階で、開口は所属部材の階に従います。
+補助線も一覧から選択できます。
+
+「該当項目を選択」で、検索結果のうち表示中かつロックされていない対象に選択を置き換えます。
+一覧の各項目はクリックまたは Enter / Space で選択でき、Shift・Ctrl・Cmd を押しながら操作すると
+個別に選択を追加・解除できます。選択した部材は右側のプロパティでまとめて編集できます。
+検索条件の変更だけでは既存の選択は変わりません。
+
+矩形選択も Shift・Ctrl・Cmd を押しながらドラッグすると既存の選択に追加できます。
 
 ### キーボードショートカット
 
@@ -206,7 +215,7 @@ npm run check         # lint / typecheck / coverage / build / bundle budget
 | IFC 連携 | 自作 IFC4 基本サブセットパーサー / ライター（STEP Part 21 形式） |
 | 構造計算 JSON | 独自スキーマ (`simple-cad.structural-analysis/v1`) による節点・境界条件・荷重・結果の双方向入出力 |
 | テスト | [Vitest](https://vitest.dev/) + [Playwright](https://playwright.dev/) + axe-core |
-| CI/CD | GitHub Actions（lint / typecheck / coverage / audit / E2E / bundle budget）→ GitHub Pages |
+| CI/CD | GitHub Actions（Linux / Node.js 24、lint / typecheck / coverage / audit / E2E / bundle budget）→ GitHub Pages |
 
 ---
 

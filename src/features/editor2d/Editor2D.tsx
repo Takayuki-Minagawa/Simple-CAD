@@ -44,6 +44,7 @@ export function Editor2D() {
     injectCoordinate,
     completeDrawing,
     resetDrawing,
+    cancelRectangleSelection,
   } = useEditorInteraction();
 
   const containerRef = useRef<HTMLDivElement>(null);
@@ -239,6 +240,7 @@ export function Editor2D() {
           onWorldDoubleClick={handleDoubleClick}
           onWorldMouseDown={handleMouseDown}
           onWorldMouseUp={handleMouseUp}
+          onWorldCancel={cancelRectangleSelection}
         >
           {isVisible('grid') && <GridLayer grids={data.grids} extent={10000} />}
           {isVisible('member-slab') ||

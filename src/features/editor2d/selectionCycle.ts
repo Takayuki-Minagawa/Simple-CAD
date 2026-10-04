@@ -1,4 +1,4 @@
-import type { MouseEvent as ReactMouseEvent } from 'react';
+import type { CanvasMouseEvent } from './canvasGesture';
 
 export function uniqueCandidateIds(ids: Array<string | null | undefined>): string[] {
   const seen = new Set<string>();
@@ -21,7 +21,7 @@ export function pickSelectionCandidate(candidateIds: string[], selectedIds: stri
   return candidateIds[(index + 1) % candidateIds.length];
 }
 
-export function getEventCandidateIds(e: ReactMouseEvent): string[] {
+export function getEventCandidateIds(e: CanvasMouseEvent): string[] {
   const fromPoint = document.elementsFromPoint?.(e.clientX, e.clientY) ?? [];
   const ids = fromPoint.map((element) => element.closest('[data-id]')?.getAttribute('data-id'));
   const fallback = (e.target as Element | null)?.closest?.('[data-id]')?.getAttribute('data-id');

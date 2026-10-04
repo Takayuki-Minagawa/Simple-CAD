@@ -3,6 +3,7 @@ import { useI18n } from '@/i18n';
 import type {
   Member,
   Annotation,
+  ConstructionLine,
   Dimension,
   LineType,
   Opening,
@@ -79,10 +80,29 @@ export function PropertyPanel() {
   const opening = data.openings.find((item) => item.id === id);
   if (opening) return <OpeningProps opening={opening} />;
 
+  const constructionLine = data.constructionLines?.find((item) => item.id === id);
+  if (constructionLine) return <ConstructionLineProps line={constructionLine} />;
+
   return (
     <div>
       <div className="panel-header">{t.panelProperties}</div>
       <div className="panel-content">Unknown</div>
+    </div>
+  );
+}
+
+function ConstructionLineProps({ line }: { line: ConstructionLine }) {
+  const { t } = useI18n();
+  return (
+    <div>
+      <div className="panel-header">{t.panelProperties}</div>
+      <div className="panel-content">
+        <div className="prop-row"><span className="prop-label">{t.propId}</span><span>{line.id}</span></div>
+        <div className="prop-row"><span className="prop-label">{t.propType}</span><span>{t.layerConstruction} ({line.type})</span></div>
+        <div className="prop-row"><span className="prop-label">{t.propStory}</span><span>{line.story}</span></div>
+        <div className="prop-row"><span className="prop-label">{t.propOrigin}</span><span>{line.origin.x}, {line.origin.y}</span></div>
+        <div className="prop-row"><span className="prop-label">{t.propDirection}</span><span>{line.direction.x}, {line.direction.y}</span></div>
+      </div>
     </div>
   );
 }
