@@ -1,4 +1,4 @@
-import type { Point2D } from '@/domain/geometry/types';
+import type { Point2D, Point3D } from '@/domain/geometry/types';
 import type { ProjectData, LinearMember } from './types';
 import { isLinearMember } from './types';
 
@@ -218,4 +218,154 @@ export function filletWalls(
   }
 
   return true;
+}
+
+// ── ID-addressed edge editing (R09) ────────────────────────────────────────────
+//
+// The click-driven tools above depend on zoom level and hit testing. These
+// functions take explicit member IDs and an explicit end so that the same input
+// always produces the same geometry, and they can be previewed without mutation.
+
+export type EdgeEditOperation = 'trim' | 'extend' | 'fillet';
+export type EdgeEditEnd = 'start' | 'end';
+
+export interface EdgeEditRequest {
+  operation: EdgeEditOperation;
+  /** Member whose endpoint moves (for fillet: the first wall). */
+  memberId: string;
+  /** Endpoint to move. Ignored by fillet, which picks the nearer end of each wall. */
+  end: EdgeEditEnd;
+  /** Member that provides the cut/boundary (for fillet: the second wall). */
+  referenceId: string;
+}
+
+export type EdgeEditErrorCode =
+  | 'target'
+  | 'reference'
+  | 'same'
+  | 'not-wall'
+  | 'no-intersection'
+  | 'no-change'
+  | 'invalid';
+
+export interface EdgeEditMemberChange {
+  id: string;
+  before: { start: Point3D; end: Point3D };
+  after: { start: Point3D; end: Point3D };
+  /** Plan (XY) lengths in mm. */
+  lengthBefore: number;
+  lengthAfter: number;
+}
+
+export type EdgeEditResult =
+  | { ok: true; changes: EdgeEditMemberChange[] }
+  | { ok: false; error: EdgeEditErrorCode };
+
+const EDGE_EPSILON = 1e-6;
+
+function planLength(a: Point3D, b: Point3D): number {
+  const dx = b.x - a.x;
+  const dy = b.y - a.y;
+  return Math.sqrt(dx * dx + dy * dy);
+}
+
+function samePlanPoint(a: Point3D, b: Point3D): boolean {
+  return Math.abs(a.x - b.x) <= EDGE_EPSILON && Math.abs(a.y - b.y) <= EDGE_EPSILON;
+}
+
+function findLinear(data: ProjectData, id: string): LinearMember | null {
+  const member = data.members.find((m) => m.id === id);
+  return member && isLinearMember(member) ? member : null;
+}
+
+function snapshot(member: LinearMember): { start: Point3D; end: Point3D } {
+  return { start: { ...member.start }, end: { ...member.end } };
+}
+
+/**
+ * Compute the result of an ID-addressed edge edit **without** mutating `data`.
+ * Trim requires the reference to cross the target segment; extend requires the
+ * reference to lie beyond the chosen end on the target's line. Fillet reuses the
+ * two-wall intersection clean-up.
+ */
+export function computeEdgeEdit(data: ProjectData, request: EdgeEditRequest): EdgeEditResult {
+  if (request.memberId === request.referenceId) return { ok: false, error: 'same' };
+  const target = findLinear(data, request.memberId);
+  if (!target) return { ok: false, error: 'target' };
+  const reference = findLinear(data, request.referenceId);
+  if (!reference) return { ok: false, error: 'reference' };
+
+  if (request.operation === 'fillet') {
+    if (target.type !== 'wall' || reference.type !== 'wall') return { ok: false, error: 'not-wall' };
+    const clone: ProjectData = {
+      ...data,
+      members: data.members.map((m) =>
+        m.id === target.id || m.id === reference.id ? ({ ...m, start: { ...(m as LinearMember).start }, end: { ...(m as LinearMember).end } } as LinearMember) : m,
+      ),
+    };
+    if (!filletWalls(clone, target.id, reference.id)) return { ok: false, error: 'no-intersection' };
+    const changes = [target, reference].map((before) => {
+      const after = findLinear(clone, before.id)!;
+      return {
+        id: before.id,
+        before: snapshot(before),
+        after: snapshot(after),
+        lengthBefore: planLength(before.start, before.end),
+        lengthAfter: planLength(after.start, after.end),
+      };
+    });
+    if (changes.every((c) => samePlanPoint(c.before.start, c.after.start) && samePlanPoint(c.before.end, c.after.end))) {
+      return { ok: false, error: 'no-change' };
+    }
+    return { ok: true, changes };
+  }
+
+  const a1 = getMember2DStart(target);
+  const a2 = getMember2DEnd(target);
+  const hit = raySegmentIntersection(a1, a2, getMember2DStart(reference), getMember2DEnd(reference));
+  if (!hit) return { ok: false, error: 'no-intersection' };
+
+  const { t, point } = hit;
+  const tol = 1e-9;
+  if (request.operation === 'trim') {
+    // The cut must fall on the target segment itself.
+    if (t < -tol || t > 1 + tol) return { ok: false, error: 'no-intersection' };
+  } else {
+    // Extend: the boundary must be beyond the chosen end.
+    const beyond = request.end === 'end' ? t > 1 + tol : t < -tol;
+    if (!beyond) return { ok: false, error: 'no-intersection' };
+  }
+
+  const before = snapshot(target);
+  const after = snapshot(target);
+  after[request.end] = { ...after[request.end], x: point.x, y: point.y };
+  if (samePlanPoint(before[request.end], after[request.end])) return { ok: false, error: 'no-change' };
+
+  return {
+    ok: true,
+    changes: [
+      {
+        id: target.id,
+        before,
+        after,
+        lengthBefore: planLength(before.start, before.end),
+        lengthAfter: planLength(after.start, after.end),
+      },
+    ],
+  };
+}
+
+/** Apply an ID-addressed edge edit to `data` in place. Returns the same result as the preview. */
+export function applyEdgeEdit(data: ProjectData, request: EdgeEditRequest): EdgeEditResult {
+  const result = computeEdgeEdit(data, request);
+  if (!result.ok) return result;
+  for (const change of result.changes) {
+    const member = findLinear(data, change.id);
+    if (!member) continue;
+    member.start.x = change.after.start.x;
+    member.start.y = change.after.start.y;
+    member.end.x = change.after.end.x;
+    member.end.y = change.after.end.y;
+  }
+  return result;
 }

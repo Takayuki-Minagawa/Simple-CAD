@@ -19,6 +19,7 @@ import type {
   ArraySelectionOptions,
   StretchSelectionOptions,
 } from '@/domain/structural/editTransform';
+import type { EdgeEditRequest, EdgeEditResult } from '@/domain/structural/editTrim';
 
 export interface ProjectState {
   data: ProjectData | null;
@@ -92,6 +93,8 @@ export interface ProjectState {
   trimMember: (memberId: string, cutPoint: Point2D, side: 'start' | 'end') => boolean;
   extendMember: (memberId: string, targetMemberId: string) => boolean;
   filletWalls: (wallId1: string, wallId2: string, radius?: number) => boolean;
+  /** ID-addressed trim/extend/fillet applied as one undoable step (R09). */
+  applyEdgeEdit: (request: EdgeEditRequest) => EdgeEditResult;
 
   updateSlabVertex: (memberId: string, vertexIndex: number, point: Point2D) => void;
   addSlabVertex: (memberId: string, afterIndex: number) => void;

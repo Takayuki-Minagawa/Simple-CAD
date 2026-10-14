@@ -69,6 +69,7 @@ const toolbarProps = {
   onAiAssist: vi.fn(),
   onHelp: vi.fn(),
   onTransform: vi.fn(),
+  onEdgeEdit: vi.fn(),
   onPrintPreview: vi.fn(),
 };
 

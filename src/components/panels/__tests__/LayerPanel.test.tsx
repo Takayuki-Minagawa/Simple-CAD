@@ -27,8 +27,12 @@ describe('LayerPanel selection safety', () => {
     render(<LayerPanel />);
 
     const beamRow = screen.getByLabelText('Beam').closest('.layer-row') as HTMLElement;
-    fireEvent.click(within(beamRow).getByTitle('Lock'));
+    fireEvent.click(within(beamRow).getByRole('button', { name: 'Lock Beam layer' }));
     expect(useEditorStore.getState().selectedIds).toEqual([annotation.id]);
+    expect(within(beamRow).getByRole('button', { name: 'Unlock Beam layer' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
 
     const annotationCheckbox = screen.getByLabelText('Annotation');
     fireEvent.click(annotationCheckbox);
