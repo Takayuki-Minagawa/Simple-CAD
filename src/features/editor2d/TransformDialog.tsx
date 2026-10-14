@@ -234,8 +234,8 @@ export function TransformDialog({ onClose }: Props) {
     }
 
     if (mode === 'mirror') {
-      let axisStart = bounds.center;
-      let axisEnd = { x: bounds.center.x + 1, y: bounds.center.y };
+      let axisStart: { x: number; y: number };
+      let axisEnd: { x: number; y: number };
       if (mirrorAxis === 'horizontal') {
         // Mirror across horizontal axis (Y stays same, X flips) -> axis is horizontal line
         axisStart = { x: bounds.center.x, y: bounds.center.y };

@@ -38,10 +38,12 @@ function ViewPresetController({
   controlsRef: React.RefObject<OrbitControlsImpl | null>;
   orthographic: boolean;
 }) {
-  const camera = useThree((state) => state.camera);
-  const size = useThree((state) => state.size);
+  // Read the live camera/size inside the effect: the three.js camera is an
+  // imperative object owned by the renderer, not React state.
+  const getThree = useThree((state) => state.get);
   useEffect(() => {
     if (!request) return;
+    const { camera, size } = getThree();
     const pose = computeViewPose(request.preset, request.extents, size, {
       orthographic,
       fovDeg: (camera as THREE.PerspectiveCamera).fov ?? 50,
@@ -58,9 +60,9 @@ function ViewPresetController({
       controls.target.set(...pose.target);
       controls.update();
     }
-    // `size` is intentionally excluded: resizing should not snap the camera back.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [request, camera, orthographic]);
+    // Re-apply when the request or the projection (i.e. the active camera) changes;
+    // a plain resize must not snap the camera back.
+  }, [request, orthographic, getThree, controlsRef]);
   return null;
 }
 

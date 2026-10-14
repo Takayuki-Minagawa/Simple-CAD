@@ -18,20 +18,23 @@ export function RecentProjectsDialog({ onOpen, onClose }: Props) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
-  const refresh = async () => {
-    setLoading(true);
-    setError('');
-    try {
-      setProjects(await listRecentProjects());
-    } catch (loadError) {
-      setError(String(loadError));
-    } finally {
-      setLoading(false);
-    }
-  };
-
+  // Initial state is already "loading", so the effect only sets state once the
+  // asynchronous read settles (and ignores it if the dialog has closed).
   useEffect(() => {
-    void refresh();
+    let cancelled = false;
+    listRecentProjects()
+      .then((records) => {
+        if (!cancelled) setProjects(records);
+      })
+      .catch((loadError) => {
+        if (!cancelled) setError(String(loadError));
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const title = locale === 'ja' ? '最近のプロジェクト' : 'Recent projects';

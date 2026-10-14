@@ -21,7 +21,7 @@ function deleteWorkspaceDatabase(): Promise<void> {
   });
 }
 
-describe.sequential('workspace persistence', () => {
+describe('workspace persistence', () => {
   beforeEach(async () => {
     await deleteWorkspaceDatabase();
   });
