@@ -41,6 +41,12 @@ export function LayerPanel() {
     })),
   );
   const { t } = useI18n();
+  const layerLabel = (name: LayerName) => t[LAYER_LABEL_KEYS[name]] || name;
+  const lockLabel = (name: LayerName) =>
+    (layerLocked[name] ? t.layerUnlockAction : t.layerLockAction).replace(
+      '{layer}',
+      layerLabel(name),
+    );
 
   return (
     <div>
@@ -63,10 +69,13 @@ export function LayerPanel() {
                   toggleLayerVisibility(name);
                 }}
               />
-              {t[LAYER_LABEL_KEYS[name]] || name}
+              {layerLabel(name)}
             </label>
             <button
-              title={layerLocked[name] ? 'Unlock' : 'Lock'}
+              type="button"
+              title={lockLabel(name)}
+              aria-label={lockLabel(name)}
+              aria-pressed={Boolean(layerLocked[name])}
               onClick={() => {
                 if (!layerLocked[name] && data) {
                   setSelectedIds(
@@ -109,6 +118,7 @@ export function LayerPanel() {
                 </label>
                 <button
                   onClick={() => removeExternalRef(ref.id)}
+                  aria-label={`${t.xrefRemove}: ${ref.name}`}
                   style={{
                     background: 'none',
                     border: 'none',

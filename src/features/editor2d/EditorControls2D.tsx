@@ -54,6 +54,7 @@ export function EditorControls2D({ canZoomSelection, onZoomExtents, onZoomSelect
         className={`floating-control-btn ${snapEnabled ? 'active' : ''}`}
         onClick={() => setSnapEnabled(!snapEnabled)}
         title={t.statusSnap}
+        aria-pressed={snapEnabled}
       >
         {t.statusSnap}
       </button>
@@ -64,6 +65,8 @@ export function EditorControls2D({ canZoomSelection, onZoomExtents, onZoomSelect
           onClick={() => toggleSnapMode(mode)}
           disabled={!snapEnabled}
           title={`${t.snapModeTooltip}: ${label}`}
+          aria-pressed={activeSnapModes.includes(mode)}
+          aria-label={`${t.snapModeTooltip}: ${label}`}
         >
           {label}
         </button>
@@ -73,6 +76,8 @@ export function EditorControls2D({ canZoomSelection, onZoomExtents, onZoomSelect
         className={`floating-control-btn ${orthoMode ? 'active' : ''}`}
         onClick={() => toggleOrthoMode()}
         title={orthoTip}
+        aria-pressed={orthoMode}
+        aria-label={orthoTip}
       >
         {orthoLabel}
       </button>
@@ -80,6 +85,8 @@ export function EditorControls2D({ canZoomSelection, onZoomExtents, onZoomSelect
         className={`floating-control-btn ${polarTrackingEnabled ? 'active' : ''}`}
         onClick={() => togglePolarTracking()}
         title={polarTip}
+        aria-pressed={polarTrackingEnabled}
+        aria-label={polarTip}
       >
         {polarLabel}
       </button>
@@ -89,6 +96,7 @@ export function EditorControls2D({ canZoomSelection, onZoomExtents, onZoomSelect
           value={polarAngleStep}
           onChange={(e) => setPolarAngleStep(Number(e.target.value))}
           title={polarTip}
+          aria-label={locale === 'ja' ? '極トラッキング角度' : 'Polar tracking angle'}
           style={{ cursor: 'pointer' }}
         >
           {POLAR_STEPS.map((step) => (
@@ -103,6 +111,7 @@ export function EditorControls2D({ canZoomSelection, onZoomExtents, onZoomSelect
         className={`floating-control-btn ${drawInputAssist ? 'active' : ''}`}
         onClick={() => setDrawInputAssist(!drawInputAssist)}
         title={t.inputAssistTooltip}
+        aria-pressed={drawInputAssist}
       >
         {t.inputAssist}
       </button>
@@ -111,6 +120,7 @@ export function EditorControls2D({ canZoomSelection, onZoomExtents, onZoomSelect
           className={`floating-control-btn ${snapToMembersWhileDrawing ? 'active' : ''}`}
           onClick={() => setSnapToMembersWhileDrawing(!snapToMembersWhileDrawing)}
           title={t.memberSnapTooltip}
+          aria-pressed={snapToMembersWhileDrawing}
         >
           {t.memberSnap}
         </button>
@@ -119,6 +129,7 @@ export function EditorControls2D({ canZoomSelection, onZoomExtents, onZoomSelect
         className={`floating-control-btn ${columnPlacementDirection === 'down' ? 'active' : ''}`}
         onClick={() => setColumnPlacementDirection(columnPlacementDirection === 'down' ? 'up' : 'down')}
         title={columnPlacementDirection === 'down' ? t.columnZDownTooltip : t.columnZUpTooltip}
+        aria-label={columnPlacementDirection === 'down' ? t.columnZDownTooltip : t.columnZUpTooltip}
       >
         {columnPlacementDirection === 'down' ? t.columnZDown : t.columnZUp}
       </button>

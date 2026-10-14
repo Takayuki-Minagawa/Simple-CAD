@@ -1,9 +1,11 @@
 .app-layout {
   display: grid;
-  grid-template-rows: var(--toolbar-height) 1fr var(--statusbar-height);
+  grid-template-rows: var(--toolbar-height) 1fr auto;
   height: 100vh;
   width: 100vw;
   overflow: hidden;
+  /* `clip` also blocks programmatic/focus scrolling, so an overflowing toolbar can never shift the app. */
+  overflow: clip;
 }
 
 .app-body {
@@ -75,6 +77,36 @@
 .toolbar-btn:disabled {
   opacity: 0.4;
   cursor: default;
+}
+
+/* The detail toggle only matters on narrow viewports; keep it out of the way otherwise. */
+.status-toggle {
+  display: none;
+  margin-left: auto;
+  padding: 1px 8px;
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  border-radius: 3px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+/* Wrapper that lets the direct tool groups collapse as one unit. */
+.toolbar-direct-tools {
+  display: contents;
+}
+
+/* Current-tool chip shown when the direct tool buttons are collapsed. */
+.toolbar-current-tool {
+  display: none;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  border-radius: 4px;
+  font-size: 12px;
+  white-space: nowrap;
 }
 
 /* ── Dropdown Menus ── */
@@ -279,14 +311,44 @@
   display: none;
 }
 
+.panel-overlay-close {
+  display: none;
+}
+
 @media (max-width: 900px) {
   :root {
     --left-panel-width: 190px;
     --right-panel-width: 220px;
   }
 
+  /* Direct tool buttons duplicate the Draw menu; collapse them so the menus and the
+     current-tool indicator always fit without horizontal clipping (#25, R07). */
+  .main-toolbar .toolbar-direct-tools {
+    display: none;
+  }
+
   .main-toolbar {
-    overflow-x: auto;
+    min-width: 0;
+    padding: 0 4px;
+  }
+
+  .menu-trigger {
+    padding: 4px 8px;
+  }
+
+  .toolbar-current-tool {
+    display: inline-flex;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .status-toggle {
+    display: inline-flex;
+  }
+
+  .status-bar.compact .status-item.secondary {
+    display: none;
   }
 }
 
@@ -343,14 +405,31 @@
     bottom: 0;
     z-index: 60;
     display: flex;
-    width: min(var(--right-panel-width), calc(100vw - 40px));
+    width: min(var(--right-panel-width), calc(100vw - 72px));
     box-shadow: -8px 0 18px rgba(0, 0, 0, 0.22);
+  }
+
+  .app-body.show-right-panel .right-panel .panel-overlay-close,
+  .app-body.show-left-panel .left-panel .panel-overlay-close {
+    display: flex;
+    justify-content: flex-end;
+    padding: 4px 8px;
+    border-bottom: 1px solid var(--border-light);
   }
 }
 
 @media (max-width: 520px) {
   .app-body {
     grid-template-columns: 1fr;
+  }
+
+  /* Menus plus theme/language already fill the bar; the status bar still names the tool. */
+  .toolbar-current-tool {
+    display: none;
+  }
+
+  .menu-trigger {
+    padding: 4px 6px;
   }
 
   .left-panel {
@@ -364,7 +443,7 @@
     bottom: 0;
     z-index: 60;
     display: flex;
-    width: min(var(--left-panel-width), calc(100vw - 40px));
+    width: min(var(--left-panel-width), calc(100vw - 72px));
     box-shadow: 8px 0 18px rgba(0, 0, 0, 0.22);
   }
 }
@@ -373,8 +452,10 @@
 .status-bar {
   display: flex;
   align-items: center;
-  gap: 16px;
-  padding: 0 12px;
+  flex-wrap: wrap;
+  gap: 2px 16px;
+  min-height: var(--statusbar-height);
+  padding: 2px 12px;
   background: var(--bg-statusbar);
   color: var(--text-on-dark);
   font-size: 11px;
@@ -385,6 +466,13 @@
   display: flex;
   align-items: center;
   gap: 4px;
+  white-space: nowrap;
+}
+
+/* Reserve room for the live cursor readout so its text changes never re-wrap the bar
+   (a height change would move the canvas bottom edge while the pointer moves). */
+.status-item[data-status='cursor'] {
+  min-width: 26ch;
 }
 
 /* ── Form elements ── */

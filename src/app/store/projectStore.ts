@@ -21,6 +21,8 @@ import {
   trimMember as trimMemberFn,
   extendMember as extendMemberFn,
   filletWalls as filletWallsFn,
+  applyEdgeEdit as applyEdgeEditFn,
+  type EdgeEditResult,
 } from '@/domain/structural/editTrim';
 import { createDefaultPlanView, createDefaultSheet, createEmptyProject } from './projectFactories';
 import { ensureUniqueId, duplicateStoryInProject } from './storyRename';
@@ -1067,6 +1069,32 @@ export const useProjectStore = create<ProjectState>()(
             state.data = finalized;
             markModified(state, true);
           }
+        });
+        return result;
+      },
+
+      applyEdgeEdit: (request) => {
+        let result: EdgeEditResult = { ok: false, error: 'invalid' };
+        set((state) => {
+          if (!state.data) return;
+          const candidate = deepClone(state.data);
+          const applied = applyEdgeEditFn(candidate, request);
+          if (!applied.ok) {
+            result = applied;
+            return;
+          }
+          const finalized = finalizeMemberCandidate(
+            state.data as ProjectData,
+            candidate,
+            applied.changes.map((change) => change.id),
+          );
+          if (!finalized) {
+            result = { ok: false, error: 'invalid' };
+            return;
+          }
+          state.data = finalized;
+          markModified(state, true);
+          result = applied;
         });
         return result;
       },

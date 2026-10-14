@@ -119,3 +119,45 @@ describe('validateSchema', () => {
     expect(validateSchema(invalid).ok).toBe(false);
   });
 });
+
+describe('schema error consolidation (R03)', () => {
+  it('reports one actionable error for a negative line weight instead of the oneOf fan-out', () => {
+    const data = structuredClone(sampleProject) as typeof sampleProject & {
+      members: Array<Record<string, unknown>>;
+    };
+    const index = data.members.findIndex((member) => member.type === 'beam');
+    data.members[index] = { ...data.members[index], lineWeight: -20 };
+    const result = validateSchema(data);
+    expect(result.ok).toBe(false);
+    expect(result.errors).toHaveLength(1);
+    const [error] = result.errors;
+    expect(error.entityId).toBe(data.members[index].id);
+    expect(error.field).toBe('lineWeight');
+    expect(error.message).toContain(`${String(data.members[index].id)} › lineWeight`);
+    expect(error.message).toContain('0 より大きい値にしてください');
+    expect(error.detail).toContain('/lineWeight must be > 0');
+  });
+
+  it('keeps the union error when no branch matches the discriminator', () => {
+    const data = {
+      ...sampleProject,
+      members: [
+        {
+          id: 'test',
+          type: 'invalid',
+          story: '1F',
+          sectionId: 'SEC-C600',
+          materialId: 'MAT-RC-24',
+          start: { x: 0, y: 0, z: 0 },
+          end: { x: 0, y: 0, z: 3000 },
+        },
+      ],
+    };
+    const result = validateSchema(data);
+    expect(result.ok).toBe(false);
+    expect(result.errors.length).toBeGreaterThan(0);
+    expect(result.errors).toHaveLength(1);
+    expect(result.errors[0]).toMatchObject({ entityId: 'test', field: 'type' });
+    expect(result.errors[0].message).toContain('column, beam, wall, slab');
+  });
+});

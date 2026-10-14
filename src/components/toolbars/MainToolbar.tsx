@@ -5,6 +5,7 @@ import { drawingTemplates } from '@/domain/templates/drawingTemplates';
 import { MenuBar } from './MenuBar';
 import { ToolButtonGroups } from './ToolButtonGroups';
 import { useMenuState } from './useMenuState';
+import { getToolStatusLabel } from '@/app/toolMetadata';
 import { showAlert, showConfirm } from '@/app/browserDialogs';
 import { saveWorkspace, type RecentProjectRecord } from '@/libs/persistence';
 
@@ -21,6 +22,7 @@ interface Props {
   onAiAssist: () => void;
   onHelp: () => void;
   onTransform: () => void;
+  onEdgeEdit: () => void;
   onPrintPreview: () => void;
 }
 
@@ -30,6 +32,7 @@ export function MainToolbar({
   onAiAssist,
   onHelp,
   onTransform,
+  onEdgeEdit,
   onPrintPreview,
 }: Props) {
   const isDirty = useProjectStore((state) => state.isDirty);
@@ -37,6 +40,7 @@ export function MainToolbar({
   const newProject = useProjectStore((state) => state.newProject);
   const theme = useEditorStore((state) => state.theme);
   const toggleTheme = useEditorStore((state) => state.toggleTheme);
+  const activeTool = useEditorStore((state) => state.activeTool);
   const { t, locale, setLocale } = useI18n();
 
   const [showTemplatePicker, setShowTemplatePicker] = useState(false);
@@ -96,10 +100,18 @@ export function MainToolbar({
         onAiAssist={onAiAssist}
         onHelp={onHelp}
         onTransform={onTransform}
+        onEdgeEdit={onEdgeEdit}
         onPrintPreview={onPrintPreview}
       />
 
-      <ToolButtonGroups />
+      <div className="toolbar-direct-tools">
+        <ToolButtonGroups />
+      </div>
+
+      {/* Shown instead of the direct tool buttons on narrow viewports (R07). */}
+      <span className="toolbar-current-tool" data-status="current-tool">
+        {t.currentTool}: <strong>{getToolStatusLabel(activeTool, t)}</strong>
+      </span>
 
       {/* ── Right side: theme & locale ── */}
       <div className="toolbar-group" style={{ marginLeft: 'auto' }}>

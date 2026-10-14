@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Accept `m`/`mm` suffixes in coordinate input (`2m,2m`), label the status-bar selector as a display unit, and show the input unit on the coordinate bar and property fields; linear members now list plan (XY) length, 3D (XYZ) length and ΔZ.
+- Validate numeric property fields before they reach the model (positive line weights, 0–1 fill opacity, positive opening sizes), keep invalid text editable with an accessible reason, and report when the store rejects an edit.
+- Collapse JSON Schema `oneOf` error fan-out to the matching member/section branch, resolve `/members/13` to entity IDs and fields, and let validation issues select the entity and focus the field; the panel now shows last-run time/revision, a "changed since last run" badge and optional auto re-validation.
+- Add accessible names to property selects, colour inputs and layer lock buttons, `aria-pressed` to every 2D/3D toggle, and ortho/polar/input-assist state text in the status bar.
+- Add an ID-addressed edge-edit dialog (trim/extend/fillet with preview and single-step undo) and named 3D views (top/front/right/isometric, fit all, fit selection) with a text readout of the current view and projection.
+- Collapse direct tool buttons behind the Draw menu below 900px with a current-tool indicator, make the status bar wrap with a compact/detailed toggle, and add close buttons to overlaid side panels.
 - Add object search by ID, annotation text, section, and material, entity-type filters, selectable-match counts, and bulk selection scoped to the active story.
 - Refactor object rows into a shared indexed model; expose construction lines and keyboard-accessible additive selection while respecting hidden and locked layers.
 - Preserve rectangle selections after drag release, support additive rectangle selection, and finish/cancel canvas gestures safely outside the drawing area.
