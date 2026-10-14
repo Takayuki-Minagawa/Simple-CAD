@@ -16,6 +16,7 @@ interface Props {
   onAiAssist: () => void;
   onHelp: () => void;
   onTransform: () => void;
+  onEdgeEdit: () => void;
   onPrintPreview: () => void;
 }
 
@@ -30,6 +31,7 @@ export function MenuBar({
   onAiAssist,
   onHelp,
   onTransform,
+  onEdgeEdit,
   onPrintPreview,
 }: Props) {
   const data = useProjectStore((state) => state.data);
@@ -161,6 +163,7 @@ export function MenuBar({
             {menuItem(t.editRedo, handleRedo, !data)}
             <div className="dropdown-divider" role="separator" />
             {menuItem(transformLabel, onTransform, !canTransform)}
+            {menuItem(t.edgeEditTitle, onEdgeEdit, !data)}
           </div>
         )}
       </div>

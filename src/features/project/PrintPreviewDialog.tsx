@@ -13,23 +13,27 @@ export function PrintPreviewDialog({ onClose }: Props) {
   const data = useProjectStore((s) => s.data);
   const { t, locale } = useI18n();
   const [sheetId, setSheetId] = useState(data?.sheets[0]?.id ?? '');
-  const [svgContent, setSvgContent] = useState<string | null>(null);
-  const [previewError, setPreviewError] = useState('');
+  // The rendered result remembers which document/sheet it belongs to, so a
+  // stale preview is simply not shown instead of being reset inside the effect.
+  const [preview, setPreview] = useState<{
+    data: typeof data;
+    sheetId: string;
+    svg: string | null;
+    error: string;
+  } | null>(null);
+  const current = preview && preview.data === data && preview.sheetId === sheetId ? preview : null;
+  const svgContent = current?.svg ?? null;
+  const previewError = current?.error ?? '';
 
   useEffect(() => {
     let cancelled = false;
-    setSvgContent(null);
-    setPreviewError('');
     if (!data || !sheetId) return;
     void import('@/domain/export/svgExport')
       .then(({ exportSvg }) => {
-        if (!cancelled) setSvgContent(exportSvg(data, sheetId));
+        if (!cancelled) setPreview({ data, sheetId, svg: exportSvg(data, sheetId), error: '' });
       })
       .catch((error) => {
-        if (!cancelled) {
-          setSvgContent(null);
-          setPreviewError(String(error));
-        }
+        if (!cancelled) setPreview({ data, sheetId, svg: null, error: String(error) });
       });
     return () => {
       cancelled = true;

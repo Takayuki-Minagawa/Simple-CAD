@@ -211,7 +211,7 @@ export function importDxf(
   const convertGeometry = options.convertGeometry ?? false;
   const sections = new SectionRegistry();
   const usedIds = new Set<string>();
-  let unitScale = 1;
+  let unitScale: number;
 
   try {
     const entities = parseDxfEntities(content);

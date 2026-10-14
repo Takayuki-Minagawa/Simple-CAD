@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { parseCoordinate, parseCoordinateResult, buildPolarInput } from '../coordinateInput';
+import { parseCoordinate, parseCoordinateResult, buildPolarInput, parseLengthMm } from '../coordinateInput';
 
 describe('parseCoordinate', () => {
   it('parses absolute comma and space separated coordinates', () => {
@@ -92,5 +92,37 @@ describe('buildPolarInput', () => {
     const point = parseCoordinate(str, { x: 0, y: 0 });
     expect(point?.x).toBeCloseTo(0);
     expect(point?.y).toBeCloseTo(1000);
+  });
+});
+
+describe('unit suffix handling (R01)', () => {
+  it('treats bare numbers as millimetres', () => {
+    expect(parseCoordinate('2,2', null)).toEqual({ x: 2, y: 2 });
+  });
+
+  it('converts an explicit metre suffix to millimetres', () => {
+    expect(parseCoordinate('2m,2m', null)).toEqual({ x: 2000, y: 2000 });
+    expect(parseCoordinate('2m 2.5m', null)).toEqual({ x: 2000, y: 2500 });
+    expect(parseCoordinate('2000mm,2m', null)).toEqual({ x: 2000, y: 2000 });
+  });
+
+  it('accepts metre suffixes in relative, polar and distance input', () => {
+    const last = { x: 1000, y: 1000 };
+    expect(parseCoordinate('@2m,0', last)).toEqual({ x: 3000, y: 1000 });
+    const polar = parseCoordinate('@2.5m<0', last)!;
+    expect(polar.x).toBeCloseTo(3500);
+    expect(polar.y).toBeCloseTo(1000);
+    const dist = parseCoordinate('@1m', last, { x: 2000, y: 1000 })!;
+    expect(dist.x).toBeCloseTo(2000);
+  });
+
+  it('rejects unknown unit suffixes', () => {
+    expect(parseCoordinate('2cm,2cm', null)).toBeNull();
+  });
+
+  it('exposes parseLengthMm for property fields', () => {
+    expect(parseLengthMm('3m')).toBe(3000);
+    expect(parseLengthMm(' 250 mm ')).toBe(250);
+    expect(parseLengthMm('abc')).toBeNull();
   });
 });

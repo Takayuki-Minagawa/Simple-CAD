@@ -10,3 +10,5 @@
 - Very large models remain bounded by browser memory and GPU capacity. The 3D viewer is lazy-loaded and interaction paths are optimized, but it is not a replacement for desktop-scale BIM streaming.
 
 - DXF version conversion re-exports supported imported structural geometry; it does not preserve arbitrary source entities or all drawing settings. Binary DXF and block INSERT expansion are unsupported. Curves/fills and bulged polylines are skipped with warnings during structural import.
+- Coordinate and property input is millimetre-fixed. The status-bar unit selector changes display only; type an explicit `m` suffix (`2m,2m`) to enter metres.
+- The UI is designed for viewports of 1024px and wider. Below 900px the direct tool buttons move into the Draw menu and the status bar collapses; below 680px side panels overlay the canvas.
