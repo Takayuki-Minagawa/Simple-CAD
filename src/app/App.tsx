@@ -29,6 +29,11 @@ const TransformDialog = lazy(() =>
     default: module.TransformDialog,
   })),
 );
+const EdgeEditDialog = lazy(() =>
+  import('@/features/editor2d/EdgeEditDialog').then((module) => ({
+    default: module.EdgeEditDialog,
+  })),
+);
 const ExportDialog = lazy(() =>
   import('@/features/project/ExportDialog').then((module) => ({ default: module.ExportDialog })),
 );
@@ -68,6 +73,7 @@ export function App() {
   const [showAi, setShowAi] = useState(false);
   const [showHelp, setShowHelp] = useState(false);
   const [showTransform, setShowTransform] = useState(false);
+  const [showEdgeEdit, setShowEdgeEdit] = useState(false);
   const [showPrintPreview, setShowPrintPreview] = useState(false);
   const [responsivePanel, setResponsivePanel] = useState<'left' | 'right' | null>(null);
   const [recovery, setRecovery] = useState<AutosaveRecord | null>(null);
@@ -82,6 +88,7 @@ export function App() {
     showAi ||
     showHelp ||
     showTransform ||
+    showEdgeEdit ||
     showPrintPreview ||
     Boolean(recovery);
   useKeyboardShortcuts(appDialogOpen);
@@ -237,10 +244,21 @@ export function App() {
         onAiAssist={() => setShowAi(true)}
         onHelp={() => setShowHelp(true)}
         onTransform={() => setShowTransform(true)}
+        onEdgeEdit={() => setShowEdgeEdit(true)}
         onPrintPreview={() => setShowPrintPreview(true)}
       />
       <div className={`app-body ${responsivePanel ? `show-${responsivePanel}-panel` : ''}`}>
         <div className="left-panel">
+          <div className="panel-overlay-close">
+            <button
+              type="button"
+              className="toolbar-btn"
+              onClick={() => setResponsivePanel(null)}
+              aria-label={`${t.panelClose}: ${t.panelStory}`}
+            >
+              {t.panelClose}
+            </button>
+          </div>
           <StorySelector />
           <ObjectTreePanel />
           <LayerPanel />
@@ -278,6 +296,16 @@ export function App() {
           )}
         </div>
         <div className="right-panel">
+          <div className="panel-overlay-close">
+            <button
+              type="button"
+              className="toolbar-btn"
+              onClick={() => setResponsivePanel(null)}
+              aria-label={`${t.panelClose}: ${t.panelProperties}`}
+            >
+              {t.panelClose}
+            </button>
+          </div>
           <PropertyPanel />
           <ValidationPanel />
         </div>
@@ -337,6 +365,7 @@ export function App() {
         {showAi && <AiAssistPanel onClose={() => setShowAi(false)} />}
         {showHelp && <HelpDialog onClose={() => setShowHelp(false)} />}
         {showTransform && <TransformDialog onClose={() => setShowTransform(false)} />}
+        {showEdgeEdit && <EdgeEditDialog onClose={() => setShowEdgeEdit(false)} />}
         {showPrintPreview && <PrintPreviewDialog onClose={() => setShowPrintPreview(false)} />}
       </Suspense>
       {recovery && (

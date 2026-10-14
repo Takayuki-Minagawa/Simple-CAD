@@ -12,6 +12,8 @@ import type {
 } from '@/domain/structural/types';
 import { useMemo } from 'react';
 import { polygonArea, polygonPerimeter, linearLength } from '@/domain/geometry/measurement';
+import { distance3D } from '@/domain/geometry/point';
+import { formatLength } from '@/domain/geometry/units';
 import { CoordRow, VertexCoordInput } from './PropertyInputs';
 import { isEntityLayerInteractive } from '@/domain/rendering/layerLock';
 import { radiansToDisplayDegrees } from '@/domain/geometry/precision';
@@ -147,7 +149,7 @@ function BulkMemberProps({ members, groupName }: { members: Member[]; groupName?
         <div>{members.length} {t.objectsSelected}</div>
         <div className="prop-row">
           <span className="prop-label">{t.propStory}</span>
-          <select className="prop-select" value={story ?? ''} onChange={(event) => {
+          <select className="prop-select" aria-label={t.propMemberStory} value={story ?? ''} onChange={(event) => {
             if (event.target.value) updateMembers(ids, { story: event.target.value });
           }}>
             <option value="">—</option>
@@ -156,7 +158,7 @@ function BulkMemberProps({ members, groupName }: { members: Member[]; groupName?
         </div>
         <div className="prop-row">
           <span className="prop-label">{t.propSection}</span>
-          <select className="prop-select" value={section ?? ''} onChange={(event) => {
+          <select className="prop-select" aria-label={t.propMemberSection} value={section ?? ''} onChange={(event) => {
             if (event.target.value) updateMembers(ids, { sectionId: event.target.value });
           }}>
             <option value="">—</option>
@@ -164,8 +166,8 @@ function BulkMemberProps({ members, groupName }: { members: Member[]; groupName?
           </select>
         </div>
         <div className="prop-row">
-          <span className="prop-label">Material</span>
-          <select className="prop-select" value={material ?? ''} onChange={(event) => {
+          <span className="prop-label">{t.propMaterial}</span>
+          <select className="prop-select" aria-label={t.propMemberMaterial} value={material ?? ''} onChange={(event) => {
             if (event.target.value) updateMembers(ids, { materialId: event.target.value });
           }}>
             <option value="">—</option>
@@ -185,7 +187,7 @@ function BulkMemberProps({ members, groupName }: { members: Member[]; groupName?
           <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
             <input
               type="color"
-              aria-label={t.propColor}
+              aria-label={t.propLineColor}
               value={color ?? '#000000'}
               onChange={(event) => updateMembers(ids, { color: event.target.value })}
             />
@@ -218,8 +220,14 @@ function MemberProps({ member }: { member: Member }) {
   const data = useProjectStore((s) => s.data)!;
   const { t } = useI18n();
 
-  // Measurement: area/perimeter for slabs, length for linear members
-  const measurement = useMemo((): { area?: number; perimeter?: number; length?: number } => {
+  // Measurement: area/perimeter for slabs; plan (XY), 3D (XYZ) and ΔZ for linear members (R08).
+  const measurement = useMemo((): {
+    area?: number;
+    perimeter?: number;
+    length?: number;
+    length3D?: number;
+    deltaZ?: number;
+  } => {
     if (member.type === 'slab') {
       return {
         area: polygonArea(member.polygon),
@@ -231,8 +239,13 @@ function MemberProps({ member }: { member: Member }) {
         { x: member.start.x, y: member.start.y },
         { x: member.end.x, y: member.end.y },
       ),
+      length3D: distance3D(member.start, member.end),
+      deltaZ: member.end.z - member.start.z,
     };
   }, [member]);
+  const statusUnit = useEditorStore((s) => s.statusUnit);
+  const lengthText = (mm: number) =>
+    statusUnit === 'm' ? `${formatLength(mm, 'mm')} (${formatLength(mm, 'm')})` : formatLength(mm, 'mm');
 
   // Group info
   const group = data.groups?.find((g) => g.memberIds.includes(member.id));
@@ -256,6 +269,7 @@ function MemberProps({ member }: { member: Member }) {
           <span className="prop-label">{t.propStory}</span>
           <select
             className="prop-select"
+            aria-label={t.propMemberStory}
             value={member.story}
             onChange={(e) => updateMember(member.id, { story: e.target.value })}
           >
@@ -270,6 +284,7 @@ function MemberProps({ member }: { member: Member }) {
           <span className="prop-label">{t.propSection}</span>
           <select
             className="prop-select"
+            aria-label={t.propMemberSection}
             value={member.sectionId}
             onChange={(e) => updateMember(member.id, { sectionId: e.target.value })}
           >
@@ -281,9 +296,10 @@ function MemberProps({ member }: { member: Member }) {
           </select>
         </div>
         <div className="prop-row">
-          <span className="prop-label">Material</span>
+          <span className="prop-label">{t.propMaterial}</span>
           <select
             className="prop-select"
+            aria-label={t.propMemberMaterial}
             value={member.materialId}
             onChange={(e) => updateMember(member.id, { materialId: e.target.value })}
           >
@@ -298,14 +314,16 @@ function MemberProps({ member }: { member: Member }) {
           onChange={(value) => updateMember(member.id, { rotation: (value * Math.PI) / 180 })}
         />
         <CoordRow
-          label="Axis offset X"
+          label={t.propAxisOffsetX}
+          unit="mm"
           value={member.axisOffset?.dx ?? 0}
           onChange={(value) => updateMember(member.id, {
             axisOffset: { dx: value, dy: member.axisOffset?.dy ?? 0 },
           })}
         />
         <CoordRow
-          label="Axis offset Y"
+          label={t.propAxisOffsetY}
+          unit="mm"
           value={member.axisOffset?.dy ?? 0}
           onChange={(value) => updateMember(member.id, {
             axisOffset: { dx: member.axisOffset?.dx ?? 0, dy: value },
@@ -313,9 +331,10 @@ function MemberProps({ member }: { member: Member }) {
         />
         {(member.type === 'beam' || member.type === 'wall') && (
           <div className="prop-row">
-            <span className="prop-label">Face align</span>
+            <span className="prop-label">{t.propFaceAlign}</span>
             <select
               className="prop-select"
+              aria-label={t.propFaceAlign}
               value={member.faceAlign ?? 'center'}
               onChange={(event) => updateMember(member.id, {
                 faceAlign: event.target.value as 'center' | 'left' | 'right',
@@ -333,42 +352,54 @@ function MemberProps({ member }: { member: Member }) {
         {member.type !== 'slab' && (
           <>
             <CoordRow
-              label="Start X"
+              label={t.propStartX}
+              unit="mm"
+              fieldKey="start.x"
               value={member.start.x}
               onChange={(v) =>
                 updateMember(member.id, { start: { ...member.start, x: v } } as Partial<Member>)
               }
             />
             <CoordRow
-              label="Start Y"
+              label={t.propStartY}
+              unit="mm"
+              fieldKey="start.y"
               value={member.start.y}
               onChange={(v) =>
                 updateMember(member.id, { start: { ...member.start, y: v } } as Partial<Member>)
               }
             />
             <CoordRow
-              label="End X"
+              label={t.propEndX}
+              unit="mm"
+              fieldKey="end.x"
               value={member.end.x}
               onChange={(v) =>
                 updateMember(member.id, { end: { ...member.end, x: v } } as Partial<Member>)
               }
             />
             <CoordRow
-              label="End Y"
+              label={t.propEndY}
+              unit="mm"
+              fieldKey="end.y"
               value={member.end.y}
               onChange={(v) =>
                 updateMember(member.id, { end: { ...member.end, y: v } } as Partial<Member>)
               }
             />
             <CoordRow
-              label="Start Z"
+              label={t.propStartZ}
+              unit="mm"
+              fieldKey="start.z"
               value={member.start.z}
               onChange={(v) =>
                 updateMember(member.id, { start: { ...member.start, z: v } } as Partial<Member>)
               }
             />
             <CoordRow
-              label="End Z"
+              label={t.propEndZ}
+              unit="mm"
+              fieldKey="end.z"
               value={member.end.z}
               onChange={(v) =>
                 updateMember(member.id, { end: { ...member.end, z: v } } as Partial<Member>)
@@ -379,7 +410,9 @@ function MemberProps({ member }: { member: Member }) {
 
         {member.type === 'slab' && (
           <CoordRow
-            label="Level Z"
+            label={t.propLevelZ}
+            unit="mm"
+            fieldKey="level"
             value={member.level}
             onChange={(value) => updateMember(member.id, { level: value } as Partial<Member>)}
           />
@@ -387,10 +420,20 @@ function MemberProps({ member }: { member: Member }) {
 
         {/* Measurements */}
         {measurement.length != null && (
-          <div className="prop-row">
-            <span className="prop-label">{t.propLength}</span>
-            <span>{measurement.length.toFixed(0)} mm</span>
-          </div>
+          <>
+            <div className="prop-row">
+              <span className="prop-label">{t.propLengthPlan}</span>
+              <span data-prop-field="length.plan">{lengthText(measurement.length)}</span>
+            </div>
+            <div className="prop-row">
+              <span className="prop-label">{t.propLength3D}</span>
+              <span data-prop-field="length.3d">{lengthText(measurement.length3D ?? 0)}</span>
+            </div>
+            <div className="prop-row">
+              <span className="prop-label">{t.propDeltaZ}</span>
+              <span data-prop-field="length.dz">{lengthText(measurement.deltaZ ?? 0)}</span>
+            </div>
+          </>
         )}
         {measurement.area != null && measurement.perimeter != null && (
           <>
@@ -400,7 +443,7 @@ function MemberProps({ member }: { member: Member }) {
             </div>
             <div className="prop-row">
               <span className="prop-label">{t.propPerimeter}</span>
-              <span>{measurement.perimeter.toFixed(0)} mm</span>
+              <span>{lengthText(measurement.perimeter)}</span>
             </div>
           </>
         )}
@@ -416,10 +459,12 @@ function MemberProps({ member }: { member: Member }) {
               >
                 <span style={{ fontSize: 10, width: 16, color: 'var(--text-secondary)' }}>{i}</span>
                 <VertexCoordInput
+                  label={`${t.propVertices} ${i} X (mm)`}
                   value={pt.x}
                   onChange={(v) => updateSlabVertex(member.id, i, { x: v, y: pt.y })}
                 />
                 <VertexCoordInput
+                  label={`${t.propVertices} ${i} Y (mm)`}
                   value={pt.y}
                   onChange={(v) => updateSlabVertex(member.id, i, { x: pt.x, y: v })}
                 />
@@ -465,12 +510,16 @@ function MemberProps({ member }: { member: Member }) {
           <span className="prop-label">{t.propColor}</span>
           <input
             type="color"
+            aria-label={t.propLineColor}
             value={member.color ?? '#000000'}
             onChange={(e) => updateMember(member.id, { color: e.target.value } as Partial<Member>)}
           />
         </div>
         <CoordRow
           label={t.propLineWeight}
+          fieldKey="lineWeight"
+          min={0}
+          exclusiveMin
           value={member.lineWeight ?? 20}
           onChange={(v) => updateMember(member.id, { lineWeight: v } as Partial<Member>)}
         />
@@ -478,6 +527,7 @@ function MemberProps({ member }: { member: Member }) {
           <span className="prop-label">{t.propLineType}</span>
           <select
             className="prop-select"
+            aria-label={t.propLineType}
             value={member.lineType ?? 'solid'}
             onChange={(e) =>
               updateMember(member.id, { lineType: e.target.value as LineType } as Partial<Member>)
@@ -496,6 +546,7 @@ function MemberProps({ member }: { member: Member }) {
               <span className="prop-label">{t.propFillColor}</span>
               <input
                 type="color"
+                aria-label={t.propFillColor}
                 value={member.fillColor ?? '#9b59b6'}
                 onChange={(e) =>
                   updateMember(member.id, { fillColor: e.target.value } as Partial<Member>)
@@ -504,6 +555,9 @@ function MemberProps({ member }: { member: Member }) {
             </div>
             <CoordRow
               label={t.propFillOpacity}
+              fieldKey="fillOpacity"
+              min={0}
+              max={1}
               value={member.fillOpacity ?? 0.1}
               onChange={(v) =>
                 updateMember(member.id, {
@@ -529,6 +583,7 @@ function MemberProps({ member }: { member: Member }) {
 function GridReferenceEditor({ member }: { member: Member }) {
   const data = useProjectStore((state) => state.data)!;
   const updateMember = useProjectStore((state) => state.updateMember);
+  const { t } = useI18n();
   if (member.type === 'slab') return null;
   const xNames = data.grids.filter((grid) => grid.axis === 'X').map((grid) => grid.name);
   const yNames = data.grids.filter((grid) => grid.axis === 'Y').map((grid) => grid.name);
@@ -548,9 +603,10 @@ function GridReferenceEditor({ member }: { member: Member }) {
     <div style={{ marginTop: 6 }}>
       {(['startGrid', 'endGrid'] as const).map((endpoint) => (
         <div key={endpoint} className="prop-row">
-          <span className="prop-label">{endpoint === 'startGrid' ? 'Start grid' : 'End grid'}</span>
+          <span className="prop-label">{endpoint === 'startGrid' ? t.propStartGrid : t.propEndGrid}</span>
           <select
             className="prop-select"
+            aria-label={endpoint === 'startGrid' ? t.propStartGrid : t.propEndGrid}
             value={member.gridRef?.[endpoint]?.join('|') ?? ''}
             onChange={(event) => setPair(endpoint, event.target.value)}
           >
@@ -589,6 +645,7 @@ function AnnotationProps({ annotation }: { annotation: Annotation }) {
               <span className="prop-label">{t.propText}</span>
               <textarea
                 className="prop-input"
+                aria-label={t.propText}
                 value={annotation.text}
                 onChange={(e) => updateAnnotation(annotation.id, { text: e.target.value })}
                 rows={3}
@@ -596,12 +653,14 @@ function AnnotationProps({ annotation }: { annotation: Annotation }) {
               />
             </div>
             <CoordRow
-              label="X"
+              label="X (mm)"
+              unit="mm"
               value={annotation.x}
               onChange={(v) => updateAnnotation(annotation.id, { x: v })}
             />
             <CoordRow
-              label="Y"
+              label="Y (mm)"
+              unit="mm"
               value={annotation.y}
               onChange={(v) => updateAnnotation(annotation.id, { y: v })}
             />
@@ -609,6 +668,7 @@ function AnnotationProps({ annotation }: { annotation: Annotation }) {
               <span className="prop-label">{t.propColor}</span>
               <input
                 type="color"
+                aria-label={t.propColor}
                 value={annotation.color ?? '#000000'}
                 onChange={(e) => updateAnnotation(annotation.id, { color: e.target.value })}
               />
@@ -617,6 +677,7 @@ function AnnotationProps({ annotation }: { annotation: Annotation }) {
               <span className="prop-label">{t.propTextAlign}</span>
               <select
                 className="prop-select"
+                aria-label={t.propTextAlign}
                 value={annotation.textAlign ?? 'left'}
                 onChange={(e) =>
                   updateAnnotation(annotation.id, { textAlign: e.target.value as TextAlign })
@@ -683,6 +744,7 @@ function AnnotationProps({ annotation }: { annotation: Annotation }) {
               <span className="prop-label">{t.propFontFamily}</span>
               <select
                 className="prop-select"
+                aria-label={t.propFontFamily}
                 value={annotation.fontFamily ?? 'sans-serif'}
                 onChange={(e) => updateAnnotation(annotation.id, { fontFamily: e.target.value })}
               >
@@ -701,6 +763,7 @@ function AnnotationProps({ annotation }: { annotation: Annotation }) {
               <span className="prop-label">{t.propColor}</span>
               <input
                 type="color"
+                aria-label={t.propColor}
                 value={annotation.color ?? '#000000'}
                 onChange={(e) => updateAnnotation(annotation.id, { color: e.target.value })}
               />
@@ -739,7 +802,9 @@ function DimensionProps({ dimension }: { dimension: Dimension }) {
           </span>
         </div>
         <CoordRow
-          label={t.propOffset}
+          label={`${t.propOffset} (mm)`}
+          unit="mm"
+          fieldKey="offset"
           value={dimension.offset}
           onChange={(v) => updateDimension(dimension.id, { offset: v })}
         />
@@ -747,12 +812,16 @@ function DimensionProps({ dimension }: { dimension: Dimension }) {
           <span className="prop-label">{t.propColor}</span>
           <input
             type="color"
+            aria-label={t.propLineColor}
             value={dimension.color ?? '#000000'}
             onChange={(e) => updateDimension(dimension.id, { color: e.target.value })}
           />
         </div>
         <CoordRow
           label={t.propLineWeight}
+          fieldKey="lineWeight"
+          min={0}
+          exclusiveMin
           value={dimension.lineWeight ?? 15}
           onChange={(v) => updateDimension(dimension.id, { lineWeight: v })}
         />
@@ -760,6 +829,7 @@ function DimensionProps({ dimension }: { dimension: Dimension }) {
           <span className="prop-label">{t.propLineType}</span>
           <select
             className="prop-select"
+            aria-label={t.propLineType}
             value={dimension.lineType ?? 'solid'}
             onChange={(e) =>
               updateDimension(dimension.id, { lineType: e.target.value as LineType })
@@ -789,6 +859,7 @@ function OpeningProps({ opening }: { opening: Opening }) {
           <span className="prop-label">{t.propType}</span>
           <select
             className="prop-select"
+            aria-label={t.propType}
             value={opening.type}
             onChange={(event) => updateOpening(opening.id, {
               type: event.target.value as Opening['type'],
@@ -800,19 +871,19 @@ function OpeningProps({ opening }: { opening: Opening }) {
           </select>
         </div>
         <div className="prop-row"><span className="prop-label">Host</span><span>{opening.memberId}</span></div>
-        <CoordRow label="X" value={opening.position.x} onChange={(value) => updateOpening(opening.id, {
+        <CoordRow label="X (mm)" unit="mm" value={opening.position.x} onChange={(value) => updateOpening(opening.id, {
           position: { ...opening.position, x: value },
         })} />
-        <CoordRow label="Y" value={opening.position.y} onChange={(value) => updateOpening(opening.id, {
+        <CoordRow label="Y (mm)" unit="mm" value={opening.position.y} onChange={(value) => updateOpening(opening.id, {
           position: { ...opening.position, y: value },
         })} />
-        <CoordRow label="Z" value={opening.position.z} onChange={(value) => updateOpening(opening.id, {
+        <CoordRow label="Z (mm)" unit="mm" value={opening.position.z} onChange={(value) => updateOpening(opening.id, {
           position: { ...opening.position, z: value },
         })} />
-        <CoordRow label="Width" value={opening.width} onChange={(width) =>
+        <CoordRow label="Width (mm)" unit="mm" fieldKey="width" min={0} exclusiveMin value={opening.width} onChange={(width) =>
           updateOpening(opening.id, { width })
         } />
-        <CoordRow label="Height" value={opening.height} onChange={(height) =>
+        <CoordRow label="Height (mm)" unit="mm" fieldKey="height" min={0} exclusiveMin value={opening.height} onChange={(height) =>
           updateOpening(opening.id, { height })
         } />
       </div>

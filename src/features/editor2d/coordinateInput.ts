@@ -1,4 +1,5 @@
 import type { Point2D } from '@/domain/geometry/types';
+import { parseLengthMm } from '@/domain/geometry/units';
 
 /**
  * Failure reason for coordinate parsing (used by validation feedback UI, 4-5).
@@ -14,9 +15,11 @@ export type CoordinateParseResult =
   | { ok: true; point: Point2D }
   | { ok: false; error: CoordinateParseError };
 
+export { parseLengthMm };
+
 /**
  * Parses coordinate input and returns a Result with a failure reason.
- * Formats:
+ * Formats (lengths are mm; an explicit `m`/`mm` suffix per token is converted):
  * - "x,y" or "x y"        -> absolute coordinate
  * - "@dx,dy" or "@dx dy"  -> relative to lastPoint
  * - "@dist<angle" -> polar relative to lastPoint (angle in degrees)
@@ -33,9 +36,9 @@ export function parseCoordinateResult(
   const parsePair = (value: string): [number, number] | null => {
     const parts = value.includes(',') ? value.split(',') : value.trim().split(/\s+/);
     if (parts.length !== 2) return null;
-    const x = parseFloat(parts[0]);
-    const y = parseFloat(parts[1]);
-    if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
+    const x = parseLengthMm(parts[0]);
+    const y = parseLengthMm(parts[1]);
+    if (x == null || y == null) return null;
     return [x, y];
   };
 
@@ -43,11 +46,11 @@ export function parseCoordinateResult(
     const rest = trimmed.slice(1);
 
     // Polar: @distance<angle
-    const polarMatch = rest.match(/^([+-]?\d+\.?\d*)\s*<\s*([+-]?\d+\.?\d*)$/);
+    const polarMatch = rest.match(/^([+-]?\d+\.?\d*\s*(?:mm|m)?)\s*<\s*([+-]?\d+\.?\d*)$/i);
     if (polarMatch) {
-      const dist = parseFloat(polarMatch[1]);
+      const dist = parseLengthMm(polarMatch[1]);
       const angleDeg = parseFloat(polarMatch[2]);
-      if (!Number.isFinite(dist) || !Number.isFinite(angleDeg)) {
+      if (dist == null || !Number.isFinite(angleDeg)) {
         return { ok: false, error: 'invalid-polar' };
       }
       const rad = (angleDeg * Math.PI) / 180;
@@ -59,14 +62,14 @@ export function parseCoordinateResult(
     }
 
     // Distance along current preview direction: @distance
-    const distanceMatch = rest.match(/^([+-]?\d+\.?\d*)$/);
+    const distanceMatch = rest.match(/^([+-]?\d+\.?\d*\s*(?:mm|m)?)$/i);
     if (distanceMatch) {
       if (!lastPoint || !previewPoint) return { ok: false, error: 'no-direction' };
-      const dist = parseFloat(distanceMatch[1]);
+      const dist = parseLengthMm(distanceMatch[1]);
       const dx = previewPoint.x - lastPoint.x;
       const dy = previewPoint.y - lastPoint.y;
       const length = Math.hypot(dx, dy);
-      if (!Number.isFinite(dist) || length === 0) return { ok: false, error: 'no-direction' };
+      if (dist == null || length === 0) return { ok: false, error: 'no-direction' };
       return {
         ok: true,
         point: { x: lastPoint.x + (dx / length) * dist, y: lastPoint.y + (dy / length) * dist },

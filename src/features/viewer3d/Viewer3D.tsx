@@ -5,7 +5,8 @@ import { useI18n } from '@/i18n';
 import type { Opening } from '@/domain/structural/types';
 import { type GeometryEngine } from './memberGeometry';
 import type { MeasurePoint } from './MeasureLayer';
-import { SceneContents } from './SceneContents';
+import { SceneContents, type ViewRequest } from './SceneContents';
+import type { ViewPreset } from './viewPresets';
 import { SectionControls } from './SectionControls';
 import { ViewerInfoPanel } from './ViewerInfoPanel';
 import { ViewerToolbar } from './ViewerToolbar';
@@ -16,6 +17,7 @@ import {
   clampSectionBox,
   computeModelExtents,
   getAxisRange,
+  type ModelExtents,
   type SectionAxis,
   type SectionBoxState,
   type SectionMode,
@@ -57,6 +59,10 @@ export function Viewer3D() {
   const setAnalysisScale = (scale: number) => {
     setAnalysisScaleState((current) => ({ ...current, scale }));
   };
+
+  // ── Named views (R10) ──
+  const [viewRequest, setViewRequest] = useState<ViewRequest | null>(null);
+  const [currentView, setCurrentView] = useState<ViewPreset | 'custom'>('iso');
 
   // ── 3D measurement tool state ──
   const [measureMode, setMeasureMode] = useState(false);
@@ -154,6 +160,14 @@ export function Viewer3D() {
 
   const labels = getViewerLabels(locale);
 
+  const requestView = (preset: ViewPreset, target: ModelExtents) => {
+    setCurrentView(preset);
+    setViewRequest((previous) => ({ preset, extents: target, nonce: (previous?.nonce ?? 0) + 1 }));
+  };
+  const selectedMembers = filteredMembers.filter((member) => selectedIds.includes(member.id));
+  const fitExtents = (members: typeof filteredMembers) => computeModelExtents(null, members, sectionMap);
+  const presetForFit: ViewPreset = currentView === 'custom' ? 'iso' : currentView;
+
   return (
     <div style={{ width: '100%', height: '100%', position: 'relative' }}>
       <ViewerToolbar
@@ -175,6 +189,11 @@ export function Viewer3D() {
         )}
         showAnalysisResults={showAnalysisResults}
         toggleAnalysisResults={() => setShowAnalysisResults((visible) => !visible)}
+        currentView={currentView}
+        onSelectView={(preset) => requestView(preset, extents)}
+        onFitAll={() => requestView(presetForFit, extents)}
+        onFitSelection={() => requestView(presetForFit, fitExtents(selectedMembers))}
+        canFitSelection={selectedMembers.length > 0}
       />
 
       <ViewerInfoPanel
@@ -246,6 +265,8 @@ export function Viewer3D() {
           showAnalysisResults={showAnalysisResults}
           analysisScale={analysisScale}
           showAllStories={showAllStories}
+          viewRequest={viewRequest}
+          onUserOrbit={() => setCurrentView('custom')}
         />
       </Canvas>
     </div>

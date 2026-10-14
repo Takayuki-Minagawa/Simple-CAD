@@ -1,4 +1,5 @@
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ComponentRef } from 'react';
+import { useThree } from '@react-three/fiber';
 import { GizmoHelper, GizmoViewport, OrbitControls, OrthographicCamera, PerspectiveCamera } from '@react-three/drei';
 import * as THREE from 'three';
 import type { AnalysisResultsMetadata, Grid, Member, Opening, Section, Story } from '@/domain/structural/types';
@@ -12,6 +13,56 @@ import { SCALE, type ModelExtents, type SectionBoxState, type SectionMode } from
 import type { ViewerLabels } from './viewerLabels';
 import { AnalysisResultsLayer } from './AnalysisResultsLayer';
 import { buildUtilizationMap, utilizationColor } from './analysisResults';
+import { computeViewPose, type ViewPreset } from './viewPresets';
+
+type OrbitControlsImpl = ComponentRef<typeof OrbitControls>;
+
+/** A named-view request; `nonce` lets the same preset be re-applied. */
+export interface ViewRequest {
+  preset: ViewPreset;
+  extents: ModelExtents;
+  nonce: number;
+}
+
+/**
+ * Applies named view requests to whichever camera is currently active and keeps
+ * the orbit target in sync. Lives inside the Canvas so it can read the renderer
+ * size for framing.
+ */
+function ViewPresetController({
+  request,
+  controlsRef,
+  orthographic,
+}: {
+  request: ViewRequest | null;
+  controlsRef: React.RefObject<OrbitControlsImpl | null>;
+  orthographic: boolean;
+}) {
+  const camera = useThree((state) => state.camera);
+  const size = useThree((state) => state.size);
+  useEffect(() => {
+    if (!request) return;
+    const pose = computeViewPose(request.preset, request.extents, size, {
+      orthographic,
+      fovDeg: (camera as THREE.PerspectiveCamera).fov ?? 50,
+    });
+    camera.up.set(...pose.up);
+    camera.position.set(...pose.position);
+    if ((camera as THREE.OrthographicCamera).isOrthographicCamera) {
+      (camera as THREE.OrthographicCamera).zoom = pose.orthoZoom;
+    }
+    camera.lookAt(...pose.target);
+    camera.updateProjectionMatrix();
+    const controls = controlsRef.current;
+    if (controls) {
+      controls.target.set(...pose.target);
+      controls.update();
+    }
+    // `size` is intentionally excluded: resizing should not snap the camera back.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [request, camera, orthographic]);
+  return null;
+}
 
 /** Snap a CAD-space hit point to the nearest member endpoint within this radius (mm). */
 const SNAP_RADIUS = 400;
@@ -42,6 +93,10 @@ interface SceneContentsProps {
   showAnalysisResults: boolean;
   analysisScale: number;
   showAllStories: boolean;
+  /** Latest named-view request (R10). */
+  viewRequest: ViewRequest | null;
+  /** Called when the user starts orbiting, so the view label can show "custom". */
+  onUserOrbit?: () => void;
 }
 
 export function SceneContents({
@@ -69,7 +124,10 @@ export function SceneContents({
   showAnalysisResults,
   analysisScale,
   showAllStories,
+  viewRequest,
+  onUserOrbit,
 }: SceneContentsProps) {
+  const controlsRef = useRef<OrbitControlsImpl | null>(null);
   // Inner group that holds members in CAD coordinates (mm). Used to convert
   // world-space raycast hit points back into CAD space for measuring/snapping.
   const cadGroupRef = useRef<THREE.Group>(null);
@@ -172,7 +230,13 @@ export function SceneContents({
         />
       )}
 
-      <OrbitControls target={[centerX * SCALE, centerZ * SCALE, -(centerY * SCALE)]} enableDamping={false} />
+      <OrbitControls
+        ref={controlsRef}
+        target={[centerX * SCALE, centerZ * SCALE, -(centerY * SCALE)]}
+        enableDamping={false}
+        onStart={onUserOrbit}
+      />
+      <ViewPresetController request={viewRequest} controlsRef={controlsRef} orthographic={orthographic} />
 
       <ambientLight intensity={0.6} />
       <directionalLight position={[20, 30, 10]} intensity={0.8} />

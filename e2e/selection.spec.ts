@@ -27,11 +27,11 @@ test('filters objects, selects matches, and respects locked and hidden layers', 
   await expect(objects.locator('button.tree-node[aria-pressed="true"]')).toHaveCount(2);
 
   const columnLayer = objects.locator('.layer-row').filter({ has: page.getByRole('checkbox', { name: '柱', exact: true }) });
-  await columnLayer.getByTitle('Lock', { exact: true }).click();
+  await columnLayer.getByRole('button', { name: '柱レイヤーをロック' }).click();
   await expect(rows.first()).toBeDisabled();
   await expect(selectMatches).toBeDisabled();
   await expect(objects.locator('button.tree-node[aria-pressed="true"]')).toHaveCount(0);
-  await columnLayer.getByTitle('Unlock', { exact: true }).click();
+  await columnLayer.getByRole('button', { name: '柱レイヤーのロックを解除' }).click();
   await columnLayer.getByRole('checkbox', { name: '柱', exact: true }).uncheck();
   await expect(selectMatches).toBeDisabled();
   await columnLayer.getByRole('checkbox', { name: '柱', exact: true }).check();

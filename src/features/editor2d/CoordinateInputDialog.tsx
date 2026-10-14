@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef, useEffect } from 'react';
+import { useState, useCallback, useRef, useEffect, useId } from 'react';
 import { useI18n } from '@/i18n';
 import { useEditorStore } from '@/app/store';
 import type { Point2D } from '@/domain/geometry/types';
@@ -41,6 +41,7 @@ interface Props {
 export function CoordinateInputBar({ lastPoint, previewPoint, onSubmit, onGhostChange }: Props) {
   const [value, setValue] = useState('');
   const inputRef = useRef<HTMLInputElement>(null);
+  const inputId = useId();
   const { t, locale } = useI18n();
 
   // Parse current value for live validation + ghost preview.
@@ -105,8 +106,15 @@ export function CoordinateInputBar({ lastPoint, previewPoint, onSubmit, onGhostC
         fontSize: 12,
       }}
     >
-      <span style={{ color: 'var(--text-secondary)', whiteSpace: 'nowrap' }}>{t.coordInputLabel}:</span>
+      <label
+        htmlFor={inputId}
+        style={{ color: 'var(--text-secondary)', whiteSpace: 'nowrap' }}
+        title={t.coordInputUnitHint}
+      >
+        {t.coordInputLabel} ({t.inputUnitHint}):
+      </label>
       <input
+        id={inputId}
         ref={inputRef}
         className="prop-input"
         style={{
@@ -118,9 +126,16 @@ export function CoordinateInputBar({ lastPoint, previewPoint, onSubmit, onGhostC
         value={value}
         onChange={(e) => setValue(e.target.value)}
         placeholder={t.coordInputPlaceholder}
+        aria-describedby={isInvalid ? `${inputId}-error` : `${inputId}-hint`}
+        aria-invalid={isInvalid || undefined}
       />
+      <span id={`${inputId}-hint`} className="visually-hidden">
+        {t.coordInputUnitHint}
+      </span>
       {isInvalid && result && !result.ok && (
-        <span style={{ color: '#dc2626', whiteSpace: 'nowrap' }}>{errorHint(result.error, locale)}</span>
+        <span id={`${inputId}-error`} role="alert" style={{ color: '#dc2626', whiteSpace: 'nowrap' }}>
+          {errorHint(result.error, locale)}
+        </span>
       )}
     </form>
   );
@@ -224,7 +239,7 @@ export function DynamicInput({ lastPoint, cursorWorld, onSubmit, onGhostChange }
   if (!lastPoint || !cursorWorld) return null;
 
   const screen = worldToScreen(cursorWorld, pan, zoom);
-  const lenLabel = locale === 'ja' ? '長さ' : 'Len';
+  const lenLabel = locale === 'ja' ? '長さ (mm)' : 'Len (mm)';
   const angLabel = locale === 'ja' ? '角度' : 'Ang';
 
   const fieldStyle = (active: boolean): React.CSSProperties => ({
@@ -259,6 +274,7 @@ export function DynamicInput({ lastPoint, cursorWorld, onSubmit, onGhostChange }
         {lenLabel}
         <input
           ref={lengthRef}
+          aria-label={lenLabel}
           style={fieldStyle(lock === 'length')}
           value={lengthStr !== '' ? lengthStr : liveLength.toFixed(0)}
           onFocus={() => setLock('length')}
@@ -270,6 +286,7 @@ export function DynamicInput({ lastPoint, cursorWorld, onSubmit, onGhostChange }
         {angLabel}
         <input
           ref={angleRef}
+          aria-label={angLabel}
           style={fieldStyle(lock === 'angle')}
           value={angleStr !== '' ? angleStr : liveAngle.toFixed(1)}
           onFocus={() => setLock('angle')}
